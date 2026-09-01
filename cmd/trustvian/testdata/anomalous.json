@@ -1,0 +1,21 @@
+[
+  {
+    "id": "evt-attack-1",
+    "timestamp": "2026-01-01T12:05:00Z",
+    "actor": {
+      "id": "svc-payment",
+      "type": "service",
+      "identity_confidence": 0.1
+    },
+    "operation": {
+      "category": "external",
+      "name": "POST /exfiltrate"
+    },
+    "target": {
+      "name": "unknown-external-host"
+    },
+    "context": {
+      "environment": "production"
+    }
+  }
+]
