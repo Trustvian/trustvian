@@ -1,0 +1,24 @@
+[
+  {
+    "id": "evt-normal-1",
+    "timestamp": "2026-01-01T12:00:00Z",
+    "actor": {
+      "id": "svc-payment",
+      "type": "service",
+      "identity_confidence": 0.95
+    },
+    "operation": {
+      "category": "db",
+      "name": "SELECT accounts"
+    },
+    "target": {
+      "name": "payment-db"
+    },
+    "context": {
+      "environment": "production"
+    },
+    "attributes": {
+      "duration_ms": 12
+    }
+  }
+]
