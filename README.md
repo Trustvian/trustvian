@@ -24,7 +24,9 @@ sequence/ML-based anomaly detection, and everything under Trustvian
 Control/Cloud (dashboard, multi-tenancy, SSO). See
 [`trustvian-project-spec.md`](trustvian-project-spec.md) for the full
 long-term vision and [`CLAUDE.md`](CLAUDE.md) for the engineering
-conventions this repository follows.
+conventions this repository follows. For guides, worked examples, and
+four real-world use cases with verified input/output, see
+[`docs/`](docs/README.md).
 
 ## How it works
 
