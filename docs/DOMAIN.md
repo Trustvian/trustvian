@@ -218,7 +218,22 @@ purely learned.
 `Trust` retains every input (`IdentityConfidence`, `AnomalyScore`,
 `AnomalyConfidence`, `ContextRisk`) alongside `Score` and `Risk` — the
 relationship between anomaly, risk, and trust is never collapsed into
-one opaque number.
+one opaque number. `Trust.Explain() string` renders those retained
+fields as one human-readable sentence (e.g. `"trust 0.35 (high):
+identity confidence 0.97, anomaly 0.91 at full confidence, context
+risk 0.10"`) — pure formatting over existing fields, no new
+computation.
+
+`TestComputeScenarioMatrixBoundsAndMonotonicity`
+(`internal/trust/trust_test.go`, task
+[005](tasks/005-trust-risk.md)) sweeps `IdentityConfidence`,
+`Anomaly.Score`, `Anomaly.Confidence`, and `ContextRisk` each across
+`{0, 0.25, 0.5, 0.75, 1}` — the full cross product — and asserts two
+guarantees that were previously only implied by the formula, not
+explicitly tested across the whole input space: `TrustScore` never
+leaves `[0,1]`, and it is monotonic in each risk-bearing input
+(increasing `Anomaly.Score` or `ContextRisk` never *increases*
+`TrustScore`; increasing `IdentityConfidence` never *decreases* it).
 
 ## Policy and Decision
 

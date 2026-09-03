@@ -1,6 +1,7 @@
 package trust_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Trustvian/trustvian/internal/anomaly"
@@ -154,6 +155,71 @@ func TestComputeRetainsComponents(t *testing.T) {
 	}
 	if got.ContextRisk != 0.15 {
 		t.Fatalf("ContextRisk = %v, want 0.15", got.ContextRisk)
+	}
+}
+
+func TestExplain(t *testing.T) {
+	tr := trust.Trust{
+		Score:              0.35,
+		Risk:               trust.RiskHigh,
+		IdentityConfidence: 0.97,
+		AnomalyScore:       0.91,
+		AnomalyConfidence:  1.0,
+		ContextRisk:        0.10,
+	}
+	got := tr.Explain()
+	want := "trust 0.35 (high): identity confidence 0.97, anomaly 0.91 at full confidence, context risk 0.10"
+	if got != want {
+		t.Errorf("Explain() = %q, want %q", got, want)
+	}
+}
+
+func TestExplainPartialAnomalyConfidence(t *testing.T) {
+	tr := trust.Trust{Score: 0.9, Risk: trust.RiskLow, IdentityConfidence: 1, AnomalyScore: 0.8, AnomalyConfidence: 0.4, ContextRisk: 0}
+	got := tr.Explain()
+	if !strings.Contains(got, "40% confidence") {
+		t.Errorf("Explain() = %q, want it to mention partial confidence as a percentage", got)
+	}
+}
+
+func TestComputeScenarioMatrixBoundsAndMonotonicity(t *testing.T) {
+	levels := []float64{0, 0.25, 0.5, 0.75, 1}
+	cfg := trust.DefaultConfig()
+
+	for _, ident := range levels {
+		for _, anomScore := range levels {
+			for _, anomConf := range levels {
+				for _, ctxRisk := range levels {
+					an := anomaly.Anomaly{Score: anomScore, Confidence: anomConf}
+					got := trust.Compute(an, ident, ctxRisk, cfg)
+					if got.Score < 0 || got.Score > 1 {
+						t.Fatalf("Score out of [0,1]: %v for ident=%v anomScore=%v anomConf=%v ctxRisk=%v", got.Score, ident, anomScore, anomConf, ctxRisk)
+					}
+				}
+			}
+		}
+	}
+
+	// Monotonicity: increasing any risk input never increases TrustScore.
+	for i := 0; i < len(levels)-1; i++ {
+		lo, hi := levels[i], levels[i+1]
+		base := trust.Compute(anomaly.Anomaly{Score: lo, Confidence: 1}, 1, 0, cfg)
+		bumped := trust.Compute(anomaly.Anomaly{Score: hi, Confidence: 1}, 1, 0, cfg)
+		if bumped.Score > base.Score {
+			t.Errorf("increasing Anomaly.Score from %v to %v increased TrustScore: %v -> %v", lo, hi, base.Score, bumped.Score)
+		}
+
+		baseCtx := trust.Compute(anomaly.Anomaly{Score: 0.5, Confidence: 1}, 1, lo, cfg)
+		bumpedCtx := trust.Compute(anomaly.Anomaly{Score: 0.5, Confidence: 1}, 1, hi, cfg)
+		if bumpedCtx.Score > baseCtx.Score {
+			t.Errorf("increasing ContextRisk from %v to %v increased TrustScore: %v -> %v", lo, hi, baseCtx.Score, bumpedCtx.Score)
+		}
+
+		baseIdent := trust.Compute(anomaly.Anomaly{Score: 0.5, Confidence: 1}, lo, 0, cfg)
+		bumpedIdent := trust.Compute(anomaly.Anomaly{Score: 0.5, Confidence: 1}, hi, 0, cfg)
+		if bumpedIdent.Score < baseIdent.Score {
+			t.Errorf("increasing IdentityConfidence from %v to %v decreased TrustScore: %v -> %v", lo, hi, baseIdent.Score, bumpedIdent.Score)
+		}
 	}
 }
 

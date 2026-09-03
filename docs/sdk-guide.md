@@ -114,6 +114,17 @@ for _, signal := range result.Anomaly.Contributors {
 }
 ```
 
+`result.Trust.Explain() string` renders `Trust`'s retained fields
+(`Score`, `Risk`, `IdentityConfidence`, `AnomalyScore`,
+`AnomalyConfidence`, `ContextRisk`) as one human-readable sentence —
+pure formatting, no extra computation — for logging or display without
+hand-assembling the components yourself:
+
+```go
+fmt.Println(result.Trust.Explain())
+// "trust 0.35 (high): identity confidence 0.97, anomaly 0.91 at full confidence, context risk 0.10"
+```
+
 ## Observe and learning
 
 ```go
