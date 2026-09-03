@@ -26,7 +26,9 @@ Control/Cloud (dashboard, multi-tenancy, SSO). See
 long-term vision and [`CLAUDE.md`](CLAUDE.md) for the engineering
 conventions this repository follows. For guides, worked examples, and
 four real-world use cases with verified input/output, see
-[`docs/`](docs/README.md).
+[`docs/`](docs/README.md). For what's planned next and in what order,
+see [`docs/ROADMAP.md`](docs/ROADMAP.md) and its detailed task
+breakdown under [`docs/tasks/`](docs/tasks/).
 
 ## How it works
 

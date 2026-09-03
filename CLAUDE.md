@@ -11,8 +11,11 @@ The rules below are the condensed, durable principles. For the current
 implementation's details — package structure, dependency direction,
 domain model, security model, measured performance, and why
 significant decisions were made — see `docs/` (`ARCHITECTURE.md`,
-`DOMAIN.md`, `SECURITY.md`, `PERFORMANCE.md`, `ROADMAP.md`, `adr/`) and
-`.claude/rules/`. Keep `docs/` in sync with the code: when an
+`DOMAIN.md`, `SECURITY.md`, `PERFORMANCE.md`, `ROADMAP.md`, `adr/`,
+`tasks/`) and `.claude/rules/`. `docs/tasks/NNN-*.md` are the current,
+independently-scoped implementation tasks — check there before
+starting new work to see if it's already planned and scoped. Keep
+`docs/` in sync with the code: when an
 architectural change lands, update the relevant `docs/` file(s) and
 add an ADR under `docs/adr/` if a future developer would reasonably
 ask "why did we do this?"
