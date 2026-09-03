@@ -108,6 +108,44 @@ func TestExtract(t *testing.T) {
 			},
 		},
 		{
+			name: "target category set flows through",
+			event: func() event.Event {
+				e := baseEvent(event.OperationCategoryDB, "SELECT accounts", nil)
+				e.Target.Category = event.TargetCategoryDatabase
+				return e
+			}(),
+			wantStable: features.StableFeatures{
+				ActorType:         event.ActorTypeService,
+				OperationCategory: event.OperationCategoryDB,
+				OperationName:     "SELECT accounts",
+				TargetName:        "payment-db",
+				TargetCategory:    event.TargetCategoryDatabase,
+				Environment:       "production",
+			},
+			wantVol: features.VolatileFeatures{
+				Timestamp:  time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
+				HasLatency: false,
+				Error:      false,
+			},
+		},
+		{
+			name:  "target category unset yields zero value",
+			event: baseEvent(event.OperationCategoryHTTP, "GET /health", nil),
+			wantStable: features.StableFeatures{
+				ActorType:         event.ActorTypeService,
+				OperationCategory: event.OperationCategoryHTTP,
+				OperationName:     "GET /health",
+				TargetName:        "payment-db",
+				TargetCategory:    event.TargetCategoryUnspecified,
+				Environment:       "production",
+			},
+			wantVol: features.VolatileFeatures{
+				Timestamp:  time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
+				HasLatency: false,
+				Error:      false,
+			},
+		},
+		{
 			name: "external event with wrong-typed attributes ignored",
 			event: baseEvent(event.OperationCategoryExternal, "webhook.send", map[string]any{
 				features.AttrDurationMS: "fast",

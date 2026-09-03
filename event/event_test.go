@@ -170,6 +170,35 @@ func TestEventJSONRoundTrip(t *testing.T) {
 	}
 }
 
+func TestTargetCategoryValid(t *testing.T) {
+	tests := []struct {
+		name string
+		cat  event.TargetCategory
+		want bool
+	}{
+		{"unspecified is valid", event.TargetCategoryUnspecified, true},
+		{"internal", event.TargetCategoryInternal, true},
+		{"external", event.TargetCategoryExternal, true},
+		{"database", event.TargetCategoryDatabase, true},
+		{"unknown value invalid", event.TargetCategory("bogus"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cat.Valid(); got != tt.want {
+				t.Errorf("TargetCategory(%q).Valid() = %v, want %v", tt.cat, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEventValidateIgnoresTargetCategory(t *testing.T) {
+	e := validEvent()
+	e.Target.Category = event.TargetCategory("not-a-real-category")
+	if err := e.Validate(); err != nil {
+		t.Errorf("Validate() = %v, want nil — TargetCategory must not be checked", err)
+	}
+}
+
 func TestEventJSONOmitsUnsetOptionalFields(t *testing.T) {
 	e := event.Event{
 		ID:        "evt-1",

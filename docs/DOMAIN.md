@@ -25,7 +25,10 @@ full field reference.
   `"search_customer"`), and optional `Direction` (`inbound`/`outbound`,
   from `SpanKind` when sourced via OTel).
 - **Target** — the destination, when there is a distinct one (a
-  service, database, or host). Optional.
+  service, database, or host). Optional. `Category` (`internal`,
+  `external`, `database`) optionally classifies what *kind* of
+  destination it is; like `Direction`, the zero value means
+  unclassified and is never checked by `Validate()`.
 - **Context** — deployment `Environment` plus, when available, OTel
   `TraceID`/`SpanID` for correlation.
 - **Metadata (`Attributes`)** — an open `map[string]any`. Two keys
@@ -43,8 +46,12 @@ dimensions into two kinds, because they play different roles
 downstream:
 
 - **Stable features** — `ActorType`, `OperationCategory`,
-  `OperationName`, `TargetName`, `Environment`. These identify *what
-  kind of behavior* this is and feed the `Fingerprint`.
+  `OperationName`, `TargetName`, `TargetCategory`, `Environment`.
+  These identify *what kind of behavior* this is and feed the
+  `Fingerprint`. `TargetCategory` (added in
+  [task 001](tasks/001-feature-model.md)) mirrors `Event.Target.Category`
+  and is optional — it flows through `Extract` but is not yet part of
+  `fingerprint.Compute`'s hash (that's task 002).
 - **Volatile features** — `Timestamp`, `Latency`, `Error`. These are
   per-event, noisy, and feed `Anomaly` directly; they never become
   part of a `Fingerprint`.
@@ -184,7 +191,7 @@ the final answer — that completeness is what makes every decision
 explainable end to end, not just at the policy stage.
 
 This document describes the domain model as it exists today. Planned
-extensions to it (a `Target` category dimension, a frequency-deviation
-anomaly signal, AI-agent session/delegation fields, and others) are
-scoped in [ROADMAP.md](ROADMAP.md) and [`tasks/`](tasks/) — each will
+extensions to it (a frequency-deviation anomaly signal, AI-agent
+session/delegation fields, and others) are scoped in
+[ROADMAP.md](ROADMAP.md) and [`tasks/`](tasks/) — each will
 update this document when it actually ships, not before.

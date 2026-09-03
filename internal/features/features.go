@@ -31,6 +31,7 @@ type StableFeatures struct {
 	OperationCategory event.OperationCategory
 	OperationName     string
 	TargetName        string
+	TargetCategory    event.TargetCategory
 	Environment       string
 }
 
@@ -63,6 +64,7 @@ func Extract(e event.Event) Features {
 			OperationCategory: e.Operation.Category,
 			OperationName:     e.Operation.Name,
 			TargetName:        e.Target.Name,
+			TargetCategory:    e.Target.Category,
 			Environment:       e.Context.Environment,
 		},
 		Volatile: VolatileFeatures{

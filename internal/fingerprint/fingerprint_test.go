@@ -109,3 +109,25 @@ func TestComputeIgnoresVolatileChanges(t *testing.T) {
 		t.Fatalf("Fingerprint ID changed despite only volatile fields differing: %q vs %q", fp1.ID, fp2.ID)
 	}
 }
+
+func TestFingerprintIDIndependentOfEventIdentifiers(t *testing.T) {
+	base := event.Event{
+		ID:        "event-1",
+		Timestamp: time.Now(),
+		Actor:     event.Actor{ID: "actor-1", Type: event.ActorTypeService, IdentityConfidence: 1},
+		Operation: event.Operation{Category: event.OperationCategoryHTTP, Name: "GET /x"},
+		Target:    event.Target{Name: "svc-a"},
+		Context:   event.Context{Environment: "prod", TraceID: "trace-1", SpanID: "span-1"},
+	}
+	varied := base
+	varied.ID = "event-2"
+	varied.Context.TraceID = "trace-2"
+	varied.Context.SpanID = "span-2"
+
+	fp1 := fingerprint.Compute(features.Extract(base).Stable)
+	fp2 := fingerprint.Compute(features.Extract(varied).Stable)
+
+	if fp1.ID != fp2.ID {
+		t.Errorf("Fingerprint.ID changed when only Event.ID/TraceID/SpanID changed: %q vs %q", fp1.ID, fp2.ID)
+	}
+}
