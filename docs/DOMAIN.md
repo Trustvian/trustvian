@@ -50,8 +50,9 @@ downstream:
   These identify *what kind of behavior* this is and feed the
   `Fingerprint`. `TargetCategory` (added in
   [task 001](tasks/001-feature-model.md)) mirrors `Event.Target.Category`
-  and is optional — it flows through `Extract` but is not yet part of
-  `fingerprint.Compute`'s hash (that's task 002).
+  and is optional — it flows through `Extract` and, as of
+  [task 002](tasks/002-fingerprint.md), is part of
+  `fingerprint.Compute`'s hash.
 - **Volatile features** — `Timestamp`, `Latency`, `Error`. These are
   per-event, noisy, and feed `Anomaly` directly; they never become
   part of a `Fingerprint`.
@@ -62,7 +63,7 @@ zero-allocation — see [PERFORMANCE.md](PERFORMANCE.md).
 ## Fingerprint
 
 `internal/fingerprint.Compute(StableFeatures) Fingerprint` derives a
-deterministic identity — an `ID` (an FNV-1a hash over the five stable
+deterministic identity — an `ID` (an FNV-1a hash over the stable
 dimensions) plus the `Stable` snapshot itself, retained for
 explainability. Two events with identical stable dimensions always
 produce the same `Fingerprint.ID`, regardless of how their volatile
@@ -70,10 +71,58 @@ data (latency, timestamp, errors) differs.
 
 This is deliberately a *per-event-shape* identity — one ID per
 distinct `(ActorType, OperationCategory, OperationName, TargetName,
-Environment)` combination — not an aggregated, all-behavior profile
-for an actor. The aggregation ("the set of fingerprints this actor is
-known to use") emerges naturally from `Baseline`'s map, keyed by
-`Fingerprint.ID`, rather than being tracked separately.
+TargetCategory, Environment)` combination — not an aggregated,
+all-behavior profile for an actor. The aggregation ("the set of
+fingerprints this actor is known to use") emerges naturally from
+`Baseline`'s map, keyed by `Fingerprint.ID`, rather than being tracked
+separately.
+
+**What feeds the hash, in order.** `Compute` writes, in this fixed
+order: the version marker (see below), then `ActorType`,
+`OperationCategory`, `OperationName`, `TargetName`, `TargetCategory`,
+`Environment` — the same six fields `internal/features.Extract`
+classifies as *stable* (see [§ Feature](#feature)). No volatile field
+(`Timestamp`, `Latency`, `Error`) and no event-instance identifier
+(`Event.ID`, `TraceID`, `SpanID`) ever enters the hash — that's what
+makes the ID a behavioral-shape key rather than a per-request one.
+
+**Why FNV-1a.** `hash/fnv`'s 64-bit variant is fast (no cryptographic
+primitives), non-cryptographic, and gives a large enough ID space
+(2^64) that accidental collisions across genuinely distinct behavioral
+shapes are not a practical concern. This is a content-addressed
+identity key for a map lookup, not a security boundary — nothing
+downstream trusts `Fingerprint.ID` to resist a deliberate,
+computationally-motivated collision attack, so a slower cryptographic
+hash would only add cost without buying a real property this design
+needs.
+
+**Field-boundary collision protection.** Each field is written through
+`writeField`, which appends a NUL (`\x00`) byte after the field's
+bytes. Without this, two structurally different inputs could hash
+identically by having bytes shift across an (unmarked) field boundary
+— e.g. `OperationName="ab", TargetName="c"` and `OperationName="a",
+TargetName="bc"` would otherwise concatenate to the same byte stream.
+`TestComputeAvoidsFieldBoundaryCollision` in
+`internal/fingerprint/fingerprint_test.go` pins this property.
+
+**Versioning.** `Compute` writes a `fingerprintVersion` constant
+(currently `"1"`) as the *first* field, ahead of every stable
+dimension, using the same `writeField` NUL-separator convention. This
+exists so that a future change to which dimensions feed the hash, or
+to the hash algorithm itself, produces a *disjoint* ID space from
+today's rather than silently reinterpreting existing IDs under new
+semantics — an in-memory-only `Store` would survive that silently
+(restart clears everything), but a persistent `Store` would not: a
+stored baseline computed under one fingerprint composition could be
+misread after an upgrade changes what its ID means. Bump
+`fingerprintVersion` whenever the stable field set or hash algorithm
+changes — version `"1"` is the version under which `TargetCategory`
+first became part of the hash (see
+[task 002](tasks/002-fingerprint.md)). There is deliberately no
+separate `Version` field on `Fingerprint`: no current consumer needs to
+read the version independent of the ID it's baked into, so exposing
+one would be exactly the kind of interface `.claude/rules/architecture.md`
+says to add only when needed, not speculatively.
 
 ## Baseline
 

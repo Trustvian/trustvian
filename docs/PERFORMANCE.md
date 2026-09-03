@@ -34,7 +34,7 @@ Environment: Go 1.27, darwin/arm64, Apple M3 Pro. Run with
 | Benchmark | ns/op | B/op | allocs/op |
 |---|---:|---:|---:|
 | `features.Extract` | 18.1 | 0 | 0 |
-| `fingerprint.Compute` | 136.7 | 104 | 12 |
+| `fingerprint.Compute` | 161.0 | 120 | 15 |
 | `trust.Compute` | 5.1 | 0 | 0 |
 | `policy.Evaluate` (rule match) | 21.1 | 0 | 0 |
 | `policy.Evaluate` (falls to default) | 36.8 | 0 | 0 |
@@ -55,7 +55,7 @@ Environment: Go 1.27, darwin/arm64, Apple M3 Pro. Run with
 ## Reading the numbers
 
 **`Engine.Analyze`'s cost is accounted for.** `features.Extract`
-(18ns) + `fingerprint.Compute` (137ns, called once) +
+(18ns) + `fingerprint.Compute` (161ns, called once) +
 `anomaly.Score`'s familiar-path floor (30ns, which itself already
 includes the fingerprint map lookup) + `trust.Compute` (5ns) +
 `policy.Evaluate` (21–37ns) sum to roughly the measured 440ns, with the
@@ -106,13 +106,19 @@ pure function with no shared mutable state.
 
 ## Allocation considerations
 
-- `fingerprint.Compute`'s 12 allocs/op come from `hash/fnv.New64a()`
+- `fingerprint.Compute`'s 15 allocs/op come from `hash/fnv.New64a()`
   (a heap-allocated hasher) and `strconv.FormatUint` (the resulting ID
   string) — a known, accepted cost from the original implementation,
   not yet optimized further since it hasn't shown up as the dominant
   cost in end-to-end benchmarks. A future optimization (reusing a
   hasher, avoiding the string conversion) is possible but unmeasured —
-  not claimed here as already done.
+  not claimed here as already done. [Task 002](tasks/002-fingerprint.md)
+  added the `fingerprintVersion` marker and `TargetCategory` to the
+  hash input (two more `writeField` calls), which is the entirety of
+  the increase from the prior 12 allocs/op, 104 B/op, 136.7 ns/op —
+  each additional field written through an `io.Writer` interface
+  carries its own small conversion/write cost; still not the dominant
+  cost anywhere it's measured end-to-end.
 - `baseline.Observe` and `store.InMemory.Observe`'s 3 allocs/op are the
   copy-on-write `Fingerprints` map rebuild — a deliberate tradeoff (see
   [ADR 0004](adr/0004-narrow-store-port-in-memory-only.md) and

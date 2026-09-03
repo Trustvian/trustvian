@@ -23,15 +23,24 @@ type Fingerprint struct {
 	Stable features.StableFeatures
 }
 
+// fingerprintVersion is written into the hash before every stable field.
+// Bump it whenever the stable field set or hash algorithm changes (e.g.
+// task 001's TargetCategory addition is what version "1" already
+// includes) — this guarantees a composition change produces a disjoint ID
+// space instead of silently reinterpreting old IDs under new semantics.
+const fingerprintVersion = "1"
+
 // Compute derives a Fingerprint from stable. It is a pure function of
 // stable: identical input always produces an identical ID, and stable is
 // never modified.
 func Compute(stable features.StableFeatures) Fingerprint {
 	h := fnv.New64a()
+	writeField(h, fingerprintVersion)
 	writeField(h, string(stable.ActorType))
 	writeField(h, string(stable.OperationCategory))
 	writeField(h, stable.OperationName)
 	writeField(h, stable.TargetName)
+	writeField(h, string(stable.TargetCategory))
 	writeField(h, stable.Environment)
 
 	return Fingerprint{

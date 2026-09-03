@@ -51,6 +51,10 @@ func TestComputeDiffersOnStableDimensions(t *testing.T) {
 		}},
 		{"different operation name", func(s features.StableFeatures) features.StableFeatures { s.OperationName = "GET /payment"; return s }},
 		{"different target", func(s features.StableFeatures) features.StableFeatures { s.TargetName = "admin-db"; return s }},
+		{"different target category", func(s features.StableFeatures) features.StableFeatures {
+			s.TargetCategory = event.TargetCategoryDatabase
+			return s
+		}},
 		{"different environment", func(s features.StableFeatures) features.StableFeatures { s.Environment = "staging"; return s }},
 	}
 
