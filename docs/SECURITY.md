@@ -12,7 +12,7 @@ engine. Its security model is about the integrity of *its own
 reasoning* (can its scores/decisions be manipulated or bypassed), not
 about securing the transport or storage layers around it (those are
 explicitly out of core scope — see
-[ARCHITECTURE.md](ARCHITECTURE.md)).
+[`docs/ARCHITECTURE.md`](ARCHITECTURE.md)).
 
 ## Threats considered
 
