@@ -202,3 +202,40 @@ func TestFingerprintStatsLatencyStdDevIsNonNegative(t *testing.T) {
 		t.Fatalf("LatencyStdDevDuration() = %v, must be non-negative", stdDev)
 	}
 }
+
+func TestFingerprintStatsIsStale(t *testing.T) {
+	fp := testFingerprint()
+	b := baseline.New(testKey)
+
+	observedAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	b = b.Observe(fp, features.VolatileFeatures{}, observedAt)
+	stats := b.Fingerprints[fp.ID]
+
+	tests := []struct {
+		name   string
+		now    time.Time
+		maxAge time.Duration
+		want   bool
+	}{
+		{"well within threshold", observedAt.Add(time.Minute), time.Hour, false},
+		{"exactly at threshold", observedAt.Add(time.Hour), time.Hour, false},
+		{"just beyond threshold", observedAt.Add(time.Hour + time.Nanosecond), time.Hour, true},
+		{"far beyond threshold", observedAt.Add(30 * 24 * time.Hour), time.Hour, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := stats.IsStale(tt.now, tt.maxAge); got != tt.want {
+				t.Errorf("IsStale() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFingerprintStatsIsStaleNeverObserved(t *testing.T) {
+	var stats baseline.FingerprintStats // zero value: Count == 0
+
+	if stats.IsStale(time.Now(), time.Nanosecond) {
+		t.Fatalf("IsStale() = true for a never-observed FingerprintStats, want false (cold start, not staleness)")
+	}
+}

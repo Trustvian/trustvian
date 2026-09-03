@@ -85,6 +85,21 @@ partial maturity, and if that state were ineligible for learning, it
 could never mature past it. See `eligibleForLearning`'s doc comment in
 [`engine.go`](../engine.go).
 
+**Persistence-adjacent note:** `store.FileStore`
+([ADR 0006](adr/0006-file-backed-persistent-store.md)) flushes to disk
+synchronously after every `Observe`, so an unclean shutdown loses at
+most the single in-flight observation, never a corrupted or
+partially-written file (writes are atomic via temp-file-plus-rename).
+This does not introduce a new poisoning vector: the gating above
+applies identically regardless of which `Store` implementation is
+configured — `FileStore` persists exactly what `Observe` already
+decided was eligible to learn, nothing more. Restarting a process using
+`FileStore` resumes from the same (gated) baseline it had before the
+restart, rather than the empty one `InMemory` would present — this is
+the intended fix for the "every restart quietly forgets an attacker's
+prior flagged behavior" gap an in-memory-only store would otherwise
+leave.
+
 ### Malicious agents / privilege escalation
 
 **Threat:** an AI agent or service account uses legitimate credentials

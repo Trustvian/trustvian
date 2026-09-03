@@ -145,3 +145,87 @@ func TestInMemoryObserveConcurrentDistinctKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestInMemoryFreezeMakesObserveANoOp(t *testing.T) {
+	s := store.NewInMemory()
+	fp := testFingerprint()
+	ctx := context.Background()
+
+	if _, err := s.Observe(ctx, testKey, fp, features.VolatileFeatures{}, time.Now()); err != nil {
+		t.Fatalf("Observe() error = %v", err)
+	}
+
+	s.Freeze(ctx, testKey)
+	if !s.IsFrozen(ctx, testKey) {
+		t.Fatalf("IsFrozen() = false immediately after Freeze()")
+	}
+
+	before, _ := s.Get(ctx, testKey)
+	got, err := s.Observe(ctx, testKey, fp, features.VolatileFeatures{}, time.Now())
+	if err != nil {
+		t.Fatalf("Observe() error = %v", err)
+	}
+	if got.Fingerprints[fp.ID].Count != before.Fingerprints[fp.ID].Count {
+		t.Fatalf("Observe() on a frozen key changed Count: before=%d after=%d",
+			before.Fingerprints[fp.ID].Count, got.Fingerprints[fp.ID].Count)
+	}
+	if got.Fingerprints[fp.ID].Count != 1 {
+		t.Fatalf("Count = %d after a frozen Observe, want unchanged at 1", got.Fingerprints[fp.ID].Count)
+	}
+
+	// Get must still return full history while frozen.
+	current, ok := s.Get(ctx, testKey)
+	if !ok || current.Fingerprints[fp.ID].Count != 1 {
+		t.Fatalf("Get() while frozen = %+v, ok=%v, want full history intact", current, ok)
+	}
+}
+
+func TestInMemoryUnfreezeResumesLearning(t *testing.T) {
+	s := store.NewInMemory()
+	fp := testFingerprint()
+	ctx := context.Background()
+
+	s.Freeze(ctx, testKey)
+	if _, err := s.Observe(ctx, testKey, fp, features.VolatileFeatures{}, time.Now()); err != nil {
+		t.Fatalf("Observe() error = %v", err)
+	}
+	if b, _ := s.Get(ctx, testKey); b.Fingerprints[fp.ID].Count != 0 {
+		t.Fatalf("Count = %d while frozen, want 0 (never learned)", b.Fingerprints[fp.ID].Count)
+	}
+
+	s.Unfreeze(ctx, testKey)
+	if s.IsFrozen(ctx, testKey) {
+		t.Fatalf("IsFrozen() = true after Unfreeze()")
+	}
+	if _, err := s.Observe(ctx, testKey, fp, features.VolatileFeatures{}, time.Now()); err != nil {
+		t.Fatalf("Observe() error = %v", err)
+	}
+	if b, _ := s.Get(ctx, testKey); b.Fingerprints[fp.ID].Count != 1 {
+		t.Fatalf("Count = %d after Unfreeze, want 1", b.Fingerprints[fp.ID].Count)
+	}
+}
+
+func TestInMemoryIsFrozenDefaultsFalse(t *testing.T) {
+	s := store.NewInMemory()
+	ctx := context.Background()
+
+	if s.IsFrozen(ctx, testKey) {
+		t.Fatalf("IsFrozen() = true for a key that was never touched, want false")
+	}
+}
+
+func TestInMemoryFreezeIsPerKey(t *testing.T) {
+	s := store.NewInMemory()
+	fp := testFingerprint()
+	ctx := context.Background()
+	otherKey := baseline.Key{ActorID: "other-actor", Environment: "production"}
+
+	s.Freeze(ctx, testKey)
+
+	if _, err := s.Observe(ctx, otherKey, fp, features.VolatileFeatures{}, time.Now()); err != nil {
+		t.Fatalf("Observe() error = %v", err)
+	}
+	if b, _ := s.Get(ctx, otherKey); b.Fingerprints[fp.ID].Count != 1 {
+		t.Fatalf("Count = %d for an unrelated, unfrozen key, want 1 (freeze must not leak across keys)", b.Fingerprints[fp.ID].Count)
+	}
+}
