@@ -111,12 +111,12 @@ of the same adapter boundary, and only the input direction exists so
 far. `trustvian.behavior.id` in particular has no defined meaning yet
 in this codebase (it's carried over from the spec's original naming
 and hasn't been reconciled against `Fingerprint.ID`, which may be all
-that's needed). See [ROADMAP.md](ROADMAP.md) — this is Phase 2
-(OpenTelemetry) work, planned but not started, naturally paired with
-the Collector processor below since a Collector processor is the most
-likely place enrichment actually happens (enriching a trace as it
-passes through, rather than the core engine reaching back into
-telemetry it doesn't own).
+that's needed). See [ROADMAP.md](ROADMAP.md) (`v0.2`) and
+[`tasks/008-otel.md`](tasks/008-otel.md) for the scoped implementation
+task, naturally paired with the Collector processor below since a
+Collector processor is the most likely place enrichment actually
+happens (enriching a trace as it passes through, rather than the core
+engine reaching back into telemetry it doesn't own).
 
 ## The OTel Collector processor (planned, separate module)
 
@@ -134,7 +134,11 @@ intentionally **not** part of this module:
   privileged internal dependency.
 
 See [ADR 0003](adr/0003-opentelemetry-adapter-single-module.md) for
-the full reasoning, and [ROADMAP.md](ROADMAP.md) for status.
+the full reasoning, [ROADMAP.md](ROADMAP.md) (`v0.2`) for status, and
+[`tasks/009-otel-collector.md`](tasks/009-otel-collector.md) for the
+scoped implementation task — including the open question of whether
+building this is what finally justifies revisiting
+[ADR 0002](adr/0002-public-api-boundary.md)'s public API boundary.
 
 ## Best-effort, not validated
 

@@ -515,6 +515,15 @@ BLOCK
 
 ## 18. Roadmap
 
+The phases below are this document's original, long-term framing.
+[`docs/ROADMAP.md`](docs/ROADMAP.md) is the authoritative, current
+roadmap — organized by shippable milestone (`v0.1`/`v0.2`/`v0.3`/AI
+Agent/Control), reconciled against what's actually implemented today,
+with a detailed, independently-scoped task breakdown under
+[`docs/tasks/`](docs/tasks/). Where the two differ (e.g. this
+document's Phase ordering vs. `docs/ROADMAP.md`'s milestone grouping),
+`docs/ROADMAP.md` reflects the real, current plan.
+
 ### Phase 0 — Foundation
 
 - Go module

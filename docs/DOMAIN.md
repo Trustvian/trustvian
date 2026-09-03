@@ -182,3 +182,9 @@ this together: the original `Event`, `Features`, `Fingerprint`,
 final `Decision` + `Explanation`. Nothing is discarded on the way to
 the final answer — that completeness is what makes every decision
 explainable end to end, not just at the policy stage.
+
+This document describes the domain model as it exists today. Planned
+extensions to it (a `Target` category dimension, a frequency-deviation
+anomaly signal, AI-agent session/delegation fields, and others) are
+scoped in [ROADMAP.md](ROADMAP.md) and [`tasks/`](tasks/) — each will
+update this document when it actually ships, not before.

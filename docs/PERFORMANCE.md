@@ -114,6 +114,10 @@ pure function with no shared mutable state.
 
 ## What's not benchmarked (yet)
 
+Both gaps below are scoped, concrete tasks — see
+[`tasks/011-performance.md`](tasks/011-performance.md) — not
+open-ended future work.
+
 - `internal/otel.EventFromSpan` — not on Trustvian's own hot path
   today (it's a conversion step a caller runs before `Analyze`, not
   something `Engine` calls), so it hasn't been prioritized. Worth

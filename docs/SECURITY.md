@@ -119,6 +119,47 @@ verified directly by
 `TestEvaluateFailsClosedOnEmptyDefaultReason` in
 [`internal/policy/policy_test.go`](../internal/policy/policy_test.go).
 
+### Malformed events / extreme input values
+
+**Threat:** a producer sends a structurally valid but adversarial
+`Event` — `NaN`/`Inf` `IdentityConfidence`, empty or extremely long
+identifiers, negative durations, deeply nested or very large
+`Attributes` — attempting to crash the engine, corrupt a score, or
+smuggle bad data past validation.
+
+**Status: partially addressed; not yet a dedicated, exhaustive test
+suite.** `Event.Validate()` already rejects several classes of bad
+input (empty required fields, out-of-range `IdentityConfidence`,
+invalid enum values — see `event/event_test.go`), and `trust.Compute`
+defensively clamps its numeric inputs to `[0,1]` regardless of what's
+passed (`internal/trust/trust.go`). What's missing is a systematic,
+threat-labeled sweep across the full space of adversarial input
+(`NaN`/`Inf` specifically, oversized `Attributes`, extreme string
+lengths) rather than the incidental coverage that exists today. See
+[`docs/tasks/012-security-tests.md`](tasks/012-security-tests.md) —
+this is that task's explicit scope.
+
+### Resource exhaustion
+
+**Threat:** an attacker (or a misbehaving legitimate producer) sends
+input designed to consume disproportionate CPU or memory relative to
+its size — an unbounded `Attributes` map, or an actor generating an
+unbounded number of distinct fingerprints to grow `Baseline` without
+limit.
+
+**Status: not yet tested; behavior is currently "whatever Go's map and
+slice growth does," not a deliberately engineered bound.** There is no
+per-event size limit on `Attributes` today, and `store.InMemory` has
+no eviction policy — see
+[PERFORMANCE.md § what's not benchmarked](PERFORMANCE.md#whats-not-benchmarked-yet)
+for the related (unmeasured) memory-growth question. **Future
+mitigation:** [`docs/tasks/012-security-tests.md`](tasks/012-security-tests.md)
+scopes the safety-property tests (no panic, no deadlock, cost
+proportional to input); [`docs/tasks/011-performance.md`](tasks/011-performance.md)
+scopes characterizing the growth curve itself. Neither task commits to
+adding an enforced limit — that's a decision to make only if the
+characterization shows it's actually needed, not preemptively.
+
 ### Future multi-tenant isolation
 
 **Threat:** in a multi-tenant deployment, one tenant's behavioral data

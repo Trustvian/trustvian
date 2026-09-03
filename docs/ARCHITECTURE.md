@@ -8,7 +8,8 @@ root (`Engine`, root package) and two adapters (`cmd/trustvian`,
 means, [SECURITY.md](SECURITY.md) for the threat model, and
 [PERFORMANCE.md](PERFORMANCE.md) for measured hot-path behavior.
 Significant decisions behind this shape are recorded as ADRs in
-[`adr/`](adr/).
+[`adr/`](adr/). What's planned to change this shape next — and in what
+order — is in [ROADMAP.md](ROADMAP.md) and [`tasks/`](tasks/).
 
 ## System diagram
 
@@ -222,7 +223,10 @@ public API (`Engine`, `Result`) or of telemetry `internal/otel`
 enriches, exactly like any other embedder — it would not become a
 dependency the core links against, and the core would gain no
 awareness of multi-tenancy, RBAC, or centralized management to support
-it. See [ROADMAP.md](ROADMAP.md) for what's implemented vs. planned.
+it. See [ROADMAP.md](ROADMAP.md) for what's implemented vs. planned,
+and [`tasks/016-control.md`](tasks/016-control.md) for this constraint
+recorded as a standing placeholder ahead of any real Control design
+work.
 
 ## Hot-path protection in practice
 
