@@ -5,6 +5,26 @@
 **Secondary tagline:** **From Behavior to Trust.**  
 **AI-agent positioning:** **Don't just authenticate your agents. Trust their behavior.**
 
+## Current Implementation Status
+
+This document is Trustvian's long-term product vision. It is not a
+description of what's built today — for that, see
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (system architecture,
+package structure, dependency direction), [`docs/DOMAIN.md`](docs/DOMAIN.md)
+(the actual domain model), [`docs/SECURITY.md`](docs/SECURITY.md),
+[`docs/PERFORMANCE.md`](docs/PERFORMANCE.md), and
+[`docs/ROADMAP.md`](docs/ROADMAP.md) (what's implemented vs. planned vs.
+future). Where this document's architecture sketches (repository
+layout, package names) differ from those docs, the `docs/` set is
+authoritative — it describes the real, tested implementation; sections
+below are retained as directional/aspirational context for where the
+product is headed. Notably: the core engine follows a **hexagonal
+architecture with no `pkg/` layer** (public API = root package +
+`event`; everything else under `internal/`) rather than the `pkg/` +
+`internal/` split sketched in §9 below — see
+[ADR 0001](docs/adr/0001-hexagonal-core-and-pipeline-shape.md) and
+[ADR 0002](docs/adr/0002-public-api-boundary.md) for why.
+
 ## 1. Vision
 
 Trustvian is an open-source, Go-based behavioral security engine that transforms runtime telemetry and application behavior into actionable security decisions.
@@ -238,38 +258,40 @@ internal/signal/
 
 ## 9. Repository Structure
 
+As built (see [Current Implementation Status](#current-implementation-status)
+above and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the
+authoritative, current version of this diagram): no `pkg/` layer —
+`internal/` is Go's own encapsulation mechanism, and only the root
+package plus `event/` are public.
+
 ```text
 trustvian/
+├── trustvian.go, engine.go, options.go, result.go   # public API (root package)
+├── event/                                              # public: Event, Actor, Operation, Target, Context
 ├── cmd/
-│   └── trustvian/
-├── pkg/
-│   ├── engine/
+│   └── trustvian/                                       # CLI
+├── internal/
+│   ├── features/
 │   ├── fingerprint/
 │   ├── baseline/
+│   ├── store/
 │   ├── anomaly/
 │   ├── trust/
 │   ├── policy/
-│   └── otel/
-├── internal/
-│   ├── features/
-│   ├── sequence/
-│   ├── signal/
-│   │   ├── fft/
-│   │   ├── complex/
-│   │   └── spectral/
-│   └── storage/
-├── examples/
-│   ├── basic/
-│   ├── otel/
-│   └── ai-agent/
+│   └── otel/                                            # the only package depending on OpenTelemetry
 ├── docs/
-├── test/
-├── Dockerfile
+│   └── adr/
 ├── go.mod
 ├── LICENSE
 ├── README.md
-└── CONTRIBUTING.md
+└── Makefile
 ```
+
+`internal/signal/{fft,complex,spectral}` (§8, the optional
+signal-processing layer) and a dedicated `internal/sequence` package
+remain future work — see [`docs/ROADMAP.md`](docs/ROADMAP.md).
+`examples/`, a `Dockerfile`, and `CONTRIBUTING.md` are planned (Phase
+5) but not present yet.
 
 ## 10. CLI
 

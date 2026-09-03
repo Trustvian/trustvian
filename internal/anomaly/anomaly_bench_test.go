@@ -23,7 +23,7 @@ func BenchmarkScoreKnownFamiliar(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		_ = anomaly.Score(feat, bl, cfg)
+		_ = anomaly.Score(feat, fp, bl, cfg)
 	}
 }
 
@@ -36,11 +36,12 @@ func BenchmarkScoreNovelWithAllSignals(b *testing.B) {
 		Stable:   stable("secrets-manager"),
 		Volatile: features.VolatileFeatures{Error: true},
 	}
+	fp := fingerprint.Compute(feat.Stable)
 	cfg := anomaly.DefaultConfig()
 	cfg.SensitiveTargetFloor = map[string]float64{"secrets-manager": 0.7}
 
 	b.ReportAllocs()
 	for b.Loop() {
-		_ = anomaly.Score(feat, empty, cfg)
+		_ = anomaly.Score(feat, fp, empty, cfg)
 	}
 }

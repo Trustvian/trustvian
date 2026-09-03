@@ -39,11 +39,12 @@ func matureBaseline(fp fingerprint.Fingerprint, count int, latencyMS float64) ba
 func TestScoreNovelDestinationIsAnomalous(t *testing.T) {
 	knownFP := fingerprint.Compute(stable("payment-db"))
 	novelFeat := features.Features{Stable: stable("admin-db")}
+	novelFP := fingerprint.Compute(novelFeat.Stable)
 
 	b := matureBaseline(knownFP, 50, 10)
 	cfg := anomaly.DefaultConfig()
 
-	got := anomaly.Score(novelFeat, b, cfg)
+	got := anomaly.Score(novelFeat, novelFP, b, cfg)
 
 	if got.Score < 0.9 {
 		t.Fatalf("Score = %v for a fingerprint never seen for this actor, want >= 0.9", got.Score)
@@ -65,7 +66,7 @@ func TestScoreLatencySpikeIsAnomalousEvenWhenFamiliar(t *testing.T) {
 		Volatile: features.VolatileFeatures{HasLatency: true, Latency: 500 * time.Millisecond},
 	}
 
-	got := anomaly.Score(spike, b, anomaly.DefaultConfig())
+	got := anomaly.Score(spike, fp, b, anomaly.DefaultConfig())
 
 	if got.Confidence < 0.99 {
 		t.Fatalf("Confidence = %v for a fully mature fingerprint, want ~1", got.Confidence)
@@ -80,9 +81,10 @@ func TestScoreLatencySpikeIsAnomalousEvenWhenFamiliar(t *testing.T) {
 
 func TestScoreColdStartCapsConfidenceNotScore(t *testing.T) {
 	feat := features.Features{Stable: stable("payment-db")}
+	fp := fingerprint.Compute(feat.Stable)
 	empty := baseline.New(testKey)
 
-	got := anomaly.Score(feat, empty, anomaly.DefaultConfig())
+	got := anomaly.Score(feat, fp, empty, anomaly.DefaultConfig())
 
 	if got.Confidence != 0 {
 		t.Fatalf("Confidence = %v on an empty baseline, want 0 (cold start)", got.Confidence)
@@ -107,7 +109,7 @@ func TestScoreSensitiveTargetFloorPersistsDespiteFamiliarity(t *testing.T) {
 		Volatile: features.VolatileFeatures{HasLatency: true, Latency: 5 * time.Millisecond},
 	}
 
-	got := anomaly.Score(feat, b, cfg)
+	got := anomaly.Score(feat, fp, b, cfg)
 
 	if got.Confidence < 0.99 {
 		t.Fatalf("Confidence = %v, want ~1 (this scenario is deliberately maximally familiar)", got.Confidence)
@@ -129,7 +131,7 @@ func TestScoreFamiliarConsistentBehaviorIsLowAnomaly(t *testing.T) {
 		Volatile: features.VolatileFeatures{HasLatency: true, Latency: 10 * time.Millisecond},
 	}
 
-	got := anomaly.Score(feat, b, anomaly.DefaultConfig())
+	got := anomaly.Score(feat, fp, b, anomaly.DefaultConfig())
 
 	if got.Score > 0.1 {
 		t.Fatalf("Score = %v for behavior matching a mature, consistent baseline, want ~0", got.Score)
@@ -144,7 +146,7 @@ func TestScoreMaturityRampsPartially(t *testing.T) {
 	cfg := anomaly.DefaultConfig() // MinObservations: 20
 	b := matureBaseline(fp, 10, 10)
 
-	got := anomaly.Score(features.Features{Stable: stable("payment-db")}, b, cfg)
+	got := anomaly.Score(features.Features{Stable: stable("payment-db")}, fp, b, cfg)
 
 	if got.Confidence != 0.5 {
 		t.Fatalf("Confidence = %v for 10/20 observations, want exactly 0.5", got.Confidence)
@@ -163,7 +165,7 @@ func TestScoreErrorAgainstCleanBaselineIsAnomalous(t *testing.T) {
 		Volatile: features.VolatileFeatures{Error: true},
 	}
 
-	got := anomaly.Score(feat, b, anomaly.DefaultConfig())
+	got := anomaly.Score(feat, fp, b, anomaly.DefaultConfig())
 
 	if !hasSignal(got.Contributors, "error_deviation") {
 		t.Fatalf("Contributors = %+v, want error_deviation", got.Contributors)
@@ -182,7 +184,7 @@ func TestScoreErrorAgainstErrorProneBaselineIsNotAnomalous(t *testing.T) {
 		Volatile: features.VolatileFeatures{Error: true},
 	}
 
-	got := anomaly.Score(feat, b, anomaly.DefaultConfig())
+	got := anomaly.Score(feat, fp, b, anomaly.DefaultConfig())
 
 	if hasSignal(got.Contributors, "error_deviation") {
 		t.Fatalf("Contributors = %+v, error_deviation should not fire when errors are the norm", got.Contributors)
@@ -203,7 +205,7 @@ func TestScoreMatchesDocumentedNoisyOrFormula(t *testing.T) {
 	}
 
 	feat := features.Features{Stable: stable("secrets-manager")}
-	got := anomaly.Score(feat, b, cfg)
+	got := anomaly.Score(feat, fp, b, cfg)
 
 	noveltyContribution := 0.5 * cfg.NoveltyWeight
 	floorContribution := 0.5 * 1.0
@@ -216,9 +218,10 @@ func TestScoreMatchesDocumentedNoisyOrFormula(t *testing.T) {
 
 func TestScoreFingerprintIDMatchesComputedFingerprint(t *testing.T) {
 	feat := features.Features{Stable: stable("payment-db")}
-	want := fingerprint.Compute(feat.Stable).ID
+	fp := fingerprint.Compute(feat.Stable)
+	want := fp.ID
 
-	got := anomaly.Score(feat, baseline.New(testKey), anomaly.DefaultConfig())
+	got := anomaly.Score(feat, fp, baseline.New(testKey), anomaly.DefaultConfig())
 
 	if got.FingerprintID != want {
 		t.Fatalf("FingerprintID = %q, want %q", got.FingerprintID, want)

@@ -39,6 +39,16 @@ point of that package's sharded-lock design.
   should be cheap (the "nothing is wrong" case), fix it before moving
   on. Don't defer a hot-path regression just because the acceptance
   criteria didn't explicitly name it.
+- Benchmark every pipeline stage individually, not just the composed
+  `Engine.Analyze` — a missing per-stage benchmark can hide a
+  cross-package inefficiency the composed benchmark's total number
+  won't point at. Adding `fingerprint.Compute`'s own benchmark during
+  an architecture-hardening pass is what surfaced that
+  `Engine.Analyze` was computing the fingerprint twice per call (once
+  directly, once again inside `anomaly.Score`) — a real ~23%
+  latency / ~44% allocation cost that had been invisible in
+  `Engine.Analyze`'s own benchmark alone. See
+  [`docs/adr/0005-fingerprint-computed-once-per-analyze.md`](../../docs/adr/0005-fingerprint-computed-once-per-analyze.md).
 
 ## Things that cannot be faked
 

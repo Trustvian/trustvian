@@ -1,5 +1,11 @@
 # Architecture
 
+For the full human-facing writeup (system diagram, dependency-direction
+verification, storage/OTel boundaries) see
+[`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md); for why specific
+non-obvious decisions were made, see [`docs/adr/`](../../docs/adr/).
+This file is the condensed version for driving day-to-day changes.
+
 ## The pipeline
 
 ```

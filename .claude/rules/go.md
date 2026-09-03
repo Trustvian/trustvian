@@ -1,8 +1,9 @@
 # Go Conventions
 
 These are the conventions this repository actually follows, not generic
-Go advice. When in doubt, match the existing packages (`internal/event`
-… `internal/otel`) rather than introducing a new style.
+Go advice. When in doubt, match the existing packages (`event`,
+`internal/features` … `internal/otel`) rather than introducing a new
+style.
 
 ## Toolchain
 

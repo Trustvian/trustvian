@@ -104,7 +104,7 @@ type Result struct {
 
 Every field is readable from outside the module even though several of
 the field *types* live under `internal/` — see
-[Architecture § package boundaries](architecture.md#package-boundaries)
+[Architecture § package boundaries](ARCHITECTURE.md#package-boundaries)
 for why that's fine. In practice:
 
 ```go
@@ -235,7 +235,7 @@ trustvian.NewEngine(
 option freely; a separate Go module that only depends on
 `github.com/Trustvian/trustvian` cannot construct those values yet.**
 This isn't an oversight — see
-[Architecture § package boundaries](architecture.md#package-boundaries)
+[Architecture § package boundaries](ARCHITECTURE.md#package-boundaries)
 for the reasoning. Promoting those types to a public package is a
 reasonable next step once an external consumer actually needs it.
 
