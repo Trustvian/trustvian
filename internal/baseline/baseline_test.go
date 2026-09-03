@@ -189,11 +189,16 @@ func TestFingerprintStatsLatencyStdDevIsNonNegative(t *testing.T) {
 		b = b.Observe(fp, features.VolatileFeatures{HasLatency: true, Latency: l}, time.Now())
 	}
 
-	stdDev := b.Fingerprints[fp.ID].LatencyStdDevDuration()
+	stats := b.Fingerprints[fp.ID]
+	if stats.LatencyVariance < 0 {
+		t.Fatalf("LatencyVariance = %v, must be non-negative", stats.LatencyVariance)
+	}
+	if math.IsNaN(stats.LatencyVariance) {
+		t.Fatalf("LatencyVariance is NaN")
+	}
+
+	stdDev := stats.LatencyStdDevDuration()
 	if stdDev < 0 {
 		t.Fatalf("LatencyStdDevDuration() = %v, must be non-negative", stdDev)
-	}
-	if math.IsNaN(float64(stdDev)) {
-		t.Fatalf("LatencyStdDevDuration() is NaN")
 	}
 }

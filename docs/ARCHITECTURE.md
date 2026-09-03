@@ -1,5 +1,58 @@
 # Architecture
 
+Trustvian is a single-module, single-tenant Go engine built as a
+hexagonal core (`event` + `internal/*`) wrapped by a thin composition
+root (`Engine`, root package) and two adapters (`cmd/trustvian`,
+`internal/otel`). This document explains the system's shape; see
+[DOMAIN.md](DOMAIN.md) for what each pipeline stage's data actually
+means, [SECURITY.md](SECURITY.md) for the threat model, and
+[PERFORMANCE.md](PERFORMANCE.md) for measured hot-path behavior.
+Significant decisions behind this shape are recorded as ADRs in
+[`adr/`](adr/).
+
+## System diagram
+
+```mermaid
+flowchart LR
+    subgraph ext["External"]
+        OTelSDK["Application / OTel SDK / Collector"]
+        JSONFile["JSON file"]
+    end
+
+    subgraph adapters["Adapters (internal/, or in-module)"]
+        OTelAdapter["internal/otel\n(EventFromSpan)"]
+        CLI["cmd/trustvian\n(analyze, baseline build)"]
+    end
+
+    subgraph core["Core (event + internal/*) — zero infrastructure deps"]
+        Event["event.Event"]
+        Features["internal/features"]
+        Fingerprint["internal/fingerprint"]
+        Baseline["internal/baseline\n+ internal/store"]
+        Anomaly["internal/anomaly"]
+        Trust["internal/trust"]
+        Policy["internal/policy"]
+    end
+
+    Engine["Engine (root package)\ncomposition root"]
+
+    OTelSDK -->|span| OTelAdapter
+    JSONFile -->|JSON| CLI
+    OTelAdapter -->|Event| Event
+    CLI -->|Event| Event
+    Event --> Features --> Fingerprint --> Baseline --> Anomaly --> Trust --> Policy
+    Policy -->|Decision| Engine
+    Engine -.wires.-> Event
+    Engine -.wires.-> Baseline
+    Engine -.wires.-> Policy
+    Engine -->|Result| Consumer["Caller: CLI output, future export/Control"]
+```
+
+Dotted edges are composition (`Engine` constructs and holds these), not
+data flow. Nothing under `core` imports `adapters`, `Engine`, or each
+other except strictly downward along the pipeline — see
+[Dependency direction](#dependency-direction).
+
 ## The pipeline
 
 Every event flows through the same seven stages, in the same order:
@@ -105,6 +158,84 @@ itself) has zero OpenTelemetry dependency. A future OpenTelemetry
 Collector processor is a separate, heavier deliverable (it needs the
 `otelcol-builder` toolchain) that will live outside this module
 entirely, so that dependency tree never touches the core engine's.
+
+## Dependency direction
+
+Verified directly, not asserted — `go list -deps` on every package:
+
+```
+event            → (stdlib only)
+internal/features    → event
+internal/fingerprint → internal/features
+internal/baseline    → internal/features, internal/fingerprint
+internal/store       → internal/baseline, internal/features, internal/fingerprint
+internal/anomaly     → internal/baseline, internal/features, internal/fingerprint
+internal/trust       → internal/anomaly
+internal/policy      → event, internal/features, internal/trust
+internal/otel        → event, internal/features   (+ go.opentelemetry.io/otel*)
+trustvian (root)     → event, internal/{anomaly,baseline,features,fingerprint,policy,store,trust}
+cmd/trustvian        → trustvian (root), event, internal/policy, internal/trust
+```
+
+Every edge points strictly toward an earlier pipeline stage or a leaf
+(`event`). Nothing under `internal/` imports the root package or
+`cmd/`, so there is no cycle: `internal/otel` is the only package with
+an external (non-stdlib) import, and the root package + `cmd/trustvian`
+are the only ones that assemble the pipeline stages together.
+
+## Storage boundary
+
+`internal/store.Store` is the only seam between the pipeline and how
+`Baseline` data is held:
+
+```go
+type Store interface {
+	Get(ctx context.Context, key baseline.Key) (baseline.Baseline, bool)
+	Observe(ctx context.Context, key baseline.Key, fp fingerprint.Fingerprint, vol features.VolatileFeatures, now time.Time) (baseline.Baseline, error)
+}
+```
+
+Two methods, matching `Baseline`'s actual access pattern exactly — not
+a generic repository. The only implementation today is
+`store.InMemory` (baselines do not survive a process restart; see
+[Limitations](../README.md#limitations) and
+[ROADMAP.md](ROADMAP.md)). No database driver is imported anywhere in
+this module. A future persistent implementation (file-backed, or
+backed by an external store) is additive: implement `Store`, wire it
+in via `trustvian.WithStore(...)`, and every pipeline package is
+unaffected — none of them know `Store` exists; only `Engine` does.
+
+## Relationship to Trustvian Control/Cloud
+
+Nothing in this repository implements Trustvian Control or Trustvian
+Cloud, and this repository has no dependency — direct or planned — on
+either. The relationship is one-directional and adapter-shaped, the
+same pattern as OpenTelemetry and storage:
+
+```
+Trustvian Control/Cloud  --(future, separate deliverable)-->  reads Decisions/exports from
+                                                                the core engine via its public API
+```
+
+A future Control/Cloud product would be a *consumer* of this module's
+public API (`Engine`, `Result`) or of telemetry `internal/otel`
+enriches, exactly like any other embedder — it would not become a
+dependency the core links against, and the core would gain no
+awareness of multi-tenancy, RBAC, or centralized management to support
+it. See [ROADMAP.md](ROADMAP.md) for what's implemented vs. planned.
+
+## Hot-path protection in practice
+
+This isn't just a stated principle — it's enforced by benchmarking.
+Adding `internal/fingerprint`, `internal/baseline`, `internal/trust`,
+and `internal/policy` benchmarks (see [PERFORMANCE.md](PERFORMANCE.md))
+surfaced a real, previously invisible cost: `Engine.Analyze` was
+calling `fingerprint.Compute` twice per event — once directly, once
+again inside `anomaly.Score`. Passing the already-computed
+`fingerprint.Fingerprint` into `Score` instead of recomputing it
+measured a 23% latency reduction and 44% fewer allocations on
+`Engine.Analyze`, and took `anomaly.Score`'s common-case path to zero
+allocations. See [ADR 0005](adr/0005-fingerprint-computed-once-per-analyze.md).
 
 ## Design choices worth knowing before you extend this
 

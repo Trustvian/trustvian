@@ -95,8 +95,14 @@ type Anomaly struct {
 // Score derives an Anomaly from feat and bl using cfg's thresholds and
 // weights. It is a pure function: identical input always produces
 // identical output.
-func Score(feat features.Features, bl baseline.Baseline, cfg Config) Anomaly {
-	fp := fingerprint.Compute(feat.Stable)
+//
+// fp must be fingerprint.Compute(feat.Stable) — callers that also need
+// the Fingerprint themselves (as Engine does, for Result.Fingerprint)
+// compute it once and pass it in here, rather than Score recomputing it
+// internally. On the Analyze hot path this halves the fingerprint-related
+// allocations per call; see internal/fingerprint's benchmark and
+// docs/PERFORMANCE.md.
+func Score(feat features.Features, fp fingerprint.Fingerprint, bl baseline.Baseline, cfg Config) Anomaly {
 	stats, known := bl.Fingerprints[fp.ID]
 
 	familiarity := 0.0

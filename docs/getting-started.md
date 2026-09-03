@@ -66,7 +66,7 @@ Trustvian has ever seen this actor, so it's maximally novel by
 definition. But `Trust: 0.95` and `Decision: ALLOW` show the full
 picture: novelty on its own, from an identity Trustvian has high
 confidence in, isn't treated as dangerous. This split is deliberate —
-see [Architecture](architecture.md#cold-start-two-numbers-not-one) and
+see [Architecture](ARCHITECTURE.md#cold-start-two-numbers-not-one) and
 [Use Cases](use-cases.md) for why.
 
 Full command reference: [CLI Guide](cli-guide.md).
@@ -119,6 +119,6 @@ Full reference and a worked multi-event example: [Go SDK Guide](sdk-guide.md).
 ## Where to next
 
 - Writing custom rules (`BLOCK`/`ALERT`/`ALLOW` decisions): [Policy Guide](policy-guide.md)
-- Feeding in OpenTelemetry spans: [OpenTelemetry Adapter](opentelemetry.md)
+- Feeding in OpenTelemetry spans: [OpenTelemetry Adapter](OPENTELEMETRY.md)
 - Four worked real-world scenarios: [Use Cases](use-cases.md)
-- How the pieces fit together: [Architecture](architecture.md)
+- How the pieces fit together: [Architecture](ARCHITECTURE.md)

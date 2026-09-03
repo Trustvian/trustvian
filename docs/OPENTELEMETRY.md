@@ -4,7 +4,7 @@
 `go.opentelemetry.io/otel*`. The core engine (`event` through
 `internal/policy`, and `Engine` itself) has zero OpenTelemetry
 dependency — see
-[Architecture § package boundaries](architecture.md#package-boundaries).
+[Architecture § package boundaries](ARCHITECTURE.md#package-boundaries).
 
 It's currently `internal/`, so — like `Policy` and the `Config` types —
 it's usable by code inside this repository (this is where a future
@@ -86,6 +86,55 @@ maps to an `Event` with `Actor.Type = ActorTypeAIAgent`,
 `Operation.Category = OperationCategoryTool` — exactly the shape the
 [Use Cases § AI-agent security](use-cases.md#ai-agent-security) example
 constructs directly as JSON, just sourced from a live span instead.
+
+## Trustvian output attributes (not yet implemented)
+
+The project spec names six `trustvian.*` attributes meant to *enrich*
+telemetry with Trustvian's verdict, for export back into the
+observability pipeline:
+
+| Attribute | Meaning |
+|---|---|
+| `trustvian.anomaly.score` | `Anomaly.Score` |
+| `trustvian.trust.score` | `Trust.Score` |
+| `trustvian.risk.level` | `Trust.Risk` |
+| `trustvian.decision` | `Result.Decision` |
+| `trustvian.fingerprint.id` | `Fingerprint.ID` |
+| `trustvian.behavior.id` | reserved; not yet defined — see below |
+
+**These are not implemented anywhere in this repository today.**
+`internal/otel.EventFromSpan` is inbound-only (span → `Event`); nothing
+writes attributes back onto a span or exports them. Do not confuse
+these *output* attributes with the four *input* override attributes
+above (`trustvian.actor.id`, etc.) — the two serve opposite directions
+of the same adapter boundary, and only the input direction exists so
+far. `trustvian.behavior.id` in particular has no defined meaning yet
+in this codebase (it's carried over from the spec's original naming
+and hasn't been reconciled against `Fingerprint.ID`, which may be all
+that's needed). See [ROADMAP.md](ROADMAP.md) — this is Phase 2
+(OpenTelemetry) work, planned but not started, naturally paired with
+the Collector processor below since a Collector processor is the most
+likely place enrichment actually happens (enriching a trace as it
+passes through, rather than the core engine reaching back into
+telemetry it doesn't own).
+
+## The OTel Collector processor (planned, separate module)
+
+The spec's Phase 2 also calls for an OTel Collector processor — a
+deployable Collector component that scores telemetry in-flight and
+(once the output attributes above exist) enriches it. This is
+intentionally **not** part of this module:
+
+- It depends on the `otelcol-builder` toolchain, a materially heavier
+  dependency tree than the lightweight OTel API/SDK packages
+  `internal/otel` uses.
+- Building it means importing this module's public API (`Engine`) plus
+  `internal/otel`'s mapping (or a similar one), from a separate
+  repository/module — the same shape as any other embedder, not a
+  privileged internal dependency.
+
+See [ADR 0003](adr/0003-opentelemetry-adapter-single-module.md) for
+the full reasoning, and [ROADMAP.md](ROADMAP.md) for status.
 
 ## Best-effort, not validated
 

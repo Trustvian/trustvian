@@ -220,7 +220,7 @@ Reason:   trust score indicates high or critical risk
 For a stronger version of this scenario — where a sensitive
 destination stays flagged **even once fully familiar** — see
 `anomaly.Config.SensitiveTargetFloor` in
-[Architecture § design choices](architecture.md#design-choices-worth-knowing-before-you-extend-this)
+[Architecture § design choices](ARCHITECTURE.md#design-choices-worth-knowing-before-you-extend-this)
 and the end-to-end proof in
 [`engine_test.go`'s `TestAnalyzeSensitiveTargetFloorEndToEnd`](../engine_test.go).
 That's a Go-SDK-only capability today (see
@@ -232,7 +232,7 @@ not yet reachable from the CLI.
 The same well-established, high-confidence service account performs an
 operation it's never performed before — a bulk export, five seconds
 long. This is the case that most directly demonstrates the
-[cold-start design](architecture.md#cold-start-two-numbers-not-one):
+[cold-start design](ARCHITECTURE.md#cold-start-two-numbers-not-one):
 full novelty (`Anomaly: 1.00`) from a trusted identity does **not**
 default to `BLOCK`.
 

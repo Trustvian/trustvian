@@ -5,6 +5,18 @@
 Trustvian is an open-source behavioral security and trust engine
 for applications, services, and AI agents.
 
+## Documentation
+
+The rules below are the condensed, durable principles. For the current
+implementation's details — package structure, dependency direction,
+domain model, security model, measured performance, and why
+significant decisions were made — see `docs/` (`ARCHITECTURE.md`,
+`DOMAIN.md`, `SECURITY.md`, `PERFORMANCE.md`, `ROADMAP.md`, `adr/`) and
+`.claude/rules/`. Keep `docs/` in sync with the code: when an
+architectural change lands, update the relevant `docs/` file(s) and
+add an ADR under `docs/adr/` if a future developer would reasonably
+ask "why did we do this?"
+
 ## Language
 
 Go.
