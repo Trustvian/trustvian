@@ -127,13 +127,7 @@ const (
 	TargetCategoryDatabase    TargetCategory = "database"
 )
 
-// Valid reports whether c is one of the recognized TargetCategory values
-// (including unspecified). It is exported — unlike the sibling valid()
-// methods on ActorType/OperationCategory/OperationDirection, which are
-// only ever exercised indirectly through Validate() — because
-// TargetCategory is deliberately never checked by Validate() (see Target's
-// doc comment) and needs to be checkable directly by callers and tests.
-func (c TargetCategory) Valid() bool {
+func (c TargetCategory) valid() bool {
 	switch c {
 	case TargetCategoryUnspecified, TargetCategoryInternal, TargetCategoryExternal, TargetCategoryDatabase:
 		return true
