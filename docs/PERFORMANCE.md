@@ -41,10 +41,14 @@ Environment: Go 1.27, darwin/arm64, Apple M3 Pro. Run with
 | `baseline.Observe` (direct, same fingerprint) | 163.2 | 432 | 3 |
 | `anomaly.Score` (familiar, no signal fires) | 29.8 | 0 | 0 |
 | `anomaly.Score` (novel, every signal fires) | 227.2 | 448 | 5 |
-| `store.InMemory.Observe` (same key, sequential) | 288.9 | 432 | 3 |
-| `store.InMemory.Observe` (same key, 12-way parallel) | 357.2 | 432 | 3 |
-| `store.InMemory.Observe` (distinct keys, sequential) | 288.1 | 432 | 3 |
-| `store.InMemory.Observe` (distinct keys, 12-way parallel) | 150.6 | 432 | 3 |
+| `store.InMemory.Observe` (same key, sequential) | 292.7 | 432 | 3 |
+| `store.InMemory.Observe` (same key, 12-way parallel) | 359.4 | 432 | 3 |
+| `store.InMemory.Observe` (distinct keys, sequential) | 296.4 | 432 | 3 |
+| `store.InMemory.Observe` (distinct keys, 12-way parallel) | 149.2 | 432 | 3 |
+| `store.FileStore.Observe` (same key, sequential) | 3,912,188 | 3,567 | 24 |
+| `store.FileStore.Observe` (same key, 12-way parallel) | 3,410,570 | 3,681 | 24 |
+| `store.FileStore.Observe` (distinct keys, sequential) | 3,750,412 | 3,696 | 24 |
+| `store.FileStore.Observe` (distinct keys, 12-way parallel) | 3,799,162 | 14,456 | 51 |
 | `Engine.Analyze` (sequential) | 440.8 | 448 | 15 |
 | `Engine.Analyze` (12-way parallel) | 170.1 | 448 | 15 |
 
@@ -72,11 +76,28 @@ Explainability's cost is proportional to how much there is to explain,
 not paid unconditionally on every call.
 
 **Sharded locking measurably works.** `store.InMemory.Observe` under
-12-way concurrent load on distinct keys (150.6ns) is roughly 2.4×
-faster than 12-way concurrent load on the *same* key (357.2ns) — this
+12-way concurrent load on distinct keys (149.2ns) is roughly 2.4×
+faster than 12-way concurrent load on the *same* key (359.4ns) — this
 is the per-`Key`-sharded lock in `internal/store` doing its job: two
 different actors never contend with each other, only concurrent
 updates to the same actor's baseline do.
+
+**Persistence costs roughly four orders of magnitude, and that's the
+deliberate tradeoff.** `store.FileStore.Observe` (~3.4–3.9 ms/op) is
+about 10,000–13,000× slower than `store.InMemory.Observe` (~150–360
+ns/op) — entirely attributable to a synchronous `fsync` on every call
+(see [ADR 0006](adr/0006-file-backed-persistent-store.md)). This is
+large enough that it matters which `Store` a deployment chooses:
+`InMemory` for throughput, `FileStore` when surviving a restart is
+worth the cost. Note `FileStoreObserveDistinctKeys`'s 12-way-parallel
+row shows both higher `ns/op` *and* much higher `B/op`/`allocs/op`
+(14,456 B, 51 allocs) than its sequential counterpart (3,696 B, 24
+allocs) — this specific benchmark's store grows as concurrent
+goroutines each add a new key during the run (see the benchmark's own
+doc comment in `internal/store/file_bench_test.go`), so later flushes
+in that run are serializing a larger snapshot than earlier ones; it is
+not a per-call regression, it's the flush-cost-scales-with-store-size
+property `FileStore`'s design accepts, visible in the data.
 
 **`Engine.Analyze` scales under real concurrency.** 440.8ns
 sequential vs. 170.1ns at 12-way parallelism reflects that the common
@@ -111,6 +132,13 @@ pure function with no shared mutable state.
   brief global lock only for first-time key creation (see
   [ARCHITECTURE.md § storage boundary](ARCHITECTURE.md#storage-boundary)).
   All store and baseline tests run under `go test -race`.
+- `store.FileStore` (added for persistence — see
+  [ADR 0006](adr/0006-file-backed-persistent-store.md)) keeps this
+  property: its synchronous flush-per-`Observe` design was chosen
+  specifically to avoid introducing this module's first background
+  goroutine (a timer-based flusher was considered and rejected for
+  exactly that reason). Re-verified after adding it: still zero
+  `go func`/goroutine spawns anywhere in non-test code.
 
 ## What's not benchmarked (yet)
 

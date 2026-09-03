@@ -7,6 +7,7 @@ package store
 
 import (
 	"context"
+	"maps"
 	"sync"
 	"time"
 
@@ -28,6 +29,32 @@ type Store interface {
 	Observe(ctx context.Context, key baseline.Key, fp fingerprint.Fingerprint, vol features.VolatileFeatures, now time.Time) (baseline.Baseline, error)
 }
 
+// Freezer is an optional capability a Store implementation may provide:
+// suspending learning for one Key without discarding its history —
+// useful, for example, so an analyst can inspect a Baseline during an
+// active investigation without it continuing to drift while they work.
+//
+// This is deliberately not part of Store itself: Engine and every
+// pipeline package have no need to know freezing exists, and adding it
+// to Store would ripple into every implementation and every consumer
+// for a capability most callers never use. A caller that wants it
+// type-asserts a Store to Freezer.
+//
+// Freeze state is scoped strictly to one Key at a time — there is no
+// "freeze everything" operation, and freezing is intentionally not
+// itself persisted (see FileStore): it's a live, current-process
+// operational flag, not part of the learned behavioral history.
+type Freezer interface {
+	// Freeze suspends learning for key: subsequent Observe calls become
+	// no-ops (the Baseline is returned unchanged) until Unfreeze. Get is
+	// unaffected — full history remains readable while frozen.
+	Freeze(ctx context.Context, key baseline.Key)
+	// Unfreeze resumes learning for key.
+	Unfreeze(ctx context.Context, key baseline.Key)
+	// IsFrozen reports whether key is currently frozen.
+	IsFrozen(ctx context.Context, key baseline.Key) bool
+}
+
 // shard holds the current Baseline for exactly one Key, behind its own
 // lock. Scoping the lock to a single Key rather than a fixed hash bucket
 // means concurrent Observe/Get calls for different actors never contend
@@ -36,6 +63,7 @@ type Store interface {
 type shard struct {
 	mu       sync.RWMutex
 	baseline baseline.Baseline
+	frozen   bool
 }
 
 // InMemory is a Store backed by an in-memory map, safe for concurrent use.
@@ -66,8 +94,68 @@ func (s *InMemory) Observe(ctx context.Context, key baseline.Key, fp fingerprint
 	sh := s.getOrCreate(key)
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
+	if sh.frozen {
+		return sh.baseline, nil
+	}
 	sh.baseline = sh.baseline.Observe(fp, vol, now)
 	return sh.baseline, nil
+}
+
+// Freeze implements Freezer.
+func (s *InMemory) Freeze(ctx context.Context, key baseline.Key) {
+	sh := s.getOrCreate(key)
+	sh.mu.Lock()
+	sh.frozen = true
+	sh.mu.Unlock()
+}
+
+// Unfreeze implements Freezer.
+func (s *InMemory) Unfreeze(ctx context.Context, key baseline.Key) {
+	sh := s.getOrCreate(key)
+	sh.mu.Lock()
+	sh.frozen = false
+	sh.mu.Unlock()
+}
+
+// IsFrozen implements Freezer.
+func (s *InMemory) IsFrozen(ctx context.Context, key baseline.Key) bool {
+	sh, ok := s.lookup(key)
+	if !ok {
+		return false
+	}
+	sh.mu.RLock()
+	defer sh.mu.RUnlock()
+	return sh.frozen
+}
+
+// snapshot returns a consistent point-in-time copy of every Baseline
+// currently held, keyed by Key. Used by FileStore to serialize the
+// store to disk; not part of Store or Freezer since no pipeline
+// consumer needs to enumerate every key at once.
+func (s *InMemory) snapshot() map[baseline.Key]baseline.Baseline {
+	s.mu.RLock()
+	shards := make(map[baseline.Key]*shard, len(s.shards))
+	maps.Copy(shards, s.shards)
+	s.mu.RUnlock()
+
+	out := make(map[baseline.Key]baseline.Baseline, len(shards))
+	for key, sh := range shards {
+		sh.mu.RLock()
+		out[key] = sh.baseline
+		sh.mu.RUnlock()
+	}
+	return out
+}
+
+// restore seeds an empty InMemory from a previously captured snapshot
+// (see snapshot). Intended for use only at construction time, before
+// concurrent access begins; it still locks correctly if called later.
+func (s *InMemory) restore(data map[baseline.Key]baseline.Baseline) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for key, bl := range data {
+		s.shards[key] = &shard{baseline: bl}
+	}
 }
 
 func (s *InMemory) lookup(key baseline.Key) (*shard, bool) {
@@ -91,4 +179,7 @@ func (s *InMemory) getOrCreate(key baseline.Key) *shard {
 	return sh
 }
 
-var _ Store = (*InMemory)(nil)
+var (
+	_ Store   = (*InMemory)(nil)
+	_ Freezer = (*InMemory)(nil)
+)

@@ -24,11 +24,15 @@ race-clean. A Go SDK (`Engine`, functional options), a CLI (`analyze`,
 (`internal/otel.EventFromSpan`) all exist and are exercised by
 end-to-end tests. Architecture hardening (package boundaries,
 dependency direction, a real hot-path fix) has been completed and is
-recorded in [ADRs 0001–0005](adr/).
+recorded in [ADRs 0001–0005](adr/). [Task 003](tasks/003-baseline.md)
+is done: a persistent `store.FileStore` (survives a process restart —
+see [ADR 0006](adr/0006-file-backed-persistent-store.md)), fingerprint
+staleness (`FingerprintStats.IsStale`), and per-actor learning freeze
+(`store.Freezer`) are all implemented, tested under `-race`, and
+benchmarked.
 
 What's **not** yet true, concretely:
 
-- No persistent `Store` — baselines don't survive a process restart.
 - No `examples/` directory, no CI/CD, no container image.
 - The six *outbound* `trustvian.*` OTel enrichment attributes (from
   the original spec) are undocumented-as-implemented because they
@@ -66,10 +70,12 @@ stages — this milestone is depth, not breadth.
 - **002 Fingerprint** — document the design formally; add a
   composition-versioning story so future stable-dimension changes
   (like 001's) don't silently produce colliding or orphaned IDs.
-- **003 Baseline v2** — persistent `Store` implementation, explicit
-  staleness handling using the already-tracked `LastObserved`, and a
-  baseline-freeze mechanism (stop learning without discarding history —
-  e.g. during an active investigation).
+- **003 Baseline v2 — done.** Persistent `store.FileStore`, explicit
+  staleness handling (`FingerprintStats.IsStale`, using the
+  already-tracked `LastObserved`), and a baseline-freeze mechanism
+  (`store.Freezer` — stop learning without discarding history, e.g.
+  during an active investigation) are all implemented. See
+  [ADR 0006](adr/0006-file-backed-persistent-store.md).
 - **004 Anomaly v2** — add the one concretely missing signal:
   frequency deviation (Baseline currently tracks no rate/frequency
   data at all).

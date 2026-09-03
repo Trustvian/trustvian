@@ -1,8 +1,14 @@
 # 003 — Baseline v2: Persistence, Staleness, Freeze
 
-**Milestone:** v0.1 · **Depends on:** none · **Blocks:**
-[004](004-anomaly.md) (frequency signal needs Baseline to track rate
-data)
+**Status: implemented.** Persistent `store.FileStore`,
+`FingerprintStats.IsStale`, and `store.Freezer` all exist, are tested
+under `-race`, and are benchmarked — see
+[ADR 0006](../adr/0006-file-backed-persistent-store.md) and
+[PERFORMANCE.md](../PERFORMANCE.md).
+
+**Milestone:** v0.1 · **Depends on:** none · **Blocks:** none ([004](004-anomaly.md)
+does not actually depend on this task — see the correction in
+004's own header; the two tasks turned out to be independent).
 
 ## Objective
 

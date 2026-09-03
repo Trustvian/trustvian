@@ -1,7 +1,10 @@
 # 004 — Anomaly Detection v2: Frequency Deviation
 
-**Milestone:** v0.1 · **Depends on:** [003](003-baseline.md) (needs
-Baseline to track observation-rate data) · **Blocks:** none
+**Milestone:** v0.1 · **Depends on:** none (this task adds the
+rate-tracking data itself — see Scope; a prior version of this file
+incorrectly listed [003](003-baseline.md) as a dependency for that,
+but 003's actual scope, now implemented, is persistence/staleness/
+freeze only, not rate tracking) · **Blocks:** none
 
 ## Objective
 

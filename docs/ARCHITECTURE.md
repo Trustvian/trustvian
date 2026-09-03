@@ -197,14 +197,26 @@ type Store interface {
 ```
 
 Two methods, matching `Baseline`'s actual access pattern exactly — not
-a generic repository. The only implementation today is
-`store.InMemory` (baselines do not survive a process restart; see
-[Limitations](../README.md#limitations) and
-[ROADMAP.md](ROADMAP.md)). No database driver is imported anywhere in
-this module. A future persistent implementation (file-backed, or
-backed by an external store) is additive: implement `Store`, wire it
-in via `trustvian.WithStore(...)`, and every pipeline package is
-unaffected — none of them know `Store` exists; only `Engine` does.
+a generic repository. Two implementations exist: `store.InMemory`
+(baselines do not survive a process restart — still the default) and
+`store.FileStore` (a JSON file on disk, flushed synchronously after
+every `Observe`; baselines survive a restart, at the cost of `Observe`
+being roughly four orders of magnitude slower than against `InMemory`
+— see [PERFORMANCE.md](PERFORMANCE.md) for measured numbers and
+[ADR 0006](adr/0006-file-backed-persistent-store.md) for why that
+tradeoff was chosen). No database driver is imported anywhere in this
+module — `FileStore` uses only `encoding/json` and `os`. Switching is
+a one-line `trustvian.WithStore(...)` change; every pipeline package
+remains unaffected — none of them know `Store` exists, only `Engine`
+does, and neither implementation changed that.
+
+A separate, narrower `store.Freezer` interface (`Freeze`/`Unfreeze`/
+`IsFrozen`) is implemented by both `InMemory` and `FileStore` — a
+per-`Key` capability to suspend learning without discarding history,
+deliberately *not* part of `Store` itself, since `Engine` and every
+pipeline package have no need to know it exists. Freeze state is never
+persisted, even by `FileStore` — it's a live, current-process
+operational flag, not learned behavioral history.
 
 ## Relationship to Trustvian Control/Cloud
 

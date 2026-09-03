@@ -85,6 +85,24 @@ func (s FingerprintStats) LatencyStdDevDuration() time.Duration {
 	return time.Duration(math.Sqrt(s.LatencyVariance))
 }
 
+// IsStale reports whether s has not been observed within maxAge of now.
+// A FingerprintStats with no observations at all (Count == 0) is never
+// stale — that's cold start, a different concept from staleness (see
+// internal/anomaly's Confidence for cold start): staleness is about a
+// fingerprint that *was* known and hasn't been seen in a while, not one
+// that was never known at all.
+//
+// This package only reports staleness; it does not act on it (no
+// automatic expiration or deletion) — deciding what to do with a stale
+// entry, if anything, is a caller's policy decision, matching the
+// existing "Baseline only counts" design (see Count's doc comment).
+func (s FingerprintStats) IsStale(now time.Time, maxAge time.Duration) bool {
+	if s.Count == 0 {
+		return false
+	}
+	return now.Sub(s.LastObserved) > maxAge
+}
+
 func (s FingerprintStats) observe(stable features.StableFeatures, vol features.VolatileFeatures, now time.Time) FingerprintStats {
 	if s.Count == 0 {
 		s.FirstObserved = now
