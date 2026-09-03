@@ -256,13 +256,18 @@ func TestScoreFrequencyDeviation(t *testing.T) {
 func TestScoreErrorAgainstCleanBaselineIsAnomalous(t *testing.T) {
 	fp := fingerprint.Compute(stable("payment-db"))
 	b := baseline.New(testKey)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for range 50 {
-		b = b.Observe(fp, features.VolatileFeatures{Error: false}, time.Now())
+		b = b.Observe(fp, features.VolatileFeatures{Error: false}, now)
+		now = now.Add(matureBaselineInterval)
 	}
 
 	feat := features.Features{
-		Stable:   stable("payment-db"),
-		Volatile: features.VolatileFeatures{Error: true},
+		Stable: stable("payment-db"),
+		Volatile: features.VolatileFeatures{
+			Error:     true,
+			Timestamp: b.Fingerprints[fp.ID].LastObserved.Add(matureBaselineInterval), // normal rate: isolates the error signal
+		},
 	}
 
 	got := anomaly.Score(feat, fp, b, anomaly.DefaultConfig())
@@ -275,13 +280,18 @@ func TestScoreErrorAgainstCleanBaselineIsAnomalous(t *testing.T) {
 func TestScoreErrorAgainstErrorProneBaselineIsNotAnomalous(t *testing.T) {
 	fp := fingerprint.Compute(stable("payment-db"))
 	b := baseline.New(testKey)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for range 50 {
-		b = b.Observe(fp, features.VolatileFeatures{Error: true}, time.Now())
+		b = b.Observe(fp, features.VolatileFeatures{Error: true}, now)
+		now = now.Add(matureBaselineInterval)
 	}
 
 	feat := features.Features{
-		Stable:   stable("payment-db"),
-		Volatile: features.VolatileFeatures{Error: true},
+		Stable: stable("payment-db"),
+		Volatile: features.VolatileFeatures{
+			Error:     true,
+			Timestamp: b.Fingerprints[fp.ID].LastObserved.Add(matureBaselineInterval), // normal rate: isolates the error signal
+		},
 	}
 
 	got := anomaly.Score(feat, fp, b, anomaly.DefaultConfig())
