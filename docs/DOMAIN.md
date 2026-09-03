@@ -136,12 +136,20 @@ says to add only when needed, not speculatively.
   `Store.Get` a permanently valid snapshot, safe to use without
   holding any lock.
 - **Updating** — per-`Fingerprint` statistics use an EWMA
-  (exponentially-weighted moving average) for latency mean/variance
-  and error rate — not a plain cumulative (unweighted) average. This
-  reconciles two needs at once: O(1) memory with no raw samples
-  retained (in the spirit of Welford's online algorithm), and *decay*,
-  so legitimate behavioral drift is absorbed over time rather than
-  requiring a manual reset.
+  (exponentially-weighted moving average) for latency mean/variance,
+  inter-observation interval mean/variance, and error rate — not a
+  plain cumulative (unweighted) average. This reconciles two needs at
+  once: O(1) memory with no raw samples retained (in the spirit of
+  Welford's online algorithm), and *decay*, so legitimate behavioral
+  drift is absorbed over time rather than requiring a manual reset.
+  The interval EWMA (`IntervalObservations`/`IntervalMean`/
+  `IntervalVariance`) is computed from the *previous* `LastObserved`
+  before it's overwritten, so it captures how much time elapsed since
+  the fingerprint's last occurrence — the raw material
+  `internal/anomaly`'s `frequency_deviation` signal (task
+  [004](tasks/004-anomaly.md)) scores against. It has no interval to
+  record on a fingerprint's first observation (`IntervalObservations`
+  stays 0), mirroring `LatencyObservations`' cold-start behavior.
 - **Cold start** — `FingerprintStats.Count` is the maturity counter: how
   many times this specific fingerprint has been observed.
   `internal/baseline` only counts; it does not itself decide what
@@ -158,7 +166,7 @@ says to add only when needed, not speculatively.
 ## Anomaly
 
 `internal/anomaly.Score(Features, Fingerprint, Baseline, Config)
-Anomaly` combines up to four independent signals via a **noisy-OR**
+Anomaly` combines up to five independent signals via a **noisy-OR**
 combination — `score = 1 - Π(1 - value_i · weight_i)` — chosen
 specifically because a single severe signal should dominate the
 result, not be diluted by averaging against several unrelated benign
@@ -168,6 +176,7 @@ signals:
 |---|---|
 | `categorical_novelty` | The fingerprint is unfamiliar or below `MinObservations` maturity |
 | `latency_deviation` | Current latency's z-score against the baseline's EWMA mean/stddev exceeds a threshold |
+| `frequency_deviation` | The current inter-observation interval's z-score against the baseline's EWMA mean/stddev interval exceeds `Config.FrequencyZThreshold` — the "this actor normally calls this operation every 10s; it just called it every 100ms" signal (a classic abuse/exfiltration pattern). Requires the fingerprint to be known and have at least one recorded interval (`FingerprintStats.IntervalObservations > 0`); a fingerprint's very first observation has no prior `LastObserved` to measure an interval from, so it never fires on cold start, mirroring `latency_deviation`'s `LatencyObservations > 0` gate |
 | `error_deviation` | An error occurred against a fingerprint whose baseline error rate is low |
 | `sensitive_target` | The destination is in `Config.SensitiveTargetFloor` — a fixed penalty that persists *regardless of familiarity* |
 

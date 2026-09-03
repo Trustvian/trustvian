@@ -17,9 +17,23 @@ import (
 )
 
 func paymentEvent(latencyMS float64, id string) event.Event {
+	return paymentEventAt(latencyMS, id, time.Now())
+}
+
+// paymentEventAt is paymentEvent with an explicit Timestamp. Tests that
+// call it repeatedly to build up a mature baseline (see
+// TestObserveLearnsOnlyFromEligibleDecisions and
+// TestAnalyzeNormalBehaviorIsAllowed) must space those timestamps
+// realistically (e.g. via a fixed clock stepped by a constant interval,
+// not consecutive time.Now() calls within a tight Go loop) — the
+// frequency_deviation signal (task 004) treats the wall-clock gap between
+// consecutive calls as the actor's inter-request rate, and a tight loop's
+// microsecond-scale, GC/scheduler-jittery gaps look nothing like a stable
+// rate even though the loop is "doing the same thing" every iteration.
+func paymentEventAt(latencyMS float64, id string, ts time.Time) event.Event {
 	return event.Event{
 		ID:        id,
-		Timestamp: time.Now(),
+		Timestamp: ts,
 		Actor: event.Actor{
 			ID:                 "svc-payment",
 			Type:               event.ActorTypeService,
@@ -93,8 +107,10 @@ func TestObserveLearnsOnlyFromEligibleDecisions(t *testing.T) {
 	// mature past it. Only that it eventually settles to ALLOW matters.
 	var result trustvian.Result
 	var err error
+	clock := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for i := range 30 {
-		result, err = engine.Analyze(ctx, paymentEvent(10, "warm-up"))
+		clock = clock.Add(time.Second)
+		result, err = engine.Analyze(ctx, paymentEventAt(10, "warm-up", clock))
 		if err != nil {
 			t.Fatalf("Analyze() call %d: error = %v", i, err)
 		}
@@ -103,7 +119,7 @@ func TestObserveLearnsOnlyFromEligibleDecisions(t *testing.T) {
 		}
 	}
 
-	mature, err := engine.Analyze(ctx, paymentEvent(10, "mature-check"))
+	mature, err := engine.Analyze(ctx, paymentEventAt(10, "mature-check", clock.Add(time.Second)))
 	if err != nil {
 		t.Fatalf("Analyze() error = %v", err)
 	}
@@ -230,8 +246,10 @@ func TestAnalyzeNormalBehaviorIsAllowed(t *testing.T) {
 	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()))
 	ctx := context.Background()
 
+	clock := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for range 30 {
-		result, err := engine.Analyze(ctx, paymentEvent(10, "warm-up"))
+		clock = clock.Add(time.Second)
+		result, err := engine.Analyze(ctx, paymentEventAt(10, "warm-up", clock))
 		if err != nil {
 			t.Fatalf("Analyze() error = %v", err)
 		}
@@ -240,7 +258,7 @@ func TestAnalyzeNormalBehaviorIsAllowed(t *testing.T) {
 		}
 	}
 
-	result, err := engine.Analyze(ctx, paymentEvent(10, "steady-state"))
+	result, err := engine.Analyze(ctx, paymentEventAt(10, "steady-state", clock.Add(time.Second)))
 	if err != nil {
 		t.Fatalf("Analyze() error = %v", err)
 	}

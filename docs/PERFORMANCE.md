@@ -38,9 +38,9 @@ Environment: Go 1.27, darwin/arm64, Apple M3 Pro. Run with
 | `trust.Compute` | 5.1 | 0 | 0 |
 | `policy.Evaluate` (rule match) | 21.1 | 0 | 0 |
 | `policy.Evaluate` (falls to default) | 36.8 | 0 | 0 |
-| `baseline.Observe` (direct, same fingerprint) | 163.2 | 432 | 3 |
-| `anomaly.Score` (familiar, no signal fires) | 29.8 | 0 | 0 |
-| `anomaly.Score` (novel, every signal fires) | 227.2 | 448 | 5 |
+| `baseline.Observe` (direct, same fingerprint) | 165.8 | 464 | 3 |
+| `anomaly.Score` (familiar, no signal fires) | 47.0 | 0 | 0 |
+| `anomaly.Score` (novel, every signal fires) | 228.8 | 448 | 5 |
 | `store.InMemory.Observe` (same key, sequential) | 292.7 | 432 | 3 |
 | `store.InMemory.Observe` (same key, 12-way parallel) | 359.4 | 432 | 3 |
 | `store.InMemory.Observe` (distinct keys, sequential) | 296.4 | 432 | 3 |
@@ -49,17 +49,19 @@ Environment: Go 1.27, darwin/arm64, Apple M3 Pro. Run with
 | `store.FileStore.Observe` (same key, 12-way parallel) | 3,410,570 | 3,681 | 24 |
 | `store.FileStore.Observe` (distinct keys, sequential) | 3,750,412 | 3,696 | 24 |
 | `store.FileStore.Observe` (distinct keys, 12-way parallel) | 3,799,162 | 14,456 | 51 |
-| `Engine.Analyze` (sequential) | 440.8 | 448 | 15 |
-| `Engine.Analyze` (12-way parallel) | 170.1 | 448 | 15 |
+| `Engine.Analyze` (sequential) | 433.8 | 456 | 17 |
+| `Engine.Analyze` (12-way parallel) | 173.8 | 456 | 17 |
 
 ## Reading the numbers
 
 **`Engine.Analyze`'s cost is accounted for.** `features.Extract`
 (18ns) + `fingerprint.Compute` (161ns, called once) +
-`anomaly.Score`'s familiar-path floor (30ns, which itself already
-includes the fingerprint map lookup) + `trust.Compute` (5ns) +
-`policy.Evaluate` (21–37ns) sum to roughly the measured 440ns, with the
-remainder attributable to `Store.Get`'s map read and struct
+`anomaly.Score`'s familiar-path floor (47ns, which itself already
+includes the fingerprint map lookup plus the frequency-deviation
+branch's map read, subtraction, and `math.Sqrt`, even when the signal
+doesn't fire — see [task 004](tasks/004-anomaly.md)) + `trust.Compute`
+(5ns) + `policy.Evaluate` (21–37ns) sum to roughly the measured 434ns,
+with the remainder attributable to `Store.Get`'s map read and struct
 construction for `Result`. There is no unaccounted cost hiding in
 `Engine.Analyze` itself — see
 [ADR 0005](adr/0005-fingerprint-computed-once-per-analyze.md) for how
@@ -67,13 +69,19 @@ this was confirmed by finding and removing a real duplicate
 computation.
 
 **The common case is the cheap case, by design.** `anomaly.Score`'s
-familiar/no-signal path is zero-allocation (29.8ns); the "everything
-fires" worst case (227.2ns, 5 allocs) only pays for `fmt.Sprintf`-built
+familiar/no-signal path is zero-allocation (47.0ns — up from 29.8ns
+before task 004 added the frequency-deviation branch, entirely from the
+extra arithmetic on that path, not allocation); the "everything fires"
+worst case (228.8ns, 5 allocs) only pays for `fmt.Sprintf`-built
 explanation strings when a signal has actually fired — see
-`latencySignal`'s doc comment in
-[`internal/anomaly/anomaly.go`](../internal/anomaly/anomaly.go).
-Explainability's cost is proportional to how much there is to explain,
-not paid unconditionally on every call.
+`latencySignal`'s and `frequencySignal`'s doc comments in
+[`internal/anomaly/anomaly.go`](../internal/anomaly/anomaly.go). A
+brand-new fingerprint has no Baseline entry at all
+(`known == false`), so `frequencySignal` structurally cannot fire
+there regardless of how many other signals do — the "everything fires"
+benchmark's allocation count is unchanged by task 004 for exactly that
+reason. Explainability's cost is proportional to how much there is to
+explain, not paid unconditionally on every call.
 
 **Sharded locking measurably works.** `store.InMemory.Observe` under
 12-way concurrent load on distinct keys (149.2ns) is roughly 2.4×
@@ -99,8 +107,8 @@ in that run are serializing a larger snapshot than earlier ones; it is
 not a per-call regression, it's the flush-cost-scales-with-store-size
 property `FileStore`'s design accepts, visible in the data.
 
-**`Engine.Analyze` scales under real concurrency.** 440.8ns
-sequential vs. 170.1ns at 12-way parallelism reflects that the common
+**`Engine.Analyze` scales under real concurrency.** 433.8ns
+sequential vs. 173.8ns at 12-way parallelism reflects that the common
 path (`Store.Get`) only takes a read lock and every other stage is a
 pure function with no shared mutable state.
 
@@ -126,7 +134,13 @@ pure function with no shared mutable state.
   *infrequent, gated* write path (`Observe`) is what makes the *hot,
   frequent* read path (`Get`, called on every `Analyze`) completely
   lock-free after acquiring a read lock, with no defensive copying
-  needed.
+  needed. [Task 004](tasks/004-anomaly.md)'s three new
+  `FingerprintStats` fields (`IntervalObservations`, `IntervalMean`,
+  `IntervalVariance`) grew the struct copied into that map by 24 bytes
+  (three more `float64`/`uint64`-sized fields), which is the entirety
+  of `baseline.Observe`'s B/op increase (432 → 464); the allocation
+  *count* is unchanged (still 3) since it's the same map-rebuild
+  shape, just a larger value type.
 
 ## Concurrency considerations
 

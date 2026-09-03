@@ -16,8 +16,11 @@ func BenchmarkScoreKnownFamiliar(b *testing.B) {
 	fp := fingerprint.Compute(stable("payment-db"))
 	bl := matureBaseline(fp, 100, 10)
 	feat := features.Features{
-		Stable:   stable("payment-db"),
-		Volatile: features.VolatileFeatures{HasLatency: true, Latency: 10 * time.Millisecond},
+		Stable: stable("payment-db"),
+		Volatile: features.VolatileFeatures{
+			HasLatency: true, Latency: 10 * time.Millisecond,
+			Timestamp: bl.Fingerprints[fp.ID].LastObserved.Add(matureBaselineInterval), // normal rate: frequency_deviation must not fire here
+		},
 	}
 	cfg := anomaly.DefaultConfig()
 

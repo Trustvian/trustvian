@@ -23,15 +23,28 @@ func stable(target string) features.StableFeatures {
 	}
 }
 
+// matureBaselineInterval is the fixed inter-observation spacing
+// matureBaseline uses. Callers that build a Score-time Features against a
+// matureBaseline fingerprint and want to observe that fingerprint's
+// non-frequency signals in isolation should set
+// Volatile.Timestamp to the baseline's LastObserved plus this interval, so
+// the new frequency_deviation signal (task 004) doesn't fire unexpectedly
+// alongside whatever signal the test actually targets.
+const matureBaselineInterval = time.Second
+
 // matureBaseline returns a Baseline where fp has been observed `count`
-// times, each with latencyMS latency and no errors.
+// times, exactly matureBaselineInterval apart, each with latencyMS latency
+// and no errors. A fixed clock (rather than time.Now()) keeps the interval
+// EWMA deterministic, matching baselineWithStableInterval's approach.
 func matureBaseline(fp fingerprint.Fingerprint, count int, latencyMS float64) baseline.Baseline {
 	b := baseline.New(testKey)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for range count {
 		b = b.Observe(fp, features.VolatileFeatures{
 			HasLatency: true,
 			Latency:    time.Duration(latencyMS * float64(time.Millisecond)),
-		}, time.Now())
+		}, now)
+		now = now.Add(matureBaselineInterval)
 	}
 	return b
 }
@@ -62,8 +75,11 @@ func TestScoreLatencySpikeIsAnomalousEvenWhenFamiliar(t *testing.T) {
 	b := matureBaseline(fp, 100, 10) // consistently ~10ms
 
 	spike := features.Features{
-		Stable:   stable("payment-db"),
-		Volatile: features.VolatileFeatures{HasLatency: true, Latency: 500 * time.Millisecond},
+		Stable: stable("payment-db"),
+		Volatile: features.VolatileFeatures{
+			HasLatency: true, Latency: 500 * time.Millisecond,
+			Timestamp: b.Fingerprints[fp.ID].LastObserved.Add(matureBaselineInterval), // normal rate: isolates the latency signal
+		},
 	}
 
 	got := anomaly.Score(spike, fp, b, anomaly.DefaultConfig())
@@ -105,8 +121,11 @@ func TestScoreSensitiveTargetFloorPersistsDespiteFamiliarity(t *testing.T) {
 	cfg.SensitiveTargetFloor = map[string]float64{"secrets-manager": 0.7}
 
 	feat := features.Features{
-		Stable:   sensitiveStable,
-		Volatile: features.VolatileFeatures{HasLatency: true, Latency: 5 * time.Millisecond},
+		Stable: sensitiveStable,
+		Volatile: features.VolatileFeatures{
+			HasLatency: true, Latency: 5 * time.Millisecond,
+			Timestamp: b.Fingerprints[fp.ID].LastObserved.Add(matureBaselineInterval), // normal rate: isolates the sensitive-target floor
+		},
 	}
 
 	got := anomaly.Score(feat, fp, b, cfg)
@@ -127,8 +146,11 @@ func TestScoreFamiliarConsistentBehaviorIsLowAnomaly(t *testing.T) {
 	b := matureBaseline(fp, 100, 10)
 
 	feat := features.Features{
-		Stable:   stable("payment-db"),
-		Volatile: features.VolatileFeatures{HasLatency: true, Latency: 10 * time.Millisecond},
+		Stable: stable("payment-db"),
+		Volatile: features.VolatileFeatures{
+			HasLatency: true, Latency: 10 * time.Millisecond,
+			Timestamp: b.Fingerprints[fp.ID].LastObserved.Add(matureBaselineInterval), // normal rate: no frequency_deviation
+		},
 	}
 
 	got := anomaly.Score(feat, fp, b, anomaly.DefaultConfig())
@@ -151,6 +173,84 @@ func TestScoreMaturityRampsPartially(t *testing.T) {
 	if got.Confidence != 0.5 {
 		t.Fatalf("Confidence = %v for 10/20 observations, want exactly 0.5", got.Confidence)
 	}
+}
+
+// baselineWithStableInterval returns a Baseline where fp has been
+// observed `count` times, exactly `interval` apart, and no other
+// volatile signal set.
+func baselineWithStableInterval(fp fingerprint.Fingerprint, interval time.Duration, count int) baseline.Baseline {
+	b := baseline.New(testKey)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for range count {
+		b = b.Observe(fp, features.VolatileFeatures{}, now)
+		now = now.Add(interval)
+	}
+	return b
+}
+
+func TestScoreFrequencyDeviation(t *testing.T) {
+	cfg := anomaly.DefaultConfig()
+	fp := fingerprint.Compute(stable("payment-db"))
+
+	t.Run("normal rate does not fire", func(t *testing.T) {
+		bl := baselineWithStableInterval(fp, 10*time.Second, 50)
+		feat := features.Features{
+			Stable:   stable("payment-db"),
+			Volatile: features.VolatileFeatures{Timestamp: bl.Fingerprints[fp.ID].LastObserved.Add(10 * time.Second)},
+		}
+		an := anomaly.Score(feat, fp, bl, cfg)
+		for _, s := range an.Contributors {
+			if s.Name == "frequency_deviation" {
+				t.Errorf("frequency_deviation fired on a normal-rate event: %+v", s)
+			}
+		}
+	})
+
+	t.Run("spike fires strongly", func(t *testing.T) {
+		bl := baselineWithStableInterval(fp, 10*time.Second, 50)
+		feat := features.Features{
+			Stable:   stable("payment-db"),
+			Volatile: features.VolatileFeatures{Timestamp: bl.Fingerprints[fp.ID].LastObserved.Add(100 * time.Millisecond)},
+		}
+		an := anomaly.Score(feat, fp, bl, cfg)
+		found := false
+		for _, s := range an.Contributors {
+			if s.Name == "frequency_deviation" {
+				found = true
+				if s.Value < 0.9 {
+					t.Errorf("frequency_deviation.Value = %v, want near 1 for a 100x rate spike", s.Value)
+				}
+			}
+		}
+		if !found {
+			t.Error("frequency_deviation did not fire on a 100x rate spike")
+		}
+	})
+
+	t.Run("cold start does not fire", func(t *testing.T) {
+		bl := baseline.New(testKey)
+		feat := features.Features{Stable: stable("payment-db"), Volatile: features.VolatileFeatures{Timestamp: time.Now()}}
+		an := anomaly.Score(feat, fp, bl, cfg)
+		for _, s := range an.Contributors {
+			if s.Name == "frequency_deviation" {
+				t.Errorf("frequency_deviation fired on an unknown fingerprint: %+v", s)
+			}
+		}
+	})
+
+	t.Run("single observation does not fire (no interval yet)", func(t *testing.T) {
+		bl := baselineWithStableInterval(fp, 10*time.Second, 1)
+		feat := features.Features{
+			Stable:   stable("payment-db"),
+			Volatile: features.VolatileFeatures{Timestamp: bl.Fingerprints[fp.ID].LastObserved.Add(100 * time.Millisecond)},
+		}
+		an := anomaly.Score(feat, fp, bl, cfg)
+		for _, s := range an.Contributors {
+			if s.Name == "frequency_deviation" {
+				t.Errorf("frequency_deviation fired after a single observation (no interval baseline yet): %+v", s)
+			}
+		}
+	})
 }
 
 func TestScoreErrorAgainstCleanBaselineIsAnomalous(t *testing.T) {
@@ -199,12 +299,14 @@ func TestScoreMatchesDocumentedNoisyOrFormula(t *testing.T) {
 	cfg := anomaly.DefaultConfig()
 	cfg.SensitiveTargetFloor = map[string]float64{"secrets-manager": 0.5}
 
-	b := baseline.New(testKey)
-	for range 10 { // 10/20 => familiarity 0.5 => novelty value 0.5
-		b = b.Observe(fp, features.VolatileFeatures{}, time.Now())
-	}
+	b := baselineWithStableInterval(fp, matureBaselineInterval, 10) // 10/20 => familiarity 0.5 => novelty value 0.5
 
-	feat := features.Features{Stable: stable("secrets-manager")}
+	feat := features.Features{
+		Stable: stable("secrets-manager"),
+		Volatile: features.VolatileFeatures{
+			Timestamp: b.Fingerprints[fp.ID].LastObserved.Add(matureBaselineInterval), // normal rate: isolates novelty + sensitive-target floor
+		},
+	}
 	got := anomaly.Score(feat, fp, b, cfg)
 
 	noveltyContribution := 0.5 * cfg.NoveltyWeight
@@ -213,6 +315,35 @@ func TestScoreMatchesDocumentedNoisyOrFormula(t *testing.T) {
 
 	if diff := got.Score - want; diff > 1e-9 || diff < -1e-9 {
 		t.Fatalf("Score = %v, want %v (documented noisy-OR formula)", got.Score, want)
+	}
+}
+
+func TestScoreMatchesDocumentedNoisyOrFormulaWithFrequencySignal(t *testing.T) {
+	// Same bar as TestScoreMatchesDocumentedNoisyOrFormula, but with
+	// categorical_novelty (partial maturity) and frequency_deviation (a
+	// rate spike against a rock-steady 10s baseline interval, which
+	// takes the nearZeroStdDev branch of frequencySignal and so
+	// contributes exactly its full weight) as the two known signals.
+	fp := fingerprint.Compute(stable("payment-db"))
+	cfg := anomaly.DefaultConfig()
+
+	b := baselineWithStableInterval(fp, 10*time.Second, 10) // 10/20 => familiarity 0.5 => novelty value 0.5; identical intervals => stddev ~0
+	feat := features.Features{
+		Stable:   stable("payment-db"),
+		Volatile: features.VolatileFeatures{Timestamp: b.Fingerprints[fp.ID].LastObserved.Add(100 * time.Millisecond)},
+	}
+	got := anomaly.Score(feat, fp, b, cfg)
+
+	if !hasSignal(got.Contributors, "frequency_deviation") {
+		t.Fatalf("Contributors = %+v, want frequency_deviation", got.Contributors)
+	}
+
+	noveltyContribution := 0.5 * cfg.NoveltyWeight
+	frequencyContribution := 1.0 * cfg.FrequencyWeight // nearZeroStdDev branch: value is exactly 1
+	want := 1 - (1-noveltyContribution)*(1-frequencyContribution)
+
+	if diff := got.Score - want; diff > 1e-9 || diff < -1e-9 {
+		t.Fatalf("Score = %v, want %v (documented noisy-OR formula, including frequency_deviation)", got.Score, want)
 	}
 }
 

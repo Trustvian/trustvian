@@ -22,6 +22,7 @@ package anomaly
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/Trustvian/trustvian/internal/baseline"
@@ -44,12 +45,18 @@ type Config struct {
 	// signal reaches its full strength (1.0). Must be > 0.
 	LatencyZThreshold float64
 
+	// FrequencyZThreshold is the |z-score| at which the frequency-deviation
+	// signal (deviation of the current inter-observation interval from the
+	// baseline's typical interval) reaches its full strength (1.0). Must be > 0.
+	FrequencyZThreshold float64
+
 	// Weight fields scale a signal's raw [0,1] value before it enters
 	// the noisy-OR combination in Score. A weight of 1.0 means the
 	// signal alone can drive the combined score to that same value.
-	NoveltyWeight float64
-	LatencyWeight float64
-	ErrorWeight   float64
+	NoveltyWeight   float64
+	LatencyWeight   float64
+	ErrorWeight     float64
+	FrequencyWeight float64
 
 	// SensitiveTargetFloor maps a Target name to a minimum anomaly
 	// contribution that always applies when that target is touched,
@@ -67,9 +74,11 @@ func DefaultConfig() Config {
 	return Config{
 		MinObservations:      20,
 		LatencyZThreshold:    3.0,
+		FrequencyZThreshold:  3.0,
 		NoveltyWeight:        1.0,
 		LatencyWeight:        0.6,
 		ErrorWeight:          0.8,
+		FrequencyWeight:      0.6,
 		SensitiveTargetFloor: map[string]float64{},
 	}
 }
@@ -130,6 +139,13 @@ func Score(feat features.Features, fp fingerprint.Fingerprint, bl baseline.Basel
 		}
 	}
 
+	if known && stats.IntervalObservations > 0 {
+		interval := feat.Volatile.Timestamp.Sub(stats.LastObserved)
+		if s := frequencySignal(interval, stats, cfg); s.Value > 0 {
+			signals = append(signals, s)
+		}
+	}
+
 	if feat.Volatile.Error {
 		if s := errorSignal(known, stats, cfg); s.Value > 0 {
 			signals = append(signals, s)
@@ -185,6 +201,38 @@ func latencySignal(current time.Duration, stats baseline.FingerprintStats, cfg C
 		detail = fmt.Sprintf("latency %s deviates from a stable baseline of %s (stddev ~0)", current, stats.LatencyMeanDuration())
 	}
 	return Signal{Name: "latency_deviation", Value: value, Weight: cfg.LatencyWeight, Detail: detail}
+}
+
+// frequencySignal only formats its Detail string once it knows the signal
+// actually contributes (Value > 0) — mirrors latencySignal's cost discipline.
+func frequencySignal(currentInterval time.Duration, stats baseline.FingerprintStats, cfg Config) Signal {
+	stddev := math.Sqrt(stats.IntervalVariance)
+	mean := stats.IntervalMean
+	currentNS := float64(currentInterval)
+	nearZeroStdDev := stddev < float64(time.Millisecond)
+
+	var value, z float64
+	if nearZeroStdDev {
+		if currentNS != mean {
+			value = 1
+		}
+	} else {
+		z = (currentNS - mean) / stddev
+		if z < 0 {
+			z = -z
+		}
+		value = min(z/cfg.FrequencyZThreshold, 1)
+	}
+
+	if value == 0 {
+		return Signal{Name: "frequency_deviation", Weight: cfg.FrequencyWeight}
+	}
+
+	detail := fmt.Sprintf("inter-event interval z-score %.2f (mean %s, stddev %s)", z, time.Duration(mean), time.Duration(stddev))
+	if nearZeroStdDev {
+		detail = fmt.Sprintf("interval %s deviates from a stable baseline of %s (stddev ~0)", currentInterval, time.Duration(mean))
+	}
+	return Signal{Name: "frequency_deviation", Value: value, Weight: cfg.FrequencyWeight, Detail: detail}
 }
 
 func errorSignal(known bool, stats baseline.FingerprintStats, cfg Config) Signal {

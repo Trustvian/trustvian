@@ -116,6 +116,54 @@ func TestFingerprintStatsLatencyConvergesToStableValue(t *testing.T) {
 	}
 }
 
+func TestFingerprintStatsIntervalConvergesToStableValue(t *testing.T) {
+	fp := testFingerprint()
+	b := baseline.New(testKey)
+
+	const interval = 10 * time.Second
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	now := start
+	for range 50 {
+		b = b.Observe(fp, features.VolatileFeatures{}, now)
+		now = now.Add(interval)
+	}
+
+	stats := b.Fingerprints[fp.ID]
+	if stats.IntervalObservations == 0 {
+		t.Fatal("IntervalObservations = 0 after 50 observations, want > 0")
+	}
+	gotMean := time.Duration(stats.IntervalMean)
+	if diff := gotMean - interval; diff < -500*time.Millisecond || diff > 500*time.Millisecond {
+		t.Fatalf("IntervalMean = %s after convergence, want ~%s", gotMean, interval)
+	}
+	if stats.IntervalVariance > float64(time.Second*time.Second) {
+		t.Fatalf("IntervalVariance = %v, want ~0 after repeated identical intervals", stats.IntervalVariance)
+	}
+}
+
+func TestFingerprintStatsIntervalObservationsIsCountMinusOne(t *testing.T) {
+	fp := testFingerprint()
+	b := baseline.New(testKey)
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	b = b.Observe(fp, features.VolatileFeatures{}, now)
+
+	stats := b.Fingerprints[fp.ID]
+	if stats.IntervalObservations != 0 {
+		t.Fatalf("IntervalObservations = %d after a single observation, want 0 (no prior LastObserved to measure from)", stats.IntervalObservations)
+	}
+
+	now = now.Add(5 * time.Second)
+	b = b.Observe(fp, features.VolatileFeatures{}, now)
+	stats = b.Fingerprints[fp.ID]
+	if stats.IntervalObservations != 1 {
+		t.Fatalf("IntervalObservations = %d after a second observation, want 1", stats.IntervalObservations)
+	}
+	if got := time.Duration(stats.IntervalMean); got != 5*time.Second {
+		t.Fatalf("IntervalMean = %s after exactly one interval, want exactly 5s", got)
+	}
+}
+
 func TestFingerprintStatsSkipsLatencyWhenAbsent(t *testing.T) {
 	fp := testFingerprint()
 	b := baseline.New(testKey)

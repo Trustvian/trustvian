@@ -61,6 +61,15 @@ type FingerprintStats struct {
 	LatencyMean         float64 // EWMA mean latency, in nanoseconds
 	LatencyVariance     float64 // EWMA variance, in nanoseconds^2
 
+	// IntervalObservations is the number of times an inter-observation
+	// interval has been recorded for this Fingerprint (Count-1 once
+	// Count>0, since the first observation has no prior LastObserved to
+	// measure from). IntervalMean/IntervalVariance are meaningless when
+	// this is zero.
+	IntervalObservations uint64
+	IntervalMean         float64 // EWMA mean inter-observation interval, in nanoseconds
+	IntervalVariance     float64 // EWMA variance, in nanoseconds^2
+
 	// ErrorRate is the EWMA-smoothed proportion of observations that
 	// carried an error, in [0,1].
 	ErrorRate float64
@@ -106,6 +115,17 @@ func (s FingerprintStats) IsStale(now time.Time, maxAge time.Duration) bool {
 func (s FingerprintStats) observe(stable features.StableFeatures, vol features.VolatileFeatures, now time.Time) FingerprintStats {
 	if s.Count == 0 {
 		s.FirstObserved = now
+	} else {
+		intervalNS := float64(now.Sub(s.LastObserved))
+		if s.IntervalObservations == 0 {
+			s.IntervalMean = intervalNS
+			s.IntervalVariance = 0
+		} else {
+			delta := intervalNS - s.IntervalMean
+			s.IntervalMean += emaAlpha * delta
+			s.IntervalVariance = (1 - emaAlpha) * (s.IntervalVariance + emaAlpha*delta*delta)
+		}
+		s.IntervalObservations++
 	}
 	s.Count++
 	s.LastObserved = now
