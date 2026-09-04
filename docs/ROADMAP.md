@@ -33,7 +33,7 @@ benchmarked.
 
 What's **not** yet true, concretely:
 
-- No `examples/` directory, no CI/CD, no container image.
+- No CI/CD, no container image.
 - The six *outbound* `trustvian.*` OTel enrichment attributes (from
   the original spec) are undocumented-as-implemented because they
   aren't — only the four *inbound* override attributes exist.
@@ -88,8 +88,10 @@ stages — this milestone is depth, not breadth.
 - **007 Decision/Explainability** — add a `Result.Explain() string`
   convenience method; verify (already true, formalize as a test) that
   every field the spec's Decision checklist names is present.
-- **010 Real-world examples** — a runnable `examples/` directory
-  covering the six scenarios named in the roadmap brief.
+- **010 Real-world examples — done.** A runnable `examples/` directory
+  covering the six scenarios named in the roadmap brief, each a genuine
+  external module (via `go mod replace`) with real, `go run`-captured
+  output; wired into the root `Makefile`'s `examples` target.
 - **011 Performance baseline** — close the two explicitly-known gaps
   in [PERFORMANCE.md](PERFORMANCE.md#whats-not-benchmarked-yet): an
   OTel-adapter benchmark and a sustained-memory-growth test.
