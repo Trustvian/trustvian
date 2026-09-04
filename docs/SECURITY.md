@@ -30,6 +30,7 @@ here, not moved or rewritten.
 | Malicious agents / privilege escalation | `TestAnalyzeSensitiveTargetFloorEndToEnd` in [`engine_test.go`](../engine_test.go) |
 | Policy bypass | `TestEvaluateFailsClosedOnZeroValuePolicy`, `TestEvaluateFailsClosedOnInvalidDefaultAction`, `TestEvaluateFailsClosedOnEmptyDefaultReason` in [`internal/policy/policy_test.go`](../internal/policy/policy_test.go) |
 | Malformed events / extreme input values | `TestValidateRejectsNonFiniteIdentityConfidence`, `TestValidateAcceptsVeryLongActorID` in [`event/event_test.go`](../event/event_test.go); `TestAnalyzeNegativeDurationDoesNotCorruptTrustScore`, `TestAnalyzeLargeAttributesMapDoesNotPanic` in [`engine_test.go`](../engine_test.go) |
+| Concurrency issues | `TestInMemoryObserveConcurrentSameKey`, `TestInMemoryObserveConcurrentDistinctKeys` in [`internal/store/store_test.go`](../internal/store/store_test.go); `TestFileStoreObserveConcurrentSameKey`, `TestFileStoreObserveConcurrentDistinctKeys` in [`internal/store/file_test.go`](../internal/store/file_test.go) |
 | Resource exhaustion | `TestAnalyzeLargeAttributesMapDoesNotPanic`, `TestObserveUnboundedFingerprintsDoesNotPanic` in [`engine_test.go`](../engine_test.go) |
 | Explainability | `TestEvaluateAlwaysProducesNonEmptyExplanationReason` in [`internal/policy/policy_test.go`](../internal/policy/policy_test.go) |
 
@@ -209,6 +210,41 @@ accepted behavior, not gaps.**
   `Engine.Analyze` — see `TestAnalyzeLargeAttributesMapDoesNotPanic` in
   [`engine_test.go`](../engine_test.go), also listed under "Resource
   exhaustion" below.
+
+### Concurrency issues
+
+**Threat:** concurrent `Get`/`Observe` calls — across the same actor's
+key or across many distinct actors' keys — race with each other and
+corrupt shared `Baseline` state (a lost update, a torn read, or a data
+race that only a `-race` build would catch).
+
+**Status: implemented, and verified under `-race`.** The mechanism this
+is safe by construction, not by luck, is `internal/baseline`'s
+immutability: `Baseline.Observe` never mutates its receiver — it always
+returns a brand-new `Baseline` value with its own `Fingerprints` map
+(`internal/baseline/baseline.go`). That means a `Baseline` value a
+caller already holds (e.g. from an earlier `Store.Get`) is a permanently
+valid snapshot; nothing can retroactively change it out from under a
+reader. `internal/store`'s sharded-lock design is the concurrency-safety
+layer built on top of that immutability: it serializes the
+read-modify-write around each key's `Observe` (so concurrent writers to
+the *same* key don't lose an update) while letting writes to *distinct*
+keys proceed independently (no unnecessary cross-actor lock contention).
+This is verified directly, under `go test -race`, by:
+
+- `TestInMemoryObserveConcurrentSameKey` and
+  `TestFileStoreObserveConcurrentSameKey`
+  ([`internal/store/store_test.go`](../internal/store/store_test.go),
+  [`internal/store/file_test.go`](../internal/store/file_test.go)) —
+  many goroutines call `Observe` concurrently against the *same* key and
+  assert the final `Count` equals exactly the number of calls made, with
+  no lost update.
+- `TestInMemoryObserveConcurrentDistinctKeys` and
+  `TestFileStoreObserveConcurrentDistinctKeys` (same files) — many
+  goroutines call `Observe` concurrently, each against its *own* key,
+  and assert every key ends up with its own independent, correct
+  `Count`, proving concurrent writes to different actors never
+  interfere with each other.
 
 ### Resource exhaustion
 
