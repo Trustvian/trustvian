@@ -244,6 +244,14 @@ terms:
 
 - **Policy is data**, not code: an ordered `[]Rule` plus a mandatory
   default, not per-rule Go closures.
+- **Input** carries what a `Condition` can match against:
+  `features.StableFeatures`, `trust.Trust`, and — since task 006 —
+  `Attributes map[string]any`, the raw `Event.Attributes` passed
+  through unchanged by `Engine.Analyze`. This is what lets
+  `Condition.Attributes` match a specific key/value pair (e.g.
+  `tool.category: secrets`) without inventing a general policy
+  language; see [Policy Guide § matching
+  Event.Attributes](policy-guide.md#example-matching-eventattributes).
 - **Decision** is one of `ALLOW`, `OBSERVE_ONLY`, `ALERT`,
   `CHALLENGE`, `REQUIRE_APPROVAL`, `BLOCK`.
 - **Evaluation is first-match-wins**, deterministic, and fails closed:

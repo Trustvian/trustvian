@@ -40,10 +40,12 @@ func (d Decision) Valid() bool {
 }
 
 // Input is what a Policy is evaluated against: the stable shape of the
-// event, and the Trust result computed from it.
+// event, the Trust result computed from it, and the event's raw
+// Attributes (for Condition.Attributes matching).
 type Input struct {
-	Stable features.StableFeatures
-	Trust  trust.Trust
+	Stable     features.StableFeatures
+	Trust      trust.Trust
+	Attributes map[string]any
 }
 
 // Condition matches an Input. Every field is optional: its zero value
@@ -53,10 +55,7 @@ type Input struct {
 // This means a Condition cannot itself distinguish "any target" from
 // "specifically an empty target" — an acceptable MVP simplification,
 // since real policies match on populated destinations/environments, not
-// their absence. Matching on arbitrary Event.Attributes (as in
-// "tool.category: secrets") is deliberately not supported yet; it needs
-// a YAML/file policy loader (a future adapter) to be worth the added
-// matching complexity here.
+// their absence.
 type Condition struct {
 	ActorType         event.ActorType
 	OperationCategory event.OperationCategory
@@ -65,6 +64,14 @@ type Condition struct {
 	// MinRiskLevel, if set, requires Input.Trust.Risk to be at least this
 	// severe (see trust.RiskLevel.AtLeast).
 	MinRiskLevel trust.RiskLevel
+	// Attributes, if non-empty, requires every key to be present in
+	// Input.Attributes with a value whose string representation (via
+	// fmt.Sprint) equals the configured value. A nil or empty map means
+	// "don't care", consistent with every other field. This is what
+	// closes the "tool.category: secrets" AI-agent policy example: no
+	// AND/OR/NOT combinators, just flat key/value equality ANDed with
+	// every other Condition field.
+	Attributes map[string]string
 }
 
 // Matches reports whether every non-zero field of c matches in.
@@ -83,6 +90,12 @@ func (c Condition) Matches(in Input) bool {
 	}
 	if c.MinRiskLevel != "" && !in.Trust.Risk.AtLeast(c.MinRiskLevel) {
 		return false
+	}
+	for key, want := range c.Attributes {
+		got, ok := in.Attributes[key]
+		if !ok || fmt.Sprint(got) != want {
+			return false
+		}
 	}
 	return true
 }

@@ -305,3 +305,56 @@ func TestWithStoreUsesProvidedStore(t *testing.T) {
 		t.Fatalf("custom store Observe calls = %d, want 1", custom.observes)
 	}
 }
+
+// secretsToolPolicy blocks AI agents from touching tools whose
+// tool.category attribute is "secrets" — the spec's own worked
+// example for Condition.Attributes matching.
+func secretsToolPolicy() policy.Policy {
+	return policy.Policy{
+		Rules: []policy.Rule{
+			{
+				Name: "block-ai-agent-secrets-access",
+				When: policy.Condition{
+					ActorType:  event.ActorTypeAIAgent,
+					Attributes: map[string]string{"tool.category": "secrets"},
+				},
+				Action: policy.DecisionBlock,
+				Reason: "AI agents may not access secrets-category tools",
+			},
+		},
+		DefaultAction: policy.DecisionAllow,
+		DefaultReason: "no matching rule",
+	}
+}
+
+func TestAnalyzeMatchesAttributeConditionEndToEnd(t *testing.T) {
+	engine := trustvian.NewEngine(trustvian.WithPolicy(secretsToolPolicy()))
+	ctx := context.Background()
+
+	ev := event.Event{
+		ID:        "evt-secrets",
+		Timestamp: time.Now(),
+		Actor: event.Actor{
+			ID:                 "agent-1",
+			Type:               event.ActorTypeAIAgent,
+			IdentityConfidence: 0.9,
+		},
+		Operation: event.Operation{
+			Category: event.OperationCategoryTool,
+			Name:     "read-secret",
+		},
+		Target:  event.Target{Name: "secrets-manager"},
+		Context: event.Context{Environment: "production"},
+		Attributes: map[string]any{
+			"tool.category": "secrets",
+		},
+	}
+
+	result, err := engine.Analyze(ctx, ev)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.Decision != policy.DecisionBlock {
+		t.Fatalf("Decision = %q, want %q for an AI agent hitting a tool.category=secrets attribute", result.Decision, policy.DecisionBlock)
+	}
+}
