@@ -16,40 +16,52 @@ Cross-references: [ARCHITECTURE.md](ARCHITECTURE.md) (system shape),
 
 ## Current status
 
-The core pipeline — `Event → Features → Fingerprint → Baseline →
-Anomaly → Trust → Policy → Decision` — is implemented, tested (86–100%
-statement coverage per package), benchmarked end to end, and
-race-clean. A Go SDK (`Engine`, functional options), a CLI (`analyze`,
-`baseline build`), and an inbound OpenTelemetry adapter
+**`v0.1.0` is shipped.** The core pipeline — `Event → Features →
+Fingerprint → Baseline → Anomaly → Trust → Policy → Decision` — is
+implemented, tested, benchmarked end to end, and race-clean, and every
+task in the `v0.1` milestone below (001–007, 010–013) is complete and
+individually verified against its own acceptance criteria as part of
+[task 013](tasks/013-oss-v01.md)'s release gate. See
+[CHANGELOG.md](../CHANGELOG.md) for what `v0.1.0` actually contains and
+the public API compatibility promise that starts at this tag.
+
+Concretely, as of `v0.1.0`: a Go SDK (`Engine`, functional options), a
+CLI (`analyze`, `baseline build`), and an inbound OpenTelemetry adapter
 (`internal/otel.EventFromSpan`) all exist and are exercised by
 end-to-end tests. Architecture hardening (package boundaries,
-dependency direction, a real hot-path fix) has been completed and is
-recorded in [ADRs 0001–0005](adr/). [Task 003](tasks/003-baseline.md)
-is done: a persistent `store.FileStore` (survives a process restart —
-see [ADR 0006](adr/0006-file-backed-persistent-store.md)), fingerprint
-staleness (`FingerprintStats.IsStale`), and per-actor learning freeze
-(`store.Freezer`) are all implemented, tested under `-race`, and
-benchmarked.
+dependency direction, a real hot-path fix) is recorded in [ADRs
+0001–0006](adr/). A persistent `store.FileStore` (survives a process
+restart — [ADR 0006](adr/0006-file-backed-persistent-store.md)),
+fingerprint staleness, and per-actor learning freeze are implemented
+and benchmarked. `Target.Category` (a new stable dimension), a
+versioned fingerprint hash, a `frequency_deviation` anomaly signal,
+`Trust.Explain()`/`Result.Explain()`, policy attribute matching, a
+runnable `examples/` directory, a complete performance baseline (see
+[PERFORMANCE.md § Measured results](PERFORMANCE.md#measured-results)),
+and a dedicated, threat-organized security test suite (see
+[SECURITY.md](SECURITY.md)) all shipped as part of this milestone.
 
-What's **not** yet true, concretely:
+What's **not** yet true, concretely — the `v0.2`-and-later gaps this
+roadmap's remaining milestones exist to close:
 
 - No CI/CD, no container image.
 - The six *outbound* `trustvian.*` OTel enrichment attributes (from
   the original spec) are undocumented-as-implemented because they
   aren't — only the four *inbound* override attributes exist.
 - No OTel Collector processor.
-- No dedicated security-focused test suite (security-relevant
-  behavior is tested, but scattered across each package's own tests,
-  not organized as a threat-by-threat suite).
 - AI-agent event types work today only through the generic `Event`
   model (`ActorTypeAIAgent` + `OperationCategoryTool`) — no session,
   delegation, or tool-sequence concepts exist.
 - No MCP interface, no Trustvian Control.
 
-This roadmap's job is to close the gaps that block a genuinely
-meaningful `v0.1`, in the order that respects the roadmap principles
-(deterministic before ML, security before advanced features,
-real-world validation before enterprise, small vertical slices).
+**Next up: `v0.2` — OpenTelemetry maturation** (see below), completing
+the outbound OTel integration story now that `v0.1`'s `Result` shape is
+stable enough to write an exporter against.
+
+This roadmap's job is to close the remaining gaps in the order that
+respects the roadmap principles (deterministic before ML, security
+before advanced features, real-world validation before enterprise,
+small vertical slices).
 
 ---
 

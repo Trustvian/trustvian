@@ -26,6 +26,17 @@ In order of how often they run in a typical deployment:
 
 ## Measured results
 
+**This table is the `v0.1` release baseline** (confirmed as part of
+[task 013](tasks/013-oss-v01.md)'s release gate, 2026-09-04). Every
+number in it was already current as of task 011's own re-measurement;
+task 013 re-ran the full `go test ./... -bench . -benchmem -run ^$`
+suite fresh (no cache) on the exact commit being released and confirms
+every `B/op`/`allocs/op` figure below is unchanged and every `ns/op`
+figure is within normal session-to-session noise — see "v0.1 gate
+confirmation run" below for that fresh run's numbers side by side.
+Future performance work should diff against this table, not against
+individual task commits, as the `v0.1` comparison point.
+
 Environment: Go 1.27, darwin/arm64, Apple M3 Pro. Run with
 `make bench` or `go test ./... -run '^$' -bench . -benchmem`.
 `-12` suffix = `GOMAXPROCS`/parallel benchmark; no suffix = sequential
@@ -64,6 +75,36 @@ versus this session's general measurement noise.
 | `store.FileStore.Observe` (distinct keys, 12-way parallel) | 4,700,393 | 16,891 | 51 |
 | `Engine.Analyze` (sequential) | 553.8 | 456 | 17 |
 | `Engine.Analyze` (12-way parallel) | 191.9 | 456 | 17 |
+
+### v0.1 gate confirmation run
+
+Same environment, same commit, run fresh (no test cache) as part of
+[task 013](tasks/013-oss-v01.md)'s release-gate verification. Shown
+here to prove the table above reproduces, not as a replacement for it —
+`B/op`/`allocs/op` match exactly everywhere; `ns/op` differences are
+normal machine-load variance (this run shared the machine with other
+work), not code changes.
+
+| Benchmark | ns/op | B/op | allocs/op |
+|---|---:|---:|---:|
+| `features.Extract` | 17.76 | 0 | 0 |
+| `fingerprint.Compute` | 170.8 | 120 | 15 |
+| `trust.Compute` | 5.161 | 0 | 0 |
+| `policy.Evaluate` (rule match) | 27.15 | 0 | 0 |
+| `policy.Evaluate` (falls to default) | 37.75 | 0 | 0 |
+| `baseline.Observe` (direct, same fingerprint) | 165.8 | 464 | 3 |
+| `anomaly.Score` (familiar, no signal fires) | 48.04 | 0 | 0 |
+| `anomaly.Score` (novel, every signal fires) | 234.1 | 448 | 5 |
+| `otel.EventFromSpan` | 347.9 | 696 | 10 |
+| `store.InMemory.Observe` (same key, sequential) | 356.5 | 464 | 3 |
+| `store.InMemory.Observe` (distinct keys, sequential) | 140.4 | 464 | 3 |
+| `store.InMemory.Observe` memory growth (100 keys) | 212.3 | 464 | 3 |
+| `store.InMemory.Observe` memory growth (1,000 keys) | 231.9 | 464 | 3 |
+| `store.InMemory.Observe` memory growth (10,000 keys) | 237.2 | 464 | 3 |
+| `store.FileStore.Observe` (same key, sequential) | 4,416,998 | 3,873 | 24 |
+| `store.FileStore.Observe` (distinct keys, sequential) | 4,668,619 | 16,948 | 51 |
+| `Engine.Analyze` (sequential) | 435.6 | 456 | 17 |
+| `Engine.Analyze` (12-way parallel) | 158.3 | 456 | 17 |
 
 ## Reading the numbers
 
