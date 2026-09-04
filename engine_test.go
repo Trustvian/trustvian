@@ -2,6 +2,8 @@ package trustvian_test
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -356,5 +358,161 @@ func TestAnalyzeMatchesAttributeConditionEndToEnd(t *testing.T) {
 	}
 	if result.Decision != policy.DecisionBlock {
 		t.Fatalf("Decision = %q, want %q for an AI agent hitting a tool.category=secrets attribute", result.Decision, policy.DecisionBlock)
+	}
+}
+
+// TestAnalyzeNegativeDurationDoesNotCorruptTrustScore is a security
+// regression test (docs/tasks/012-security-tests.md): a negative
+// duration_ms attribute is adversarial/malformed input that isn't
+// rejected by event.Validate (only IdentityConfidence and enum fields are
+// checked there), so it flows through features.Extract into
+// internal/anomaly's latency z-score math as a negative time.Duration.
+//
+// This was traced through empirically rather than assumed safe: a
+// negative current latency against a baseline with non-zero variance
+// still yields a large but finite z-score ((currentNS-mean)/stddev is a
+// well-defined finite division whenever stddev != 0, regardless of the
+// sign of currentNS), which min(z/threshold, 1) then clamps to the
+// signal's normal [0,1] range exactly like any other extreme deviation.
+// No NaN or Inf propagates into Anomaly.Score or Trust.Score. This test
+// pins that finding down as a regression rather than leaving it an
+// implicit assumption.
+func TestAnalyzeNegativeDurationDoesNotCorruptTrustScore(t *testing.T) {
+	ctx := context.Background()
+	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()))
+
+	// Warm up with varying (but bounded) latencies so the baseline
+	// accumulates non-zero LatencyVariance — a constant latency would
+	// take latencySignal's nearZeroStdDev branch instead, which never
+	// exercises the division this test is targeting.
+	latencies := []float64{10, 12, 9, 11, 8, 13, 10, 9, 12, 11, 10, 9, 13, 8, 11, 10, 12, 9, 11, 10, 8, 13, 9, 11, 10, 12, 9, 11, 10, 12}
+	clock := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i, l := range latencies {
+		clock = clock.Add(time.Second)
+		result, err := engine.Analyze(ctx, paymentEventAt(l, fmt.Sprintf("warm-up-%d", i), clock))
+		if err != nil {
+			t.Fatalf("Analyze() warm-up %d: error = %v", i, err)
+		}
+		if _, err := engine.Observe(ctx, result); err != nil {
+			t.Fatalf("Observe() warm-up %d: error = %v", i, err)
+		}
+	}
+
+	// A negative duration_ms is not something a well-behaved producer
+	// sends, but Validate does not reject it — this event must still be
+	// handled safely all the way through Trust.Score.
+	clock = clock.Add(time.Second)
+	result, err := engine.Analyze(ctx, paymentEventAt(-500, "negative-duration", clock))
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+
+	if math.IsNaN(result.Anomaly.Score) || math.IsInf(result.Anomaly.Score, 0) {
+		t.Fatalf("Anomaly.Score = %v for a negative duration_ms, want a finite value in [0,1]", result.Anomaly.Score)
+	}
+	if result.Anomaly.Score < 0 || result.Anomaly.Score > 1 {
+		t.Fatalf("Anomaly.Score = %v out of [0,1] range", result.Anomaly.Score)
+	}
+	if math.IsNaN(result.Trust.Score) || math.IsInf(result.Trust.Score, 0) {
+		t.Fatalf("Trust.Score = %v for a negative duration_ms, want a finite value in [0,1]", result.Trust.Score)
+	}
+	if result.Trust.Score < 0 || result.Trust.Score > 1 {
+		t.Fatalf("Trust.Score = %v out of [0,1] range", result.Trust.Score)
+	}
+}
+
+// TestAnalyzeCrossActorIsolation proves, end-to-end through Engine, what
+// baseline.Key's composite (ActorID, Environment) shape only implies by
+// construction: two actors that produce an otherwise identical stable
+// feature shape (same operation, same target, same environment) never
+// share Baseline state. actor-a is matured over 30 observations; if
+// actor-b's first-ever event for the exact same shape came back with any
+// non-zero Confidence, that would mean actor-a's history leaked across
+// the actor boundary.
+func TestAnalyzeCrossActorIsolation(t *testing.T) {
+	ctx := context.Background()
+	e := trustvian.NewEngine()
+
+	shape := func(actorID string) event.Event {
+		return event.Event{
+			ID: actorID + "-evt", Timestamp: time.Now(),
+			Actor:     event.Actor{ID: actorID, Type: event.ActorTypeService, IdentityConfidence: 1},
+			Operation: event.Operation{Category: event.OperationCategoryHTTP, Name: "GET /shared"},
+			Target:    event.Target{Name: "shared-target"},
+			Context:   event.Context{Environment: "prod"},
+		}
+	}
+
+	for range 30 {
+		r, err := e.Analyze(ctx, shape("actor-a"))
+		if err != nil {
+			t.Fatalf("Analyze: %v", err)
+		}
+		if _, err := e.Observe(ctx, r); err != nil {
+			t.Fatalf("Observe: %v", err)
+		}
+	}
+
+	// actor-b has never been observed for this identical shape — it must
+	// still register full categorical novelty, proving actor-a's 30
+	// observations never leaked into actor-b's Baseline.
+	rB, err := e.Analyze(ctx, shape("actor-b"))
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if rB.Anomaly.Confidence != 0 {
+		t.Errorf("actor-b Confidence = %v, want 0 (no baseline should exist yet — cross-actor leak?)", rB.Anomaly.Confidence)
+	}
+}
+
+// TestAnalyzeLargeAttributesMapDoesNotPanic is a resource-exhaustion
+// smoke test (docs/tasks/012-security-tests.md): a producer sending an
+// Attributes map with an unusually large number of keys must not panic
+// or error Analyze — only duration_ms/error are ever read out of it, so
+// cost should stay proportional to what's actually consumed, not to the
+// map's total size.
+func TestAnalyzeLargeAttributesMapDoesNotPanic(t *testing.T) {
+	ctx := context.Background()
+	e := trustvian.NewEngine()
+	attrs := make(map[string]any, 100000)
+	for i := range 100000 {
+		attrs[fmt.Sprintf("key-%d", i)] = i
+	}
+	ev := event.Event{
+		ID: "evt", Timestamp: time.Now(),
+		Actor:      event.Actor{ID: "a", Type: event.ActorTypeService, IdentityConfidence: 1},
+		Operation:  event.Operation{Category: event.OperationCategoryHTTP, Name: "GET /x"},
+		Attributes: attrs,
+	}
+	if _, err := e.Analyze(ctx, ev); err != nil {
+		t.Fatalf("Analyze() error = %v, want nil (large Attributes must not error or panic)", err)
+	}
+}
+
+// TestObserveUnboundedFingerprintsDoesNotPanic is a resource-exhaustion
+// smoke test (docs/tasks/012-security-tests.md): a single actor
+// generating thousands of distinct fingerprints (e.g. a unique operation
+// name per call) must not panic or error Engine.Observe. store.InMemory
+// has no eviction policy today — see docs/SECURITY.md's "Resource
+// exhaustion" entry — so this test only asserts the safety property (no
+// panic, no error), not a bound on memory growth; the growth curve itself
+// is docs/tasks/011-performance.md's concern.
+func TestObserveUnboundedFingerprintsDoesNotPanic(t *testing.T) {
+	ctx := context.Background()
+	e := trustvian.NewEngine()
+	for i := range 5000 {
+		ev := event.Event{
+			ID: fmt.Sprintf("evt-%d", i), Timestamp: time.Now(),
+			Actor:     event.Actor{ID: "actor-flood", Type: event.ActorTypeService, IdentityConfidence: 1},
+			Operation: event.Operation{Category: event.OperationCategoryHTTP, Name: fmt.Sprintf("GET /x/%d", i)},
+			Context:   event.Context{Environment: "prod"},
+		}
+		r, err := e.Analyze(ctx, ev)
+		if err != nil {
+			t.Fatalf("Analyze() at i=%d: %v", i, err)
+		}
+		if _, err := e.Observe(ctx, r); err != nil {
+			t.Fatalf("Observe() at i=%d: %v", i, err)
+		}
 	}
 }

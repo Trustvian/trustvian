@@ -14,6 +14,25 @@ about securing the transport or storage layers around it (those are
 explicitly out of core scope — see
 [`docs/ARCHITECTURE.md`](ARCHITECTURE.md)).
 
+## Test index
+
+Every threat below is backed by a specific, named test, not just a
+design argument. This table exists so that fact is verifiable at a
+glance rather than requiring a read of every section
+([`docs/tasks/012-security-tests.md`](tasks/012-security-tests.md)).
+Threats whose tests already existed before that task are referenced
+here, not moved or rewritten.
+
+| Threat | Test(s) |
+| --- | --- |
+| Identity confusion (cross-actor isolation) | `TestAnalyzeCrossActorIsolation` in [`engine_test.go`](../engine_test.go) |
+| Baseline poisoning | `TestObserveLearnsOnlyFromEligibleDecisions`, `TestAnalyzeSensitiveTargetFloorEndToEnd` in [`engine_test.go`](../engine_test.go) |
+| Malicious agents / privilege escalation | `TestAnalyzeSensitiveTargetFloorEndToEnd` in [`engine_test.go`](../engine_test.go) |
+| Policy bypass | `TestEvaluateFailsClosedOnZeroValuePolicy`, `TestEvaluateFailsClosedOnInvalidDefaultAction`, `TestEvaluateFailsClosedOnEmptyDefaultReason` in [`internal/policy/policy_test.go`](../internal/policy/policy_test.go) |
+| Malformed events / extreme input values | `TestValidateRejectsNonFiniteIdentityConfidence`, `TestValidateAcceptsVeryLongActorID` in [`event/event_test.go`](../event/event_test.go); `TestAnalyzeNegativeDurationDoesNotCorruptTrustScore`, `TestAnalyzeLargeAttributesMapDoesNotPanic` in [`engine_test.go`](../engine_test.go) |
+| Resource exhaustion | `TestAnalyzeLargeAttributesMapDoesNotPanic`, `TestObserveUnboundedFingerprintsDoesNotPanic` in [`engine_test.go`](../engine_test.go) |
+| Explainability | `TestEvaluateAlwaysProducesNonEmptyExplanationReason` in [`internal/policy/policy_test.go`](../internal/policy/policy_test.go) |
+
 ## Threats considered
 
 ### Telemetry spoofing
@@ -38,13 +57,21 @@ a transport/collection-layer concern.
 environments/tenants) collide on the same behavioral history, letting
 one actor's baseline apply to another.
 
-**Status: implemented.** `baseline.Key{ActorID, Environment}` is a
-composite key from the start, not a bare actor-ID string — even though
-the OSS engine is single-tenant today. This is deliberately cheap now
-and expensive to retrofit later (see
+**Status: implemented, and verified end-to-end.** `baseline.Key{ActorID,
+Environment}` is a composite key from the start, not a bare actor-ID
+string — even though the OSS engine is single-tenant today. This is
+deliberately cheap now and expensive to retrofit later (see
 [ADR 0004](adr/0004-narrow-store-port-in-memory-only.md)). A future
 multi-tenant `TenantID` dimension is an additive extension of the same
-pattern, not a redesign.
+pattern, not a redesign. This was true by construction from
+`baseline.Key`'s shape but not directly proven end-to-end through
+`Engine` until `TestAnalyzeCrossActorIsolation` in
+[`engine_test.go`](../engine_test.go)
+([task 012](tasks/012-security-tests.md)): two actors that produce an
+otherwise identical stable feature shape (same operation, same target,
+same environment) never share `Baseline` state — actor-a is matured
+over 30 observations, and actor-b's first-ever event for the exact same
+shape still registers zero `Anomaly.Confidence`.
 
 ### Replay
 
@@ -142,17 +169,46 @@ identifiers, negative durations, deeply nested or very large
 `Attributes` — attempting to crash the engine, corrupt a score, or
 smuggle bad data past validation.
 
-**Status: partially addressed; not yet a dedicated, exhaustive test
-suite.** `Event.Validate()` already rejects several classes of bad
-input (empty required fields, out-of-range `IdentityConfidence`,
-invalid enum values — see `event/event_test.go`), and `trust.Compute`
-defensively clamps its numeric inputs to `[0,1]` regardless of what's
-passed (`internal/trust/trust.go`). What's missing is a systematic,
-threat-labeled sweep across the full space of adversarial input
-(`NaN`/`Inf` specifically, oversized `Attributes`, extreme string
-lengths) rather than the incidental coverage that exists today. See
-[`docs/tasks/012-security-tests.md`](tasks/012-security-tests.md) —
-this is that task's explicit scope.
+**Status: implemented, with two deliberate exceptions documented as
+accepted behavior, not gaps.**
+
+- `Event.Validate()` rejects empty required fields, out-of-range
+  `IdentityConfidence` (including `NaN`, `+Inf`, `-Inf`), and invalid
+  enum values. The `NaN` case was a genuine, empirically-confirmed gap
+  closed by this task: Go's `NaN < 0`/`NaN > 1` are both always false,
+  so the pre-existing range check silently passed a `NaN`
+  `IdentityConfidence` through `Actor.validate()` (`event/event.go`)
+  until an explicit `math.IsNaN` check was added. `+Inf`/`-Inf` were
+  already correctly rejected by the range check before this task; see
+  `TestValidateRejectsNonFiniteIdentityConfidence` in
+  [`event/event_test.go`](../event/event_test.go), which proves all
+  three sub-cases individually rather than assuming they behaved alike.
+- `Actor.ID` has no length limit, and `TestValidateAcceptsVeryLongActorID`
+  in [`event/event_test.go`](../event/event_test.go) asserts that a
+  100,000-character `Actor.ID` is accepted, not rejected — this is
+  deliberate current behavior per [task 012](tasks/012-security-tests.md)'s
+  Non-Goals (no length limit added absent a concrete DoS vector), stated
+  explicitly rather than left an untested assumption.
+- A negative `duration_ms` attribute is not rejected by `Validate` (only
+  `IdentityConfidence` and enum fields are checked there) and flows
+  through `features.Extract` into `internal/anomaly`'s latency z-score
+  math as a negative `time.Duration`. This was traced through
+  empirically, not assumed: `(currentNS - mean) / stddev` is a
+  well-defined finite division whenever the baseline's `stddev != 0`,
+  regardless of the sign of `currentNS`, and `min(z/threshold, 1)` then
+  clamps it into the signal's normal `[0,1]` range exactly like any
+  other extreme deviation — no `NaN`/`Inf` reaches `Anomaly.Score` or
+  `Trust.Score`. `TestAnalyzeNegativeDurationDoesNotCorruptTrustScore`
+  in [`engine_test.go`](../engine_test.go) pins this down as a
+  regression rather than an implicit assumption; no code change was
+  needed here because none was demonstrated necessary.
+- `trust.Compute` separately, defensively clamps its numeric inputs to
+  `[0,1]` regardless of what's passed (`internal/trust/trust.go`), as a
+  second line of defense independent of the above.
+- A large `Attributes` map (100,000 keys) does not panic or error
+  `Engine.Analyze` — see `TestAnalyzeLargeAttributesMapDoesNotPanic` in
+  [`engine_test.go`](../engine_test.go), also listed under "Resource
+  exhaustion" below.
 
 ### Resource exhaustion
 
@@ -162,17 +218,26 @@ its size — an unbounded `Attributes` map, or an actor generating an
 unbounded number of distinct fingerprints to grow `Baseline` without
 limit.
 
-**Status: not yet tested; behavior is currently "whatever Go's map and
-slice growth does," not a deliberately engineered bound.** There is no
-per-event size limit on `Attributes` today, and `store.InMemory` has
-no eviction policy — see
+**Status: safety property tested (no panic, no error); growth curve
+still uncharacterized and unbounded by design.** There is no per-event
+size limit on `Attributes` today, and `store.InMemory` has no eviction
+policy — see
 [PERFORMANCE.md § what's not benchmarked](PERFORMANCE.md#whats-not-benchmarked-yet)
-for the related (unmeasured) memory-growth question. **Future
-mitigation:** [`docs/tasks/012-security-tests.md`](tasks/012-security-tests.md)
-scopes the safety-property tests (no panic, no deadlock, cost
-proportional to input); [`docs/tasks/011-performance.md`](tasks/011-performance.md)
-scopes characterizing the growth curve itself. Neither task commits to
-adding an enforced limit — that's a decision to make only if the
+for the related (unmeasured) memory-growth question.
+`TestAnalyzeLargeAttributesMapDoesNotPanic` in
+[`engine_test.go`](../engine_test.go) proves a 100,000-key `Attributes`
+map does not panic or error `Engine.Analyze` (only `duration_ms`/`error`
+are ever read out of it, so per-event cost is proportional to what's
+consumed, not to the map's total size).
+`TestObserveUnboundedFingerprintsDoesNotPanic` in
+[`engine_test.go`](../engine_test.go) proves a single actor producing
+5,000 distinct fingerprints does not panic or error `Engine.Observe`.
+Neither test bounds memory growth itself — that's a deliberate scope
+line from [task 012](tasks/012-security-tests.md): the *safety*
+property (no panic, no deadlock) is this task's concern, the *growth
+curve* is [task 011](tasks/011-performance.md)'s. **Future mitigation:**
+an enforced limit (per-event `Attributes` size, or `Baseline` eviction)
+is a decision to make only if [011](tasks/011-performance.md)'s
 characterization shows it's actually needed, not preemptively.
 
 ### Future multi-tenant isolation

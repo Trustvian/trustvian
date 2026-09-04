@@ -15,6 +15,7 @@ package event
 import (
 	"errors"
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -69,7 +70,7 @@ func (a Actor) validate() error {
 	if !a.Type.valid() {
 		return fmt.Errorf("%w: %q", ErrInvalidActorType, a.Type)
 	}
-	if a.IdentityConfidence < 0 || a.IdentityConfidence > 1 {
+	if math.IsNaN(a.IdentityConfidence) || a.IdentityConfidence < 0 || a.IdentityConfidence > 1 {
 		return fmt.Errorf("%w: %v", ErrInvalidIdentityConfidence, a.IdentityConfidence)
 	}
 	return nil
