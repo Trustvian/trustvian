@@ -269,7 +269,10 @@ this together: the original `Event`, `Features`, `Fingerprint`,
 `Anomaly` (with its contributors), `Trust` (with every input), and the
 final `Decision` + `Explanation`. Nothing is discarded on the way to
 the final answer — that completeness is what makes every decision
-explainable end to end, not just at the policy stage.
+explainable end to end, not just at the policy stage. `Result.Explain()`
+renders that whole record as one human-readable summary, so answering
+"why did Trustvian allow/block/challenge this" never requires
+hand-assembling the story from five separate fields.
 
 This document describes the domain model as it exists today. Planned
 extensions to it (a frequency-deviation anomaly signal, AI-agent
