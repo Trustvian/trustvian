@@ -22,6 +22,7 @@ package anomaly
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/Trustvian/trustvian/internal/baseline"
@@ -44,12 +45,46 @@ type Config struct {
 	// signal reaches its full strength (1.0). Must be > 0.
 	LatencyZThreshold float64
 
+	// FrequencyZThreshold is the |z-score| at which the frequency-deviation
+	// signal (deviation of the current inter-observation interval from the
+	// baseline's typical interval) reaches its full strength (1.0). Must be > 0.
+	FrequencyZThreshold float64
+
 	// Weight fields scale a signal's raw [0,1] value before it enters
 	// the noisy-OR combination in Score. A weight of 1.0 means the
 	// signal alone can drive the combined score to that same value.
 	NoveltyWeight float64
 	LatencyWeight float64
 	ErrorWeight   float64
+
+	// FrequencyWeight defaults to 0, which makes frequency_deviation an
+	// opt-in signal: it is still computed and still reported in
+	// Anomaly.Contributors for explainability, but contributes nothing
+	// to Score until an operator sets a non-zero weight. This mirrors
+	// SensitiveTargetFloor, which likewise ships empty and inert.
+	//
+	// The reason is calibration, not doubt about the mechanism. The
+	// signal measures a z-score of the current inter-event interval
+	// against an EWMA whose stddev is whatever jitter that fingerprint's
+	// traffic happens to carry — and on a service with only a few
+	// milliseconds of natural jitter around a ten-second cadence, a
+	// completely ordinary event a few milliseconds off the mean already
+	// reaches |z| > 3 and clamps the signal to 1.0. With a 0.6 weight
+	// that alone was enough to carry a fully-familiar actor to
+	// RiskHigh (see TestAnalyzeOrdinaryCadenceJitterDoesNotElevateRisk),
+	// which is a false positive on routine traffic — and, under a
+	// risk-gated policy, a BLOCK that is then ineligible for learning.
+	// There is no single default that is simultaneously correct for a
+	// cron job, a chatty RPC poller, and a human-driven UI.
+	//
+	// To enable it: measure your own fleet's inter-request jitter for
+	// the fingerprints you care about (FingerprintStats.IntervalMean and
+	// the stddev implied by IntervalVariance), set FrequencyZThreshold
+	// above the |z| your ordinary traffic actually produces, and only
+	// then raise FrequencyWeight — starting low (e.g. 0.3) and watching
+	// the resulting Decision mix before going higher. See
+	// examples/frequency-abuse for a worked opt-in.
+	FrequencyWeight float64
 
 	// SensitiveTargetFloor maps a Target name to a minimum anomaly
 	// contribution that always applies when that target is touched,
@@ -60,16 +95,24 @@ type Config struct {
 	SensitiveTargetFloor map[string]float64
 }
 
-// DefaultConfig returns reasonable MVP defaults. SensitiveTargetFloor is
-// empty; callers populate it with the destinations their deployment
-// considers sensitive.
+// DefaultConfig returns reasonable MVP defaults.
+//
+// Two fields ship deliberately inert, because no default value for them
+// is correct for every deployment: SensitiveTargetFloor is empty (callers
+// populate it with the destinations their deployment considers
+// sensitive), and FrequencyWeight is 0 (callers raise it once they have
+// calibrated FrequencyZThreshold against their own traffic's jitter).
+// Both mechanisms are fully implemented and reported in
+// Anomaly.Contributors; only their contribution to Score is opt-in.
 func DefaultConfig() Config {
 	return Config{
 		MinObservations:      20,
 		LatencyZThreshold:    3.0,
+		FrequencyZThreshold:  3.0,
 		NoveltyWeight:        1.0,
 		LatencyWeight:        0.6,
 		ErrorWeight:          0.8,
+		FrequencyWeight:      0,
 		SensitiveTargetFloor: map[string]float64{},
 	}
 }
@@ -130,6 +173,24 @@ func Score(feat features.Features, fp fingerprint.Fingerprint, bl baseline.Basel
 		}
 	}
 
+	// A non-positive interval means this event's Timestamp does not
+	// follow the fingerprint's last recorded observation — clock skew,
+	// out-of-order delivery, or a backdated event from an untrusted
+	// source. That is an *absence* of interval information, not a
+	// measurement of an impossibly fast one, so it is gated out for the
+	// same reason IntervalObservations == 0 is: reporting a maximal
+	// deviation here would let anyone who can backdate a timestamp
+	// manufacture a frequency_deviation signal at will.
+	// internal/baseline refuses to learn from such an interval too; this
+	// is the read-side half of that guard.
+	if known && stats.IntervalObservations > 0 {
+		if interval := feat.Volatile.Timestamp.Sub(stats.LastObserved); interval > 0 {
+			if s := frequencySignal(interval, stats, cfg); s.Value > 0 {
+				signals = append(signals, s)
+			}
+		}
+	}
+
 	if feat.Volatile.Error {
 		if s := errorSignal(known, stats, cfg); s.Value > 0 {
 			signals = append(signals, s)
@@ -185,6 +246,38 @@ func latencySignal(current time.Duration, stats baseline.FingerprintStats, cfg C
 		detail = fmt.Sprintf("latency %s deviates from a stable baseline of %s (stddev ~0)", current, stats.LatencyMeanDuration())
 	}
 	return Signal{Name: "latency_deviation", Value: value, Weight: cfg.LatencyWeight, Detail: detail}
+}
+
+// frequencySignal only formats its Detail string once it knows the signal
+// actually contributes (Value > 0) — mirrors latencySignal's cost discipline.
+func frequencySignal(currentInterval time.Duration, stats baseline.FingerprintStats, cfg Config) Signal {
+	stddev := math.Sqrt(stats.IntervalVariance)
+	mean := stats.IntervalMean
+	currentNS := float64(currentInterval)
+	nearZeroStdDev := stddev < float64(time.Millisecond)
+
+	var value, z float64
+	if nearZeroStdDev {
+		if currentNS != mean {
+			value = 1
+		}
+	} else {
+		z = (currentNS - mean) / stddev
+		if z < 0 {
+			z = -z
+		}
+		value = min(z/cfg.FrequencyZThreshold, 1)
+	}
+
+	if value == 0 {
+		return Signal{Name: "frequency_deviation", Weight: cfg.FrequencyWeight}
+	}
+
+	detail := fmt.Sprintf("inter-event interval z-score %.2f (mean %s, stddev %s)", z, time.Duration(mean), time.Duration(stddev))
+	if nearZeroStdDev {
+		detail = fmt.Sprintf("interval %s deviates from a stable baseline of %s (stddev ~0)", currentInterval, time.Duration(mean))
+	}
+	return Signal{Name: "frequency_deviation", Value: value, Weight: cfg.FrequencyWeight, Detail: detail}
 }
 
 func errorSignal(known bool, stats baseline.FingerprintStats, cfg Config) Signal {

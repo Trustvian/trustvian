@@ -1,0 +1,48 @@
+# external-destination
+
+Ports [docs/use-cases.md § Service-to-service security](../../docs/use-cases.md#service-to-service-security):
+an order service normally calls a known internal RPC dependency
+(`InventoryService.Reserve` on `inventory-service`). The baseline is
+matured with 25 `Analyze`+`Observe` calls against that normal event
+(mirroring [docs/sdk-guide.md § watching trust mature](../../docs/sdk-guide.md#watching-trust-mature)),
+then a sudden external call to a secrets manager (`GET /secret` on
+`secrets-manager`), at much lower identity confidence (`0.97` -> `0.4`),
+is analyzed.
+
+Run it:
+
+```bash
+cd examples/external-destination && go run .
+```
+
+## Real output
+
+```
+warm-up  1: confidence=0.00 trust=0.97 decision=observe_only learned=true
+warm-up 10: confidence=0.45 trust=0.73 decision=observe_only learned=true
+warm-up 20: confidence=0.95 trust=0.92 decision=observe_only learned=true
+warm-up 25: confidence=1.00 trust=0.97 decision=observe_only learned=true
+
+Decision: observe_only
+trust 0.40 (high): identity confidence 0.40, anomaly 1.00 at 0% confidence, context risk 0.00
+Anomaly score: 1.00 (confidence 0.00)
+Detected:
+  - categorical_novelty: 1.00 (fingerprint never observed for this actor)
+Policy: default action (no policy rules configured; observing by default)
+```
+
+The RPC-to-inventory-service fingerprint matures to full confidence over
+the warm-up loop, same as the other maturity-loop examples. The secrets
+access is a different operation category (`external` vs. `rpc`) against
+a different target entirely, so it's scored as a brand-new fingerprint —
+`Trust` collapses to the actor's degraded `IdentityConfidence` (`0.40`).
+See [Architecture § design choices](../../docs/ARCHITECTURE.md#design-choices-worth-knowing-before-you-extend-this)
+for `anomaly.Config.SensitiveTargetFloor`, a stronger, Go-SDK-only
+version of this scenario where a sensitive destination stays flagged
+even once fully familiar — out of scope for this example, since building
+it requires an `anomaly.Config` from `internal/anomaly`, which (per
+[Non-Goals](../../docs/tasks/010-examples.md)) this example, as a true
+external module, cannot construct. See
+[the examples index](../README.md#a-note-on-decision) for why `Decision`
+here is `observe_only` rather than the `BLOCK` shown in
+[docs/use-cases.md](../../docs/use-cases.md#service-to-service-security).

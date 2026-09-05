@@ -32,7 +32,7 @@ func (e *capturingExporter) Shutdown(_ context.Context) error { return nil }
 // sdktrace.ReadOnlySpan. Its interface has an unexported method, so the
 // SDK is the only thing that can ever produce one — a hand-written fake
 // is not possible, and this is the correct way to test the adapter.
-func recordSpan(t *testing.T, res *resource.Resource, kind trace.SpanKind, name string, attrs []attribute.KeyValue, statusErr bool, start, end time.Time) sdktrace.ReadOnlySpan {
+func recordSpan(t testing.TB, res *resource.Resource, kind trace.SpanKind, name string, attrs []attribute.KeyValue, statusErr bool, start, end time.Time) sdktrace.ReadOnlySpan {
 	t.Helper()
 
 	exporter := &capturingExporter{}

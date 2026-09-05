@@ -1,6 +1,9 @@
 package trustvian
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/Trustvian/trustvian/event"
 	"github.com/Trustvian/trustvian/internal/anomaly"
 	"github.com/Trustvian/trustvian/internal/baseline"
@@ -34,4 +37,31 @@ type Result struct {
 
 	Decision    policy.Decision
 	Explanation policy.Explanation
+}
+
+// Explain renders r as a multi-line, human-readable summary of the full
+// decision: what was decided, the trust/risk/anomaly scores, which
+// signals contributed, and which policy rule (or default) produced it.
+// It is pure formatting over r's existing fields — no new computation.
+func (r Result) Explain() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Decision: %s\n", r.Decision)
+	fmt.Fprintf(&b, "%s\n", r.Trust.Explain())
+	fmt.Fprintf(&b, "Anomaly score: %.2f (confidence %.2f)\n", r.Anomaly.Score, r.Anomaly.Confidence)
+	if len(r.Anomaly.Contributors) > 0 {
+		b.WriteString("Detected:\n")
+		for _, c := range r.Anomaly.Contributors {
+			fmt.Fprintf(&b, "  - %s: %.2f", c.Name, c.Value)
+			if c.Detail != "" {
+				fmt.Fprintf(&b, " (%s)", c.Detail)
+			}
+			b.WriteString("\n")
+		}
+	}
+	if r.Explanation.MatchedDefault {
+		fmt.Fprintf(&b, "Policy: default action (%s)\n", r.Explanation.Reason)
+	} else {
+		fmt.Fprintf(&b, "Policy: rule %q (%s)\n", r.Explanation.RuleName, r.Explanation.Reason)
+	}
+	return b.String()
 }

@@ -6,7 +6,7 @@ GO       := go
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build run demo baseline-demo test test-race bench vet fmt fmt-check tidy coverage install clean check
+.PHONY: help build run demo baseline-demo test test-race bench vet fmt fmt-check tidy coverage install clean check examples
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -61,3 +61,11 @@ clean: ## Remove build and coverage artifacts
 	rm -rf $(BIN_DIR) coverage.out coverage.html
 
 check: fmt-check vet build test-race ## Full local gate: fmt-check, vet, build, race tests
+
+examples: ## Run every examples/* program and fail if any exits non-zero
+	@for d in examples/*/; do \
+		if [ -f "$$d/main.go" ]; then \
+			echo "==> $$d"; \
+			(cd "$$d" && go run .) || exit 1; \
+		fi; \
+	done

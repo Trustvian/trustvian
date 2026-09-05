@@ -52,7 +52,12 @@ type FingerprintStats struct {
 	Count uint64
 
 	FirstObserved time.Time
-	LastObserved  time.Time
+
+	// LastObserved is the latest observation timestamp seen for this
+	// Fingerprint. It advances monotonically: an observation whose
+	// timestamp precedes it (clock skew, out-of-order delivery) is still
+	// counted, but does not pull LastObserved backwards. See observe.
+	LastObserved time.Time
 
 	// LatencyObservations is the subset of Count that carried latency
 	// data (VolatileFeatures.HasLatency). LatencyMean/LatencyVariance are
@@ -60,6 +65,16 @@ type FingerprintStats struct {
 	LatencyObservations uint64
 	LatencyMean         float64 // EWMA mean latency, in nanoseconds
 	LatencyVariance     float64 // EWMA variance, in nanoseconds^2
+
+	// IntervalObservations is the number of times an inter-observation
+	// interval has been recorded for this Fingerprint. It is at most
+	// Count-1: the first observation has no prior LastObserved to measure
+	// from, and observations that do not strictly follow LastObserved are
+	// skipped entirely (see observe). IntervalMean/IntervalVariance are
+	// meaningless when this is zero.
+	IntervalObservations uint64
+	IntervalMean         float64 // EWMA mean inter-observation interval, in nanoseconds
+	IntervalVariance     float64 // EWMA variance, in nanoseconds^2
 
 	// ErrorRate is the EWMA-smoothed proportion of observations that
 	// carried an error, in [0,1].
@@ -106,9 +121,41 @@ func (s FingerprintStats) IsStale(now time.Time, maxAge time.Duration) bool {
 func (s FingerprintStats) observe(stable features.StableFeatures, vol features.VolatileFeatures, now time.Time) FingerprintStats {
 	if s.Count == 0 {
 		s.FirstObserved = now
+	} else if now.After(s.LastObserved) {
+		// Only a strictly forward-moving timestamp carries interval
+		// information. An event that does not follow the last one —
+		// clock skew, out-of-order delivery, or a deliberately
+		// backdated event from an untrusted source — would otherwise
+		// fold a negative (or zero) interval into the EWMA, which is a
+		// baseline-poisoning primitive: such an event is typically
+		// decided observe_only and so is eligible for learning, and one
+		// of them is enough to drag IntervalMean below zero and make
+		// every subsequent on-time event look anomalous. Skipping it
+		// records "no interval information this time" rather than the
+		// misleading data point a zero-or-negative interval would be.
+		intervalNS := float64(now.Sub(s.LastObserved))
+		if s.IntervalObservations == 0 {
+			s.IntervalMean = intervalNS
+			s.IntervalVariance = 0
+		} else {
+			delta := intervalNS - s.IntervalMean
+			s.IntervalMean += emaAlpha * delta
+			s.IntervalVariance = (1 - emaAlpha) * (s.IntervalVariance + emaAlpha*delta*delta)
+		}
+		s.IntervalObservations++
 	}
 	s.Count++
-	s.LastObserved = now
+	// LastObserved is the latest timestamp seen for this Fingerprint, not
+	// the timestamp of the most recent Observe call: it never regresses.
+	// Letting an out-of-order event pull it backwards would corrupt the
+	// *next* interval too (the following in-order event would measure
+	// from a timestamp that is not actually the most recent observation),
+	// which would defeat the guard above. It also keeps IsStale honest —
+	// a backdated arrival must not make a fingerprint look staler than
+	// the freshest evidence we hold for it.
+	if now.After(s.LastObserved) {
+		s.LastObserved = now
+	}
 	s.Stable = stable
 
 	if vol.HasLatency {
@@ -142,6 +189,14 @@ func (s FingerprintStats) observe(stable features.StableFeatures, vol features.V
 type Baseline struct {
 	Key          Key
 	Fingerprints map[string]FingerprintStats
+
+	// LastObserved is when this Baseline was last written — the `now` of
+	// the most recent Observe call, whatever its ordering. This is
+	// deliberately *not* the same rule as FingerprintStats.LastObserved,
+	// which tracks the latest evidence for one Fingerprint and never
+	// regresses because interval statistics are measured from it.
+	// Nothing measures anything from this field; it records write
+	// recency for the whole Baseline.
 	LastObserved time.Time
 }
 

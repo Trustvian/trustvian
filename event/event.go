@@ -15,6 +15,7 @@ package event
 import (
 	"errors"
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -69,7 +70,7 @@ func (a Actor) validate() error {
 	if !a.Type.valid() {
 		return fmt.Errorf("%w: %q", ErrInvalidActorType, a.Type)
 	}
-	if a.IdentityConfidence < 0 || a.IdentityConfidence > 1 {
+	if math.IsNaN(a.IdentityConfidence) || a.IdentityConfidence < 0 || a.IdentityConfidence > 1 {
 		return fmt.Errorf("%w: %v", ErrInvalidIdentityConfidence, a.IdentityConfidence)
 	}
 	return nil
@@ -115,6 +116,27 @@ func (d OperationDirection) valid() bool {
 	}
 }
 
+// TargetCategory classifies what kind of destination a Target is. It is
+// optional; the zero value means "unclassified" — a producer may set it or
+// leave it unset, matching how Direction is already optional today.
+type TargetCategory string
+
+const (
+	TargetCategoryUnspecified TargetCategory = ""
+	TargetCategoryInternal    TargetCategory = "internal"
+	TargetCategoryExternal    TargetCategory = "external"
+	TargetCategoryDatabase    TargetCategory = "database"
+)
+
+func (c TargetCategory) valid() bool {
+	switch c {
+	case TargetCategoryUnspecified, TargetCategoryInternal, TargetCategoryExternal, TargetCategoryDatabase:
+		return true
+	default:
+		return false
+	}
+}
+
 // Operation is what the Actor did: e.g. an HTTP route, a DB query, an RPC
 // call, an AI-agent tool invocation, or a call to an external destination.
 type Operation struct {
@@ -138,9 +160,11 @@ func (o Operation) validate() error {
 
 // Target is the destination of the Operation: a service name, a database,
 // or an external host. It is optional — not every Operation has a distinct
-// destination.
+// destination. Category, when set, classifies what kind of destination
+// this is (see TargetCategory); it is not required for Validate to pass.
 type Target struct {
-	Name string `json:"name"`
+	Name     string         `json:"name"`
+	Category TargetCategory `json:"category,omitzero"`
 }
 
 // Context carries correlation and scoping data for an Event: the

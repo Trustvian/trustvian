@@ -30,6 +30,7 @@ type Condition struct {
 	TargetName        string                  // "" = any
 	Environment       string                  // "" = any
 	MinRiskLevel      trust.RiskLevel         // "" = any; else Trust.Risk must be >= this
+	Attributes        map[string]string       // nil/empty = any; else every key must match (see below)
 }
 
 type Rule struct {
@@ -51,14 +52,22 @@ Every `Condition` field is optional — its zero value means "don't
 care." A `Condition{}` matches every event. `MinRiskLevel` uses an
 ordering (`RiskLow < RiskMedium < RiskHigh < RiskCritical`), so
 `MinRiskLevel: trust.RiskMedium` matches `MEDIUM`, `HIGH`, and
-`CRITICAL`.
+`CRITICAL`. `Attributes`, if non-empty, requires every configured key
+to be present in `Input.Attributes` with a value whose string form
+(via `fmt.Sprint`, so `true`/`42`/etc. all compare as their natural
+string) equals the configured value — see [Example: matching
+`Event.Attributes`](#example-matching-eventattributes) below. There
+are no comparison operators beyond string equality and no AND/OR/NOT
+combinators between `Condition`s — `Rule.When`/`Unless` stay single
+flat matchers by design.
 
 ## Evaluation: first match wins
 
 ```go
 result := myPolicy.Evaluate(policy.Input{
-	Stable: features.Stable, // from a Result, or built directly
-	Trust:  trust,
+	Stable:     features.Stable, // from a Result, or built directly
+	Trust:      trust,
+	Attributes: event.Attributes, // the raw Event.Attributes, for Condition.Attributes matching
 })
 // result.Decision, result.Explanation.{RuleName, Reason, MatchedDefault}
 ```
@@ -143,12 +152,6 @@ second, more general rule — order matters, and the first match wins.
 
 ## Example: `Unless` — an exception to a rule
 
-Mirrors the project spec's own policy example ("block AI-agent secrets
-access unless a human has approved"), expressed with the fields
-available today (attribute-based conditions like `approval: human` need
-a future policy loader — see the `Condition` doc comment in
-[`internal/policy/policy.go`](../internal/policy/policy.go)):
-
 ```go
 policy.Rule{
 	Name:   "alert-external-calls",
@@ -162,6 +165,43 @@ policy.Rule{
 An external call to `partner-api` is exempted (falls through to
 whatever rule/default comes next); an external call to anything else
 triggers the alert.
+
+## Example: matching `Event.Attributes`
+
+The project spec's own AI-agent policy example — "block AI agents from
+touching secrets-category tools" — needs to match on a specific
+`Event.Attributes` key/value pair, not just the fields on
+`features.StableFeatures`. `Condition.Attributes` closes exactly that
+gap, real code from
+[`internal/policy/policy_test.go`](../internal/policy/policy_test.go):
+
+```go
+policy.Policy{
+	Rules: []policy.Rule{
+		{
+			Name: "block-ai-agent-secrets-access",
+			When: policy.Condition{
+				ActorType:  event.ActorTypeAIAgent,
+				Attributes: map[string]string{"tool.category": "secrets"},
+			},
+			Action: policy.DecisionBlock,
+			Reason: "AI agents may not access secrets-category tools",
+		},
+	},
+	DefaultAction: policy.DecisionObserveOnly,
+	DefaultReason: "no matching rule",
+}
+```
+
+An `ai_agent`-typed actor whose event carries
+`Attributes: map[string]any{"tool.category": "secrets"}` is blocked;
+any other `tool.category` value, a missing key, or a non-`ai_agent`
+actor falls through. `Condition.Attributes` only ever does string
+equality per key (event attribute values are stringified with
+`fmt.Sprint`) — there is deliberately no `>`/`<`/regex matching, and no
+AND/OR/NOT composition between `Condition`s. That would be a real
+policy language, which this project's roadmap explicitly defers (see
+[`docs/tasks/006-policy.md`](tasks/006-policy.md#non-goals)).
 
 ## Testing a policy
 

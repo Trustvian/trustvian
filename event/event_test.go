@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"math"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -121,6 +123,47 @@ func TestEventValidate(t *testing.T) {
 	}
 }
 
+// TestValidateRejectsNonFiniteIdentityConfidence is a security regression
+// test (docs/tasks/012-security-tests.md): NaN comparisons are always
+// false in Go, so the pre-existing `< 0 || > 1` range check silently
+// passed a NaN IdentityConfidence before Actor.validate gained an explicit
+// math.IsNaN check. +Inf/-Inf were already caught by that same range
+// check (+Inf > 1 and -Inf < 0 are both true) — this test asserts all
+// three explicitly rather than assuming the fix was needed for all of
+// them.
+func TestValidateRejectsNonFiniteIdentityConfidence(t *testing.T) {
+	tests := []struct {
+		name  string
+		value float64
+	}{
+		{"NaN", math.NaN()},
+		{"+Inf", math.Inf(1)},
+		{"-Inf", math.Inf(-1)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := validEvent()
+			e.Actor.IdentityConfidence = tt.value
+			if err := e.Validate(); !errors.Is(err, event.ErrInvalidIdentityConfidence) {
+				t.Errorf("Validate() error = %v, want ErrInvalidIdentityConfidence", err)
+			}
+		})
+	}
+}
+
+// TestValidateAcceptsVeryLongActorID documents current, deliberate
+// behavior: Validate has no length limit on Actor.ID, and adding one is
+// out of scope for this task (docs/tasks/012-security-tests.md's
+// Non-Goals) absent a concrete DoS vector. This asserts that behavior
+// explicitly rather than leaving it an unstated assumption.
+func TestValidateAcceptsVeryLongActorID(t *testing.T) {
+	e := validEvent()
+	e.Actor.ID = strings.Repeat("a", 100_000)
+	if err := e.Validate(); err != nil {
+		t.Fatalf("Validate() = %v, want nil (no length limit on Actor.ID today)", err)
+	}
+}
+
 func TestEventValidateZeroValue(t *testing.T) {
 	var e event.Event
 	if err := e.Validate(); !errors.Is(err, event.ErrMissingID) {
@@ -167,6 +210,14 @@ func TestEventJSONRoundTrip(t *testing.T) {
 	}
 	if err := decoded.Validate(); err != nil {
 		t.Fatalf("round-tripped Event failed Validate(): %v", err)
+	}
+}
+
+func TestEventValidateIgnoresTargetCategory(t *testing.T) {
+	e := validEvent()
+	e.Target.Category = event.TargetCategory("not-a-real-category")
+	if err := e.Validate(); err != nil {
+		t.Errorf("Validate() = %v, want nil — TargetCategory must not be checked", err)
 	}
 }
 

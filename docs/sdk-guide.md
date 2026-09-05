@@ -36,7 +36,8 @@ type Operation struct {
 }
 
 type Target struct {
-	Name string // the destination: a service, database, or host
+	Name     string         // the destination: a service, database, or host
+	Category TargetCategory // internal | external | database | "" (optional)
 }
 
 type Context struct {
@@ -112,6 +113,34 @@ fmt.Println(result.Trust.Score, result.Trust.Risk, result.Decision)
 for _, signal := range result.Anomaly.Contributors {
 	fmt.Println(signal.Name, signal.Value, signal.Detail)
 }
+```
+
+`result.Trust.Explain() string` renders `Trust`'s retained fields
+(`Score`, `Risk`, `IdentityConfidence`, `AnomalyScore`,
+`AnomalyConfidence`, `ContextRisk`) as one human-readable sentence —
+pure formatting, no extra computation — for logging or display without
+hand-assembling the components yourself:
+
+```go
+fmt.Println(result.Trust.Explain())
+// "trust 0.35 (high): identity confidence 0.97, anomaly 0.91 at full confidence, context risk 0.10"
+```
+
+`result.Explain() string` renders the *whole* decision — not just
+`Trust` — as a multi-line, human-readable summary: the `Decision`,
+`Trust.Explain()`'s sentence, the anomaly score and confidence, every
+contributing signal (name, value, detail) if any fired, and which
+policy rule or default produced the outcome. It's pure formatting over
+`Result`'s existing fields, reusing `Trust.Explain()` internally:
+
+```go
+fmt.Print(result.Explain())
+// Decision: observe_only
+// trust 1.00 (low): identity confidence 1.00, anomaly 1.00 at 0% confidence, context risk 0.00
+// Anomaly score: 1.00 (confidence 0.00)
+// Detected:
+//   - categorical_novelty: 1.00 (fingerprint never observed for this actor)
+// Policy: default action (no policy rules configured; observing by default)
 ```
 
 ## Observe and learning
