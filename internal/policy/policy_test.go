@@ -89,6 +89,80 @@ func TestConditionMatchesPerField(t *testing.T) {
 	}
 }
 
+func TestConditionMatchesAttributes(t *testing.T) {
+	tests := []struct {
+		name  string
+		cond  policy.Condition
+		attrs map[string]any
+		want  bool
+	}{
+		{
+			name:  "matching attribute",
+			cond:  policy.Condition{Attributes: map[string]string{"tool.category": "secrets"}},
+			attrs: map[string]any{"tool.category": "secrets"},
+			want:  true,
+		},
+		{
+			name:  "mismatched value",
+			cond:  policy.Condition{Attributes: map[string]string{"tool.category": "secrets"}},
+			attrs: map[string]any{"tool.category": "files"},
+			want:  false,
+		},
+		{
+			name:  "absent key",
+			cond:  policy.Condition{Attributes: map[string]string{"tool.category": "secrets"}},
+			attrs: map[string]any{},
+			want:  false,
+		},
+		{
+			name:  "nil matcher matches everything",
+			cond:  policy.Condition{},
+			attrs: map[string]any{"anything": "goes"},
+			want:  true,
+		},
+		{
+			name:  "bool attribute value stringified",
+			cond:  policy.Condition{Attributes: map[string]string{"admin": "true"}},
+			attrs: map[string]any{"admin": true},
+			want:  true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := policy.Input{Attributes: tt.attrs}
+			if got := tt.cond.Matches(in); got != tt.want {
+				t.Errorf("Matches() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEvaluateToolCategorySecretsExample(t *testing.T) {
+	p := policy.Policy{
+		Rules: []policy.Rule{
+			{
+				Name: "block-ai-agent-secrets-access",
+				When: policy.Condition{
+					ActorType:  event.ActorTypeAIAgent,
+					Attributes: map[string]string{"tool.category": "secrets"},
+				},
+				Action: policy.DecisionBlock,
+				Reason: "AI agents may not access secrets-category tools",
+			},
+		},
+		DefaultAction: policy.DecisionObserveOnly,
+		DefaultReason: "no matching rule",
+	}
+	in := policy.Input{
+		Stable:     features.StableFeatures{ActorType: event.ActorTypeAIAgent},
+		Attributes: map[string]any{"tool.category": "secrets"},
+	}
+	result := p.Evaluate(in)
+	if result.Decision != policy.DecisionBlock {
+		t.Errorf("Decision = %v, want %v", result.Decision, policy.DecisionBlock)
+	}
+}
+
 func TestEvaluateRuleOrderingFirstMatchWins(t *testing.T) {
 	p := policy.Policy{
 		Rules: []policy.Rule{

@@ -116,6 +116,149 @@ func TestFingerprintStatsLatencyConvergesToStableValue(t *testing.T) {
 	}
 }
 
+func TestFingerprintStatsIntervalConvergesToStableValue(t *testing.T) {
+	fp := testFingerprint()
+	b := baseline.New(testKey)
+
+	const interval = 10 * time.Second
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	now := start
+	for range 50 {
+		b = b.Observe(fp, features.VolatileFeatures{}, now)
+		now = now.Add(interval)
+	}
+
+	stats := b.Fingerprints[fp.ID]
+	if stats.IntervalObservations == 0 {
+		t.Fatal("IntervalObservations = 0 after 50 observations, want > 0")
+	}
+	gotMean := time.Duration(stats.IntervalMean)
+	if diff := gotMean - interval; diff < -500*time.Millisecond || diff > 500*time.Millisecond {
+		t.Fatalf("IntervalMean = %s after convergence, want ~%s", gotMean, interval)
+	}
+	if stats.IntervalVariance > float64(time.Second*time.Second) {
+		t.Fatalf("IntervalVariance = %v, want ~0 after repeated identical intervals", stats.IntervalVariance)
+	}
+}
+
+func TestFingerprintStatsIntervalObservationsIsCountMinusOne(t *testing.T) {
+	fp := testFingerprint()
+	b := baseline.New(testKey)
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	b = b.Observe(fp, features.VolatileFeatures{}, now)
+
+	stats := b.Fingerprints[fp.ID]
+	if stats.IntervalObservations != 0 {
+		t.Fatalf("IntervalObservations = %d after a single observation, want 0 (no prior LastObserved to measure from)", stats.IntervalObservations)
+	}
+
+	now = now.Add(5 * time.Second)
+	b = b.Observe(fp, features.VolatileFeatures{}, now)
+	stats = b.Fingerprints[fp.ID]
+	if stats.IntervalObservations != 1 {
+		t.Fatalf("IntervalObservations = %d after a second observation, want 1", stats.IntervalObservations)
+	}
+	if got := time.Duration(stats.IntervalMean); got != 5*time.Second {
+		t.Fatalf("IntervalMean = %s after exactly one interval, want exactly 5s", got)
+	}
+}
+
+// observeStableCadence returns a Baseline where fp has been observed
+// count times, exactly interval apart, starting at start, plus the
+// timestamp of the last observation.
+func observeStableCadence(fp fingerprint.Fingerprint, start time.Time, interval time.Duration, count int) (baseline.Baseline, time.Time) {
+	b := baseline.New(testKey)
+	now := start
+	for i := range count {
+		b = b.Observe(fp, features.VolatileFeatures{}, now)
+		if i < count-1 {
+			now = now.Add(interval)
+		}
+	}
+	return b, now
+}
+
+// TestFingerprintStatsIgnoresNonPositiveInterval pins the ordering guard
+// in observe: an observation whose timestamp does not strictly follow
+// LastObserved carries no usable interval information, so it must not
+// reach the interval EWMA at all. Without the guard, a backdated event
+// folds a large *negative* interval into IntervalMean/IntervalVariance,
+// which is a baseline-poisoning primitive: such an event is typically
+// decided observe_only, and therefore eligible for learning.
+func TestFingerprintStatsIgnoresNonPositiveInterval(t *testing.T) {
+	const cadence = 10 * time.Second
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name   string
+		offset time.Duration // relative to LastObserved
+	}{
+		{"backdated observation", -5 * time.Second},
+		{"far-backdated observation", -30 * 24 * time.Hour},
+		{"duplicate timestamp", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fp := testFingerprint()
+			b, last := observeStableCadence(fp, start, cadence, 20)
+			before := b.Fingerprints[fp.ID]
+
+			b = b.Observe(fp, features.VolatileFeatures{}, last.Add(tt.offset))
+			after := b.Fingerprints[fp.ID]
+
+			if after.IntervalMean != before.IntervalMean {
+				t.Errorf("IntervalMean = %s after an out-of-order observation, want it unchanged at %s",
+					time.Duration(after.IntervalMean), time.Duration(before.IntervalMean))
+			}
+			if after.IntervalVariance != before.IntervalVariance {
+				t.Errorf("IntervalVariance = %v after an out-of-order observation, want it unchanged at %v",
+					after.IntervalVariance, before.IntervalVariance)
+			}
+			if after.IntervalObservations != before.IntervalObservations {
+				t.Errorf("IntervalObservations = %d after an out-of-order observation, want it unchanged at %d",
+					after.IntervalObservations, before.IntervalObservations)
+			}
+
+			// The observation itself is still recorded: only its
+			// interval is unusable, not its existence.
+			if after.Count != before.Count+1 {
+				t.Errorf("Count = %d, want %d — an out-of-order event is still an observation", after.Count, before.Count+1)
+			}
+			// LastObserved tracks the latest timestamp seen, never
+			// regressing, so the *next* in-order event still measures
+			// its interval from the true most-recent observation.
+			if !after.LastObserved.Equal(last) {
+				t.Errorf("LastObserved = %s, want it to stay at the latest timestamp seen (%s)", after.LastObserved, last)
+			}
+		})
+	}
+}
+
+// TestFingerprintStatsOutOfOrderObservationDoesNotDistortNextInterval is
+// the consequence test for the guard above: after a backdated event, the
+// very next perfectly on-cadence event must still look on-cadence.
+func TestFingerprintStatsOutOfOrderObservationDoesNotDistortNextInterval(t *testing.T) {
+	const cadence = 10 * time.Second
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	fp := testFingerprint()
+	b, last := observeStableCadence(fp, start, cadence, 20)
+
+	b = b.Observe(fp, features.VolatileFeatures{}, last.Add(-5*time.Second)) // out of order
+	b = b.Observe(fp, features.VolatileFeatures{}, last.Add(cadence))        // back on cadence
+
+	stats := b.Fingerprints[fp.ID]
+	gotMean := time.Duration(stats.IntervalMean)
+	if diff := gotMean - cadence; diff < -100*time.Millisecond || diff > 100*time.Millisecond {
+		t.Fatalf("IntervalMean = %s after an out-of-order event followed by an on-cadence one, want ~%s", gotMean, cadence)
+	}
+	if stddev := time.Duration(math.Sqrt(stats.IntervalVariance)); stddev > 100*time.Millisecond {
+		t.Fatalf("interval stddev = %s, want ~0 — a backdated event must not inflate the interval variance", stddev)
+	}
+}
+
 func TestFingerprintStatsSkipsLatencyWhenAbsent(t *testing.T) {
 	fp := testFingerprint()
 	b := baseline.New(testKey)

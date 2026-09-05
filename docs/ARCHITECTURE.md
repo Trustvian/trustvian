@@ -76,6 +76,11 @@ Event → Features → Fingerprint → Baseline(read) → Anomaly → Trust → 
 `Engine` (the root `trustvian` package) is the composition root that
 wires all of this together — see [`engine.go`](../engine.go).
 
+[Task 001](tasks/001-feature-model.md) added `event.Target.Category`
+and `features.StableFeatures.TargetCategory` — a new field on existing
+types, not a new package or dependency edge, so no change to the
+pipeline shape or [dependency direction](#dependency-direction) below.
+
 Every stage but `Baseline` is a pure function. `Baseline` is
 immutable-value-with-copy-on-write: `Baseline.Observe(...)` never
 mutates its receiver, it returns a new `Baseline`. Concurrency-safe

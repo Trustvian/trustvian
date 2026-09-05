@@ -75,7 +75,7 @@ func (e *Engine) Analyze(ctx context.Context, ev event.Event) (Result, error) {
 	bl, _ := e.store.Get(ctx, key)
 	an := anomaly.Score(feat, fp, bl, e.anomalyConfig)
 	tr := trust.Compute(an, ev.Actor.IdentityConfidence, e.contextRisk(feat.Stable), e.trustConfig)
-	pr := e.policy.Evaluate(policy.Input{Stable: feat.Stable, Trust: tr})
+	pr := e.policy.Evaluate(policy.Input{Stable: feat.Stable, Trust: tr, Attributes: ev.Attributes})
 
 	return Result{
 		Event:       ev,

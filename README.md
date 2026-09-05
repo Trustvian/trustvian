@@ -161,6 +161,11 @@ different `Store`) is configured via functional options
 `trustvian.WithContextRisk`) — see [Limitations](#limitations) for the
 current constraint on using them from outside this module.
 
+For six runnable, real `go run`-verified programs against this exact SDK
+— a basic call, credential misuse, an unexpected dependency, an external
+destination, abnormal request frequency, and AI-agent security — see
+[`examples/`](examples/README.md).
+
 ## OpenTelemetry
 
 The core engine has no OpenTelemetry dependency at all. `internal/otel`

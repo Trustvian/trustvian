@@ -7,7 +7,11 @@
 // traced back to why trust was low.
 package trust
 
-import "github.com/Trustvian/trustvian/internal/anomaly"
+import (
+	"fmt"
+
+	"github.com/Trustvian/trustvian/internal/anomaly"
+)
 
 // Config holds the RiskLevel bucket thresholds, so they stay documented
 // and tunable rather than hardcoded.
@@ -127,6 +131,21 @@ func Compute(an anomaly.Anomaly, identityConfidence, contextRisk float64, cfg Co
 		AnomalyConfidence:  confidence,
 		ContextRisk:        contextRisk,
 	}
+}
+
+// Explain renders t as a short, human-readable sentence summarizing its
+// score, risk bucket, and the components that produced it. It is pure
+// formatting over t's existing fields — no new computation, no I/O, and
+// deterministic for a given Trust value.
+func (t Trust) Explain() string {
+	confidence := "full confidence"
+	if t.AnomalyConfidence < 1 {
+		confidence = fmt.Sprintf("%.0f%% confidence", t.AnomalyConfidence*100)
+	}
+	return fmt.Sprintf(
+		"trust %.2f (%s): identity confidence %.2f, anomaly %.2f at %s, context risk %.2f",
+		t.Score, t.Risk, t.IdentityConfidence, t.AnomalyScore, confidence, t.ContextRisk,
+	)
 }
 
 func riskLevel(residualDistrust float64, cfg Config) RiskLevel {
