@@ -21,7 +21,7 @@ has real, `go run`-captured output, not hand-written output.
 | [credential-misuse](credential-misuse/) | A trusted, high-confidence service account performs a novel bulk-export action; full novelty from a trusted identity does not by itself mean block | [credential-misuse/README.md](credential-misuse/README.md) |
 | [unexpected-dependency](unexpected-dependency/) | A payment gateway's baseline matures against its normal dependency, then the same route reaches an unexpected internal service at lower identity confidence | [unexpected-dependency/README.md](unexpected-dependency/README.md) |
 | [external-destination](external-destination/) | An order service's baseline matures against a normal internal RPC call, then it suddenly reaches an external secrets manager | [external-destination/README.md](external-destination/README.md) |
-| [frequency-abuse](frequency-abuse/) | A fully mature, familiar fingerprint bursts far outside its learned request cadence — `frequency_deviation` fires even with zero categorical novelty | [frequency-abuse/README.md](frequency-abuse/README.md) |
+| [frequency-abuse](frequency-abuse/) | A fully mature, familiar fingerprint bursts far outside its learned request cadence — `frequency_deviation` is detected with zero categorical novelty, and reported even though it ships opt-in (`FrequencyWeight` defaults to `0`) | [frequency-abuse/README.md](frequency-abuse/README.md) |
 | [ai-agent](ai-agent/) | An AI agent's baseline matures against a benign CRM-lookup tool call, then the same agent reaches for a credentials store | [ai-agent/README.md](ai-agent/README.md) |
 
 ## Running them

@@ -47,6 +47,33 @@ stages were added; this release is depth, not breadth.
   (no allocation) on the common "frequency is normal" path, gated by
   `Config.FrequencyZThreshold`/`FrequencyWeight`, matching the existing
   latency/error signal shape exactly.
+
+  The signal ships **opt-in**: `anomaly.DefaultConfig()` sets
+  `FrequencyWeight` to `0`, so `frequency_deviation` is computed and
+  reported in `Anomaly.Contributors` but contributes nothing to
+  `Anomaly.Score` until an operator raises the weight. This mirrors
+  `SensitiveTargetFloor`, which likewise ships empty and inert. The
+  reason is calibration against real jitter: because the signal divides
+  by the standard deviation of a fingerprint's *own* inter-event
+  intervals, traffic with only a few milliseconds of natural jitter
+  around a ten-second cadence produces `|z| > 3` — a clamped `1.0`
+  signal — for entirely ordinary, on-cadence events. Measure your
+  fleet's `IntervalMean`/`IntervalVariance` before enabling; see
+  [DOMAIN.md § Anomaly](docs/DOMAIN.md#anomaly) and
+  [examples/frequency-abuse](examples/frequency-abuse/).
+- **Out-of-order observation guard in `internal/baseline`** — an
+  observation whose timestamp does not strictly follow the
+  fingerprint's `LastObserved` (clock skew, out-of-order delivery, a
+  backdated event from an untrusted producer) is still counted, but its
+  interval is no longer folded into the interval EWMA, and
+  `LastObserved` now advances monotonically rather than regressing.
+  `anomaly.Score` correspondingly refuses to fire `frequency_deviation`
+  on a negative interval. Without this, a single backdated event could
+  drive `IntervalMean` arbitrarily negative and make every subsequent
+  on-time event look anomalous — a baseline-poisoning path that
+  `Observe`'s decision gating structurally could not catch, since such
+  an event is normally decided `observe_only`. See
+  [SECURITY.md § baseline poisoning](docs/SECURITY.md#baseline-poisoning).
 - **`Trust.Explain()`** ([task 005](docs/tasks/005-trust-risk.md)) — a
   new method rendering a `Trust` value as a short, human-readable
   sentence (identity confidence, anomaly at its effective confidence,
@@ -153,3 +180,25 @@ name them directly from outside this module — Go's `internal/`
 visibility rule enforces that boundary, and this project reserves the
 right to change anything inside it, including field shapes, without
 that counting as a breaking change to the public API described above.
+
+**Where those two paragraphs meet.** `Result`'s fields are *typed* by
+internal packages, so the two promises above need a precise boundary
+between them. The promise on `Result` is a promise about `Result`
+itself: that a field named `Trust` exists on it, that it is the trust
+stage's output, and that it will not be removed, renamed, or
+repurposed. It does not extend one level down into the type that field
+holds. `trust.Trust` could gain, lose, or rename its own fields — so
+`result.Trust.Score` is *not* covered by this promise even though
+`result.Trust` is. The same applies to `result.Anomaly` (an
+`anomaly.Anomaly`), `result.Features`, `result.Fingerprint`,
+`result.BaselineKey`, `result.Decision`, and `result.Explanation`.
+
+In practice these types are stable and no reshaping is planned; the
+distinction is about what a future release is *permitted* to do without
+calling it a break, not a warning that it will. If you depend on a
+specific inner field — `result.Trust.Score` and
+`result.Anomaly.Contributors` are the common ones — pin the minor
+version and read the changelog before upgrading. Promoting any of these
+types to a public package with a real promise attached is tracked in
+[ROADMAP.md § future research](docs/ROADMAP.md#future-research), gated
+on an external consumer actually needing it.

@@ -26,7 +26,7 @@ here, not moved or rewritten.
 | Threat | Test(s) |
 | --- | --- |
 | Identity confusion (cross-actor isolation) | `TestAnalyzeCrossActorIsolation` in [`engine_test.go`](../engine_test.go) |
-| Baseline poisoning | `TestObserveLearnsOnlyFromEligibleDecisions`, `TestAnalyzeSensitiveTargetFloorEndToEnd` in [`engine_test.go`](../engine_test.go) |
+| Baseline poisoning | `TestObserveLearnsOnlyFromEligibleDecisions`, `TestAnalyzeSensitiveTargetFloorEndToEnd` in [`engine_test.go`](../engine_test.go); `TestFingerprintStatsIgnoresNonPositiveInterval`, `TestFingerprintStatsOutOfOrderObservationDoesNotDistortNextInterval` in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestScoreFrequencyDeviation` (negative-interval subtests) in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go) |
 | Malicious agents / privilege escalation | `TestAnalyzeSensitiveTargetFloorEndToEnd` in [`engine_test.go`](../engine_test.go) |
 | Policy bypass | `TestEvaluateFailsClosedOnZeroValuePolicy`, `TestEvaluateFailsClosedOnInvalidDefaultAction`, `TestEvaluateFailsClosedOnEmptyDefaultReason` in [`internal/policy/policy_test.go`](../internal/policy/policy_test.go) |
 | Malformed events / extreme input values | `TestValidateRejectsNonFiniteIdentityConfidence`, `TestValidateAcceptsVeryLongActorID` in [`event/event_test.go`](../event/event_test.go); `TestAnalyzeNegativeDurationDoesNotCorruptTrustScore`, `TestAnalyzeLargeAttributesMapDoesNotPanic` in [`engine_test.go`](../engine_test.go) |
@@ -112,6 +112,56 @@ fingerprint can transiently cross into `ALERT`-level risk purely from
 partial maturity, and if that state were ineligible for learning, it
 could never mature past it. See `eligibleForLearning`'s doc comment in
 [`engine.go`](../engine.go).
+
+**A second, structurally different poisoning path: skewing an EWMA
+with a single allowed-but-extreme input.** The gating above answers
+"can repeating *blocked* behavior wear the system down?" — no. It does
+not, by itself, answer "can one *permitted* observation move a learned
+statistic further than it should?" `FingerprintStats` keeps three
+exponentially-weighted moving averages (latency, inter-observation
+interval, error rate) with `emaAlpha = 0.2`, so a single sample moves
+the mean by 20% of its distance and decays only gradually. A learning-
+eligible outlier therefore has real, if bounded and self-correcting,
+influence — that is the intended cost of EWMA decay (absorbing
+legitimate drift without a manual reset), not a defect. Two things
+follow:
+
+- **The interval EWMA's unbounded variant is closed.** Before the v0.1
+  final-review pass, an event whose `Timestamp` preceded the
+  fingerprint's `LastObserved` — clock skew, out-of-order delivery, or
+  a deliberately backdated event from an untrusted producer — folded a
+  *negative* interval into `IntervalMean`/`IntervalVariance`. That is
+  not a bounded outlier: one backdated event can drive `IntervalMean`
+  arbitrarily far negative (a 30-day backdate measured
+  `IntervalMean = -143h59m52s`), which makes every subsequent on-time
+  event look anomalous; and one legitimate long gap inflates
+  `IntervalVariance` enough to desensitize the frequency signal to a
+  genuine burst that follows. Such an event is normally decided
+  `observe_only`, i.e. fully learning-eligible, so decision gating never
+  saw it. `FingerprintStats.observe` now skips interval tracking
+  entirely for any non-positive interval and advances `LastObserved`
+  monotonically, and `anomaly.Score` refuses to fire
+  `frequency_deviation` on a negative interval as the read-side half of
+  the same guard. Proven by
+  `TestFingerprintStatsIgnoresNonPositiveInterval` and
+  `TestFingerprintStatsOutOfOrderObservationDoesNotDistortNextInterval`
+  in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go),
+  and by `TestScoreFrequencyDeviation`'s
+  `negative interval does not fire` subtests in
+  [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go).
+- **The bounded variant remains, by design.** An extreme but
+  *forward-in-time* latency, interval, or error observation that a
+  policy permits still moves its EWMA, in both the latency and interval
+  statistics. No per-sample clamp or outlier rejection is implemented,
+  and adding one would trade away the decay property the EWMA exists
+  for. The mitigating factors are that the influence is bounded by
+  `emaAlpha` and decays as normal traffic resumes, that
+  `Anomaly.Confidence` is reported separately so a thin baseline is
+  never mistaken for a confident one, and that
+  `SensitiveTargetFloor`-gated risk cannot be learned away at all.
+  **Future work:** if a deployment needs it, per-sample outlier
+  rejection belongs in `FingerprintStats.observe` alongside the
+  ordering guard, not in caller discipline.
 
 **Persistence-adjacent note:** `store.FileStore`
 ([ADR 0006](adr/0006-file-backed-persistent-store.md)) flushes to disk
@@ -254,12 +304,10 @@ its size — an unbounded `Attributes` map, or an actor generating an
 unbounded number of distinct fingerprints to grow `Baseline` without
 limit.
 
-**Status: safety property tested (no panic, no error); growth curve
-still uncharacterized and unbounded by design.** There is no per-event
-size limit on `Attributes` today, and `store.InMemory` has no eviction
-policy — see
-[PERFORMANCE.md § what's not benchmarked](PERFORMANCE.md#whats-not-benchmarked-yet)
-for the related (unmeasured) memory-growth question.
+**Status: safety property tested (no panic, no error); per-call cost
+characterized and flat; total heap footprint still unbounded by
+design.** There is no per-event size limit on `Attributes` today, and
+`store.InMemory` has no eviction policy.
 `TestAnalyzeLargeAttributesMapDoesNotPanic` in
 [`engine_test.go`](../engine_test.go) proves a 100,000-key `Attributes`
 map does not panic or error `Engine.Analyze` (only `duration_ms`/`error`
@@ -271,10 +319,35 @@ consumed, not to the map's total size).
 Neither test bounds memory growth itself — that's a deliberate scope
 line from [task 012](tasks/012-security-tests.md): the *safety*
 property (no panic, no deadlock) is this task's concern, the *growth
-curve* is [task 011](tasks/011-performance.md)'s. **Future mitigation:**
-an enforced limit (per-event `Attributes` size, or `Baseline` eviction)
-is a decision to make only if [011](tasks/011-performance.md)'s
-characterization shows it's actually needed, not preemptively.
+curve* was [task 011](tasks/011-performance.md)'s.
+
+[Task 011](tasks/011-performance.md) has since run that
+characterization. `BenchmarkInMemoryMemoryGrowth` measures
+`store.InMemory.Observe` against stores pre-populated with 100, 1,000,
+and 10,000 distinct keys, and the *per-call* cost is flat: `B/op` and
+`allocs/op` are exactly identical (464 B, 3 allocs) at every key count,
+with only a ~15% `ns/op` drift attributable to map cache locality. So a
+store already holding 10,000 actors is not more expensive per event
+than one holding 100 — an attacker cannot degrade per-event throughput
+by inflating the key space. See
+[PERFORMANCE.md § measured results](PERFORMANCE.md#measured-results).
+
+What that measurement does *not* answer, and what remains genuinely
+open, is the **total** heap footprint: per-call cost being flat says
+nothing about the aggregate size of a `Baseline` map that only ever
+grows, since neither `InMemory` nor `FileStore` evicts anything. An
+actor generating unbounded distinct fingerprints still grows resident
+memory without limit; measuring that would need `runtime.MemStats`
+sampled across a long run rather than `go test -bench`, and is named as
+still-open in
+[PERFORMANCE.md § what's not benchmarked (yet)](PERFORMANCE.md#whats-not-benchmarked-yet).
+**Future mitigation:** an enforced limit
+(per-event `Attributes` size, `Baseline` eviction, or a
+`FingerprintStats.IsStale`-driven pruning pass — the staleness signal
+task 003 shipped is the natural input to one) remains a decision to
+make when a concrete deployment shows it's needed, not preemptively.
+The distinction matters for prioritization: this is a capacity-planning
+question, not a per-request denial-of-service one.
 
 ### Future multi-tenant isolation
 

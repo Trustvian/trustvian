@@ -11,6 +11,29 @@
 // outside the learned cadence — and frequency_deviation appears in the
 // result's Anomaly.Contributors even though the fingerprint itself is
 // now fully familiar (categorical_novelty has decayed to zero).
+//
+// The signal is detected and explained at full strength (Value 1.00) but
+// contributes nothing to Anomaly.Score here, because
+// anomaly.DefaultConfig sets FrequencyWeight to 0: frequency_deviation
+// ships opt-in, exactly like SensitiveTargetFloor's empty default, until
+// an operator has calibrated FrequencyZThreshold against their own
+// traffic's jitter. On a service whose inter-request gaps vary by even a
+// few milliseconds, a non-zero default weight false-positives on
+// routine, on-cadence events (see
+// internal/anomaly.Config.FrequencyWeight's doc comment).
+//
+// Enabling it is one Option, from code inside the trustvian module:
+//
+//	cfg := anomaly.DefaultConfig()
+//	cfg.FrequencyWeight = 0.6 // after measuring your own fleet's jitter
+//	engine := trustvian.NewEngine(trustvian.WithAnomalyConfig(cfg))
+//
+// This program cannot do that, and the omission is not an oversight:
+// examples/ is a separate Go module (see examples/README.md), so it is a
+// genuinely external consumer, and anomaly.Config lives under internal/.
+// The same restriction is why every example here prints an observe_only
+// Decision rather than a custom policy's — see the examples index's
+// "A note on Decision" and docs/adr/0002-public-api-boundary.md.
 package main
 
 import (
@@ -49,6 +72,10 @@ func pollEvent(id string, ts time.Time) event.Event {
 }
 
 func main() {
+	// No options: anomaly.DefaultConfig applies, which means
+	// FrequencyWeight is 0 and frequency_deviation is detected and
+	// reported but does not move Anomaly.Score. See this file's package
+	// comment for the one-Option opt-in an in-module caller writes.
 	engine := trustvian.NewEngine()
 	ctx := context.Background()
 
@@ -89,10 +116,16 @@ func main() {
 	for _, c := range result.Anomaly.Contributors {
 		if c.Name == "frequency_deviation" {
 			found = true
+			// Value is the detection; Weight is the operator's opt-in.
+			// A zero Weight silences the contribution to Score, never
+			// the explanation — which is what makes this signal safe to
+			// ship inert and still observable in production.
+			fmt.Printf("frequency_deviation: value=%.2f weight=%.2f -> contributes %.2f to Anomaly.Score\n",
+				c.Value, c.Weight, c.Value*c.Weight)
 		}
 	}
 	if !found {
 		log.Fatal("expected frequency_deviation in result.Anomaly.Contributors, it was not present")
 	}
-	fmt.Println("frequency_deviation signal present in Contributors, as expected.")
+	fmt.Println("Signal present in Contributors, as expected. Raise FrequencyWeight to make it count.")
 }

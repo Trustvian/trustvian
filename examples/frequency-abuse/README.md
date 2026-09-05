@@ -26,6 +26,45 @@ exiting (`log.Fatal` otherwise), so a regression in
 `internal/anomaly.Score`'s frequency signal would fail this example, not
 just silently produce different-looking output.
 
+## The signal is opt-in
+
+As of the v0.1 hardening pass, `anomaly.DefaultConfig()` sets
+`FrequencyWeight` to `0`. The signal is still computed and still
+reported in `Anomaly.Contributors` at full strength — this example's
+output below shows `frequency_deviation: 1.00` — but it contributes
+nothing to `Anomaly.Score` until an operator opts in, exactly the way
+`SensitiveTargetFloor` ships empty and inert.
+
+The reason is calibration. The signal is a z-score of the current
+interval against an EWMA whose standard deviation is whatever jitter
+that fingerprint's traffic happens to carry. On a service with only a
+few milliseconds of natural jitter around a ten-second cadence, an
+entirely ordinary event a few milliseconds off the mean already exceeds
+`FrequencyZThreshold` and clamps to `1.00`; at the previous `0.6`
+default that alone carried a fully-familiar actor to `RiskHigh` on
+routine traffic. There is no one weight that is right for a cron job, a
+chatty RPC poller, and a human-driven UI at once, so the project ships
+the mechanism rather than a guess.
+
+Enabling it is one `Option`, written from code inside the `trustvian`
+module:
+
+```go
+cfg := anomaly.DefaultConfig()
+cfg.FrequencyWeight = 0.6 // after measuring your own fleet's jitter
+engine := trustvian.NewEngine(trustvian.WithAnomalyConfig(cfg))
+```
+
+This program does not do that, and cannot: `examples/` is a separate Go
+module and therefore a genuinely external consumer, while
+`anomaly.Config` lives under `internal/`. That is the same boundary that
+flattens every example's `Decision` to `observe_only` — see
+[the examples index](../README.md#a-note-on-decision) and
+[ADR 0002](../../docs/adr/0002-public-api-boundary.md). What the example
+does instead is print the signal's `Value` and `Weight` side by side, so
+the distinction between "detected" and "counted" is visible in the
+output rather than only in prose.
+
 Run it:
 
 ```bash
@@ -41,22 +80,29 @@ poll 20: confidence=0.95 trust=0.90 decision=observe_only learned=true
 poll 25: confidence=1.00 trust=0.95 decision=observe_only learned=true
 
 Decision: observe_only
-trust 0.38 (high): identity confidence 0.95, anomaly 0.60 at full confidence, context risk 0.00
-Anomaly score: 0.60 (confidence 1.00)
+trust 0.95 (low): identity confidence 0.95, anomaly 0.00 at full confidence, context risk 0.00
+Anomaly score: 0.00 (confidence 1.00)
 Detected:
   - frequency_deviation: 1.00 (interval 50ms deviates from a stable baseline of 10s (stddev ~0))
 Policy: default action (no policy rules configured; observing by default)
 
-frequency_deviation signal present in Contributors, as expected.
+frequency_deviation: value=1.00 weight=0.00 -> contributes 0.00 to Anomaly.Score
+Signal present in Contributors, as expected. Raise FrequencyWeight to make it count.
 ```
 
 Unlike the other five examples, this final event's `Anomaly.Confidence`
 is `1.00` (the fingerprint is fully mature) and `categorical_novelty`
-does not appear in `Contributors` at all — the entire `Anomaly.Score` of
-`0.60` comes from `frequency_deviation` alone (`1.00` signal value ×
-`0.6` `FrequencyWeight`, per `internal/anomaly.combine`'s noisy-OR
-formula). This is what distinguishes "abnormal request frequency" from
-plain cold-start novelty: a familiar actor doing a familiar thing, just
-far too often. See
+does not appear in `Contributors` at all — the sole entry under
+`Detected:` is `frequency_deviation`, at its maximum value of `1.00`.
+This is what distinguishes "abnormal request frequency" from plain
+cold-start novelty: a familiar actor doing a familiar thing, just far
+too often.
+
+`Anomaly.Score` is nonetheless `0.00`, and `Trust` stays at `0.95`
+(`low`), because the default `FrequencyWeight` of `0` makes this
+signal's contribution to `internal/anomaly.combine`'s noisy-OR
+`1.00 × 0 = 0` — see [the section above](#the-signal-is-opt-in). Set
+`FrequencyWeight` to `0.6` and the same run reports
+`Anomaly score: 0.60` and `trust 0.38 (high)` instead. See
 [the examples index](../README.md#a-note-on-decision) for why `Decision`
 here is `observe_only` rather than a differentiated `ALERT`/`BLOCK`.

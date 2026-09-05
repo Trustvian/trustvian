@@ -36,7 +36,8 @@ type Operation struct {
 }
 
 type Target struct {
-	Name string // the destination: a service, database, or host
+	Name     string         // the destination: a service, database, or host
+	Category TargetCategory // internal | external | database | "" (optional)
 }
 
 type Context struct {

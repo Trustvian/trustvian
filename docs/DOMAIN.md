@@ -150,6 +150,17 @@ says to add only when needed, not speculatively.
   [004](tasks/004-anomaly.md)) scores against. It has no interval to
   record on a fingerprint's first observation (`IntervalObservations`
   stays 0), mirroring `LatencyObservations`' cold-start behavior.
+- **Ordering** — an observation whose timestamp does not strictly
+  follow `LastObserved` (clock skew, out-of-order delivery, a
+  deliberately backdated event) is still counted, but its interval is
+  *not* folded into the EWMA: a negative interval is an absence of
+  timing information, not a measurement. `LastObserved` correspondingly
+  advances monotonically and never regresses, so the next in-order
+  event still measures from the freshest observation and `IsStale` is
+  never fooled into reporting a fingerprint as staler than the newest
+  evidence held for it. Without this guard a single backdated event
+  drags `IntervalMean` below zero and makes every subsequent on-time
+  event look anomalous — see [SECURITY.md § baseline poisoning](SECURITY.md).
 - **Cold start** — `FingerprintStats.Count` is the maturity counter: how
   many times this specific fingerprint has been observed.
   `internal/baseline` only counts; it does not itself decide what
@@ -176,9 +187,44 @@ signals:
 |---|---|
 | `categorical_novelty` | The fingerprint is unfamiliar or below `MinObservations` maturity |
 | `latency_deviation` | Current latency's z-score against the baseline's EWMA mean/stddev exceeds a threshold |
-| `frequency_deviation` | The current inter-observation interval's z-score against the baseline's EWMA mean/stddev interval exceeds `Config.FrequencyZThreshold` — the "this actor normally calls this operation every 10s; it just called it every 100ms" signal (a classic abuse/exfiltration pattern). Requires the fingerprint to be known and have at least one recorded interval (`FingerprintStats.IntervalObservations > 0`); a fingerprint's very first observation has no prior `LastObserved` to measure an interval from, so it never fires on cold start, mirroring `latency_deviation`'s `LatencyObservations > 0` gate |
+| `frequency_deviation` | The current inter-observation interval's z-score against the baseline's EWMA mean/stddev interval exceeds `Config.FrequencyZThreshold` — the "this actor normally calls this operation every 10s; it just called it every 100ms" signal (a classic abuse/exfiltration pattern). Requires the fingerprint to be known, at least one recorded interval (`FingerprintStats.IntervalObservations > 0`), and a strictly positive current interval; a fingerprint's very first observation has no prior `LastObserved` to measure from, so it never fires on cold start, mirroring `latency_deviation`'s `LatencyObservations > 0` gate. **Contributes 0 to `Score` by default** — see below |
 | `error_deviation` | An error occurred against a fingerprint whose baseline error rate is low |
 | `sensitive_target` | The destination is in `Config.SensitiveTargetFloor` — a fixed penalty that persists *regardless of familiarity* |
+
+**Two of the five ship inert.** `DefaultConfig()` leaves
+`SensitiveTargetFloor` empty (so `sensitive_target` never fires until an
+operator names their sensitive destinations) and sets `FrequencyWeight`
+to `0` (so `frequency_deviation` is detected and reported in
+`Contributors`, but multiplies to nothing inside the noisy-OR). In both
+cases the mechanism is complete and tested; only the deployment-specific
+value that makes it count is left to the operator, because no default is
+correct everywhere.
+
+For `frequency_deviation` specifically, the reason is calibration
+against real jitter. The signal divides by the standard deviation of a
+fingerprint's own inter-event intervals, so on traffic with only
+milliseconds of natural jitter around a ten-second cadence, an event a
+few milliseconds off the mean already exceeds `FrequencyZThreshold` and
+clamps the signal to `1.0`. At the `0.6` weight originally shipped, that
+alone carried a fully-familiar actor to `RiskHigh` on routine traffic
+(`TestAnalyzeOrdinaryCadenceJitterDoesNotElevateRisk` pins this). Measure
+your own fleet's `IntervalMean` and the stddev implied by
+`IntervalVariance` before raising the weight.
+
+**Two branches, not one.** `frequencySignal` (and `latencySignal`
+identically) switches on whether the baseline's standard deviation is
+usable. Above the threshold — 1ms for intervals, 1µs for latency — it
+takes the z-score path: `value = min(|z| / ZThreshold, 1)`. At or below
+it, dividing by a near-zero stddev would produce an unbounded or `NaN`
+z-score, so it degrades to an exact-match test instead: any interval
+different from the mean at all scores `1.0`, anything identical scores
+`0`. That branch is correct for genuinely fixed-cadence traffic — a cron
+job firing at exactly `00:00:00` every hour, a fixed-interval poller —
+where "different from the mean" really is the whole signal. It is also
+why perfectly synthetic test fixtures never exercise the z-score path:
+a hand-built baseline with an exactly constant interval always lands in
+this branch (see `baselineWithStableInterval` vs
+`baselineWithJitteredInterval` in `internal/anomaly`'s tests).
 
 **Score and Confidence are reported separately, on purpose.** A
 brand-new fingerprint scores near-maximum novelty (`Score` near 1) but

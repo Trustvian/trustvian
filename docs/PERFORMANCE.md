@@ -159,6 +159,26 @@ prior recording for exactly that reason. Explainability's cost is
 proportional to how much there is to explain, not paid unconditionally
 on every call.
 
+**The `FrequencyWeight: 0` default costs nothing and saves nothing.**
+The v0.1 final-review pass changed `anomaly.DefaultConfig()`'s
+`FrequencyWeight` from `0.6` to `0` (see
+[DOMAIN.md § Anomaly](DOMAIN.md#anomaly)), but a weight scales a
+signal's contribution *inside* `combine`; it does not gate whether
+`frequencySignal` runs, whether its `math.Sqrt` is computed, or whether
+the `Signal` is appended to `Contributors` (that is `Value > 0`, which
+is weight-independent). Re-measuring after the change confirms this:
+`BenchmarkScoreKnownFamiliar` 53.2ns / 0 allocs and
+`BenchmarkScoreNovelWithAllSignals` 448 B / 5 allocs, both matching the
+recording above within session variance. The same pass added two
+ordering guards — a `now.After(LastObserved)` check in
+`baseline.FingerprintStats.observe` and an `interval > 0` check in
+`anomaly.Score` — each a single `time.Time` comparison on a path that
+already did a subtraction, and neither allocates. `baseline.Observe`
+re-measures at 185.9ns / 464 B / 3 allocs — the allocation profile that
+matters here is byte-for-byte identical to both recordings above, and
+the `ns/op` sits inside the session-to-session spread those two
+recordings already show (276.6ns and 165.8ns for the same code).
+
 **Sharded locking measurably works.** `store.InMemory.Observe` under
 12-way concurrent load on distinct keys (180.6ns) is roughly 2×
 faster than 12-way concurrent load on the *same* key (363.1ns) — this

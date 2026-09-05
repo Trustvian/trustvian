@@ -19,9 +19,9 @@ cd examples/external-destination && go run .
 
 ```
 warm-up  1: confidence=0.00 trust=0.97 decision=observe_only learned=true
-warm-up 10: confidence=0.45 trust=0.61 decision=observe_only learned=true
-warm-up 20: confidence=0.95 trust=0.40 decision=observe_only learned=true
-warm-up 25: confidence=1.00 trust=0.39 decision=observe_only learned=true
+warm-up 10: confidence=0.45 trust=0.73 decision=observe_only learned=true
+warm-up 20: confidence=0.95 trust=0.92 decision=observe_only learned=true
+warm-up 25: confidence=1.00 trust=0.97 decision=observe_only learned=true
 
 Decision: observe_only
 trust 0.40 (high): identity confidence 0.40, anomaly 1.00 at 0% confidence, context risk 0.00
