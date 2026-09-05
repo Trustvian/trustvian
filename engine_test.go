@@ -272,6 +272,51 @@ func TestAnalyzeNormalBehaviorIsAllowed(t *testing.T) {
 	}
 }
 
+// TestAnalyzeOrdinaryCadenceJitterDoesNotElevateRisk is the end-to-end
+// counterpart to internal/anomaly's TestScoreFrequencyDeviationZScorePath.
+// TestAnalyzeNormalBehaviorIsAllowed above learns from a *perfectly* flat
+// one-second cadence, which no real caller produces; this one learns from
+// a cadence with ordinary ±3ms jitter and then analyzes an event 5ms off
+// the learned mean. Under the pre-fix defaults that ordinary event scored
+// frequency_deviation ~0.79 × weight 0.6, reaching RiskMedium and firing
+// the alert rule — roughly one in every five to ten wholly unremarkable
+// events. It stays RiskLow now that FrequencyWeight defaults to 0.
+func TestAnalyzeOrdinaryCadenceJitterDoesNotElevateRisk(t *testing.T) {
+	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()))
+	ctx := context.Background()
+
+	// A fixed pattern, not real randomness, so this test is exactly
+	// reproducible — it asserts on a z-score, which is meaningless if
+	// the learned stddev drifts between runs.
+	jitterMS := []int{3, -2, 1, -3, 2, 0, -1, 3, -3, 1, 2, -2, 0, -1, 1}
+
+	clock := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := range 50 {
+		result, err := engine.Analyze(ctx, paymentEventAt(10, fmt.Sprintf("poll-%d", i), clock))
+		if err != nil {
+			t.Fatalf("Analyze() error = %v", err)
+		}
+		if _, err := engine.Observe(ctx, result); err != nil {
+			t.Fatalf("Observe() error = %v", err)
+		}
+		clock = clock.Add(10*time.Second + time.Duration(jitterMS[i%len(jitterMS)])*time.Millisecond)
+	}
+
+	// One more entirely ordinary event: on cadence, 5ms off the learned
+	// mean — well within what this actor's own jitter already produces.
+	result, err := engine.Analyze(ctx, paymentEventAt(10, "ordinary", clock.Add(5*time.Millisecond)))
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.Trust.Risk != trust.RiskLow {
+		t.Fatalf("Trust.Risk = %q for an ordinary on-cadence event with realistic jitter, want %q (anomaly %.3f, contributors %+v)",
+			result.Trust.Risk, trust.RiskLow, result.Anomaly.Score, result.Anomaly.Contributors)
+	}
+	if result.Decision != policy.DecisionAllow {
+		t.Fatalf("Decision = %q for an ordinary on-cadence event with realistic jitter, want %q", result.Decision, policy.DecisionAllow)
+	}
+}
+
 func TestNewEngineDefaultsProduceValidResults(t *testing.T) {
 	engine := trustvian.NewEngine() // no options at all
 

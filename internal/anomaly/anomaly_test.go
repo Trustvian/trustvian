@@ -1,6 +1,8 @@
 package anomaly_test
 
 import (
+	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -188,6 +190,125 @@ func baselineWithStableInterval(fp fingerprint.Fingerprint, interval time.Durati
 	return b
 }
 
+// jitterPatternMS is a fixed, deliberately unremarkable sequence of
+// per-interval offsets in milliseconds, applied around the nominal
+// interval by baselineWithJitteredInterval. It is a literal rather than
+// math/rand output so every jitter-based test is exactly reproducible —
+// these tests assert on z-scores, which are meaningless if the baseline's
+// stddev changes from run to run.
+var jitterPatternMS = []int{3, -2, 1, -3, 2, 0, -1, 3, -3, 1, 2, -2, 0, -1, 1}
+
+// baselineWithJitteredInterval is baselineWithStableInterval with ~±3ms
+// of jitter on a nominal interval — i.e. what real traffic looks like,
+// where no two inter-request gaps are byte-identical. This is what drives
+// frequencySignal's *z-score* branch; baselineWithStableInterval's
+// perfectly flat cadence always lands in the nearZeroStdDev branch
+// instead, which is a different code path entirely.
+func baselineWithJitteredInterval(fp fingerprint.Fingerprint, nominal time.Duration, count int) baseline.Baseline {
+	b := baseline.New(testKey)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := range count {
+		b = b.Observe(fp, features.VolatileFeatures{}, now)
+		now = now.Add(nominal + time.Duration(jitterPatternMS[i%len(jitterPatternMS)])*time.Millisecond)
+	}
+	return b
+}
+
+// TestScoreFrequencyDeviationZScorePath covers frequencySignal's z-score
+// branch, which every other frequency test misses: they all build their
+// baseline from a perfectly constant interval, so IntervalVariance stays
+// exactly 0 and the nearZeroStdDev branch runs instead.
+func TestScoreFrequencyDeviationZScorePath(t *testing.T) {
+	fp := fingerprint.Compute(stable("payment-db"))
+	bl := baselineWithJitteredInterval(fp, 10*time.Second, 50)
+	last := bl.Fingerprints[fp.ID].LastObserved
+
+	// Guard the guard: if this baseline ever stopped producing a
+	// meaningful stddev, every assertion below would silently revert to
+	// testing the nearZeroStdDev branch again.
+	if stddev := math.Sqrt(bl.Fingerprints[fp.ID].IntervalVariance); stddev < float64(time.Millisecond) {
+		t.Fatalf("baseline interval stddev = %s, want > 1ms so frequencySignal takes its z-score branch", time.Duration(stddev))
+	}
+
+	t.Run("ordinary jitter does not contribute to Score under DefaultConfig", func(t *testing.T) {
+		// 5ms off a 10s mean whose own jitter is ~±3ms: a completely
+		// ordinary, on-cadence event. Under the pre-fix default
+		// (FrequencyWeight 0.6) this scored ~0.47 — enough on its own
+		// to push a fully-familiar actor to RiskMedium, which
+		// docs/policy-guide.md documents as a typical ALERT/CHALLENGE
+		// trigger. The signal now ships inert by default.
+		feat := features.Features{
+			Stable:   stable("payment-db"),
+			Volatile: features.VolatileFeatures{Timestamp: last.Add(10*time.Second + 5*time.Millisecond)},
+		}
+		an := anomaly.Score(feat, fp, bl, anomaly.DefaultConfig())
+
+		var found bool
+		for _, s := range an.Contributors {
+			if s.Name != "frequency_deviation" {
+				continue
+			}
+			found = true
+			if !strings.Contains(s.Detail, "z-score") {
+				t.Errorf("frequency_deviation Detail = %q, want the z-score branch's wording — this test is not exercising the intended path", s.Detail)
+			}
+			if contribution := s.Value * s.Weight; contribution != 0 {
+				t.Errorf("frequency_deviation contributed %v to the noisy-OR under DefaultConfig, want 0 (the signal is opt-in)", contribution)
+			}
+		}
+		// The signal is still *reported* at weight 0 — Value is
+		// computed independently of Weight, and examples/frequency-abuse
+		// asserts on Contributors by name.
+		if !found {
+			t.Error("frequency_deviation absent from Contributors; a zero Weight must silence the score, not the explanation")
+		}
+		if an.Score != 0 {
+			t.Errorf("Score = %v for a mature fingerprint with only ordinary cadence jitter, want exactly 0", an.Score)
+		}
+	})
+
+	t.Run("genuine spike still fires strongly once an operator opts in", func(t *testing.T) {
+		cfg := anomaly.DefaultConfig()
+		cfg.FrequencyWeight = 0.6 // what an operator sets after calibrating against their own traffic
+
+		feat := features.Features{
+			Stable:   stable("payment-db"),
+			Volatile: features.VolatileFeatures{Timestamp: last.Add(100 * time.Millisecond)}, // 100x faster than the learned cadence
+		}
+		an := anomaly.Score(feat, fp, bl, cfg)
+
+		var found bool
+		for _, s := range an.Contributors {
+			if s.Name != "frequency_deviation" {
+				continue
+			}
+			found = true
+			if !strings.Contains(s.Detail, "z-score") {
+				t.Errorf("frequency_deviation Detail = %q, want the z-score branch's wording", s.Detail)
+			}
+			if s.Value < 0.9 {
+				t.Errorf("frequency_deviation.Value = %v, want near 1 for a 100x rate spike through the z-score path", s.Value)
+			}
+		}
+		if !found {
+			t.Fatal("frequency_deviation did not fire on a 100x rate spike against a jittered baseline")
+		}
+		if an.Score < 0.5 {
+			t.Errorf("Score = %v for a 100x rate spike with FrequencyWeight 0.6, want a strong signal", an.Score)
+		}
+	})
+}
+
+// TestDefaultConfigFrequencyWeightIsOptIn pins the shipped posture
+// itself, so re-enabling the signal by default can never be a silent
+// one-character change: it has to come with a test update and the
+// calibration evidence that justifies it.
+func TestDefaultConfigFrequencyWeightIsOptIn(t *testing.T) {
+	if w := anomaly.DefaultConfig().FrequencyWeight; w != 0 {
+		t.Fatalf("DefaultConfig().FrequencyWeight = %v, want 0 — frequency_deviation ships inert pending real-traffic calibration, mirroring SensitiveTargetFloor's empty default", w)
+	}
+}
+
 func TestScoreFrequencyDeviation(t *testing.T) {
 	cfg := anomaly.DefaultConfig()
 	fp := fingerprint.Compute(stable("payment-db"))
@@ -234,6 +355,43 @@ func TestScoreFrequencyDeviation(t *testing.T) {
 		for _, s := range an.Contributors {
 			if s.Name == "frequency_deviation" {
 				t.Errorf("frequency_deviation fired on an unknown fingerprint: %+v", s)
+			}
+		}
+	})
+
+	t.Run("negative interval does not fire (out-of-order event)", func(t *testing.T) {
+		// An event whose Timestamp precedes the fingerprint's
+		// LastObserved (clock skew, out-of-order delivery, a backdated
+		// event from an untrusted source) carries no interval
+		// information. Treating its negative interval as a measurement
+		// would report a maximal deviation for what is really an
+		// absence of data — the same reason IntervalObservations == 0
+		// is already gated above.
+		bl := baselineWithStableInterval(fp, 10*time.Second, 50)
+		feat := features.Features{
+			Stable:   stable("payment-db"),
+			Volatile: features.VolatileFeatures{Timestamp: bl.Fingerprints[fp.ID].LastObserved.Add(-5 * time.Second)},
+		}
+		an := anomaly.Score(feat, fp, bl, cfg)
+		for _, s := range an.Contributors {
+			if s.Name == "frequency_deviation" {
+				t.Errorf("frequency_deviation fired on a negative (out-of-order) interval: %+v", s)
+			}
+		}
+	})
+
+	t.Run("negative interval does not fire against a jittered baseline", func(t *testing.T) {
+		// Same guard, but through frequencySignal's z-score branch
+		// rather than its nearZeroStdDev branch.
+		bl := baselineWithJitteredInterval(fp, 10*time.Second, 50)
+		feat := features.Features{
+			Stable:   stable("payment-db"),
+			Volatile: features.VolatileFeatures{Timestamp: bl.Fingerprints[fp.ID].LastObserved.Add(-5 * time.Second)},
+		}
+		an := anomaly.Score(feat, fp, bl, cfg)
+		for _, s := range an.Contributors {
+			if s.Name == "frequency_deviation" {
+				t.Errorf("frequency_deviation fired on a negative (out-of-order) interval: %+v", s)
 			}
 		}
 	})
@@ -336,6 +494,10 @@ func TestScoreMatchesDocumentedNoisyOrFormulaWithFrequencySignal(t *testing.T) {
 	// contributes exactly its full weight) as the two known signals.
 	fp := fingerprint.Compute(stable("payment-db"))
 	cfg := anomaly.DefaultConfig()
+	// FrequencyWeight is 0 by default (the signal is opt-in); set it
+	// explicitly, or this test would only prove that multiplying by zero
+	// yields zero.
+	cfg.FrequencyWeight = 0.6
 
 	b := baselineWithStableInterval(fp, 10*time.Second, 10) // 10/20 => familiarity 0.5 => novelty value 0.5; identical intervals => stddev ~0
 	feat := features.Features{
