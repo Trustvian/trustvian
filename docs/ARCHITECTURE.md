@@ -247,27 +247,47 @@ work.
 
 ## Relationship to a future Alert & Notification layer
 
-Nothing in this repository implements alerting or notification
-delivery today. If and when it's built, the relationship is the same
-adapter shape as OpenTelemetry and storage: a layer that consumes this
-module's output without becoming part of the pipeline or a dependency
-the core links against.
+The Foundation stage of this layer is implemented as of `v0.4` (package
+`alert` — see [ADR 0007](adr/0007-alert-package-is-public.md) and
+[task 018](tasks/018-alert-notification-foundation.md)); the Reliability
+and Additional-sinks-and-governance stages named in
+[ROADMAP.md § Alert & Notification
+phase](ROADMAP.md#alert--notification-phase) remain future work. The
+relationship is exactly the adapter shape this heading originally
+predicted: a layer that consumes this module's output without becoming
+part of the pipeline or a dependency the core links against.
 
 ```
-Decision (internal/policy, via Engine.Result)  --(future)-->  Alert Evaluation  -->  Notification Dispatcher  -->  Alert Sink(s)
+Decision (internal/policy, via Engine.Result)  -->  alert.Evaluate  -->  alert.Alert  -->  alert.Sink (alert.WebhookSink today)
 ```
 
 `Decision` and `Alert` are different questions — "what should Trustvian
-do" versus "should this be communicated externally" — so an alert
-layer reads `Result` the same way any other embedder would; it does not
-add a new pipeline stage, does not change `Decision`'s meaning, and
-gains no special access `internal/otel` or a future Control/Cloud
-consumer doesn't already have. See
+do" versus "should this be communicated externally" — and `alert`
+enforces that separation structurally, not just by convention:
+`alert.Evaluate(result trustvian.Result, rules []alert.Rule) (Alert,
+bool)` reads a `Result` the same way any other embedder would (it does
+not import `internal/policy` and cannot feed back into
+`Policy.Evaluate`), adds no new pipeline stage, does not change
+`Decision`'s meaning, and gains no special access `internal/otel` or a
+future Control/Cloud consumer doesn't already have. Verified, not just
+argued: `go list -deps` confirms none of `event`, `internal/features`
+through `internal/policy`, or the root `Engine` import `net/http` or
+the `alert` package itself — the core detection engine has zero
+awareness this layer exists. See
 [`trustvian-project-spec.md` § 18](../trustvian-project-spec.md#18-alert--notification-system)
-for the full architecture and [ROADMAP.md § Alert & Notification
-phase](ROADMAP.md#alert--notification-phase) for sequencing — neither
-is implemented, designed at the package level, or scheduled ahead of
-what those documents state.
+for the full architecture, [DOMAIN.md § Alert](DOMAIN.md#alert) for the
+domain model, and [ROADMAP.md § Alert & Notification
+phase](ROADMAP.md#alert--notification-phase) for what's shipped versus
+still future.
+
+`alert` sits outside `internal/` — unlike `internal/otel`, which this
+same adapter-shape reasoning otherwise mirrors exactly — because
+`alert.Sink`'s entire purpose is for third-party code to implement it
+against a stable `Alert` type, which Go's `internal/` visibility rule
+would make impossible. See [ADR 0007](adr/0007-alert-package-is-public.md)
+for the full reasoning and why this doesn't contradict [ADR
+0002](adr/0002-public-api-boundary.md)'s general "internal by default"
+rule.
 
 ## Hot-path protection in practice
 

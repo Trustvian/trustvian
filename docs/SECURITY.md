@@ -33,6 +33,7 @@ here, not moved or rewritten.
 | Concurrency issues | `TestInMemoryObserveConcurrentSameKey`, `TestInMemoryObserveConcurrentDistinctKeys` in [`internal/store/store_test.go`](../internal/store/store_test.go); `TestFileStoreObserveConcurrentSameKey`, `TestFileStoreObserveConcurrentDistinctKeys` in [`internal/store/file_test.go`](../internal/store/file_test.go) |
 | Resource exhaustion | `TestAnalyzeLargeAttributesMapDoesNotPanic`, `TestObserveUnboundedFingerprintsDoesNotPanic` in [`engine_test.go`](../engine_test.go) |
 | Explainability | `TestEvaluateAlwaysProducesNonEmptyExplanationReason` in [`internal/policy/policy_test.go`](../internal/policy/policy_test.go) |
+| Alert/notification delivery integrity | `TestSendSignsPayloadCorrectly`, `TestSendTamperedPayloadFailsVerification`, `TestSendDoesNotLeakSecret`, `TestNewWebhookSinkRejectsNonHTTPS`, `TestNewWebhookSinkRejectsLoopbackDestination`, `TestSendRespectsTimeout`, `TestSendPayloadTooLargeMakesNoNetworkCall` in [`alert/webhook_test.go`](../alert/webhook_test.go) |
 
 ## Threats considered
 
@@ -374,7 +375,7 @@ means the data is already scoped in a way a future `TenantID` addition
 extends rather than restructures — a deliberate choice to make that
 future work an access-control addition, not a data migration.
 
-### Future: Alert/notification delivery integrity
+### Alert/notification delivery integrity
 
 **Threat:** once a `Decision` can produce an externally-delivered
 `Alert` (webhook, chat, paging system — see
@@ -383,18 +384,47 @@ a forged, replayed, or tampered delivery could make an external system
 act on a notification Trustvian never actually sent, or fail to notice
 a real one was dropped.
 
-**Status: not implemented; the architecture already names the
-requirements.** No alert or notification code exists in this
-repository today — `internal/policy.Result` still ends at `Decision`,
-nothing consumes it further. The spec's § 18.9 already commits any
-future webhook delivery to HTTPS, HMAC request signing, a delivery
-timestamp with replay-window enforcement, and payload validation on the
-receiving end, before any such delivery ships — this is a requirement
-recorded ahead of implementation, not a gap being papered over.
-**Future work:** this threat gets its own entry in the table above,
-with a real test reference, once the Alert & Notification phase's
-Foundation stage (see [ROADMAP.md](ROADMAP.md#alert--notification-phase))
-actually ships a sink.
+**Status: implemented for the one delivery mechanism this stage ships
+(`alert.WebhookSink`, [task
+018](tasks/018-alert-notification-foundation.md)).** `NewWebhookSink`
+fails closed at construction — not silently at the first `Send` — for
+a non-HTTPS destination (`ErrNonHTTPSDestination`,
+`TestNewWebhookSinkRejectsNonHTTPS`), a literal loopback/link-local
+destination unless explicitly overridden
+(`ErrLoopbackDestination`/`WithAllowLoopback`,
+`TestNewWebhookSinkRejectsLoopbackDestination`), or a missing signing
+secret (`ErrMissingSecret`). Every delivery is signed with
+HMAC-SHA256 computed over `"<unix-timestamp>.<payload-body>"`, not the
+body alone — binding the timestamp into the signed content is what lets
+a receiver enforce a replay window without an attacker being able to
+attach a fresh timestamp to a previously-valid signature — verified by
+`TestSendSignsPayloadCorrectly` (an independently recomputed HMAC
+matches the `X-Trustvian-Signature` header exactly) and
+`TestSendTamperedPayloadFailsVerification` (flipping one payload byte
+changes the recomputed signature). `TestSendDoesNotLeakSecret` proves
+the raw signing secret never appears in the outbound body or any
+header. A bounded request timeout (`TestSendRespectsTimeout`) and a
+bounded payload size, `ErrPayloadTooLarge`
+(`TestSendPayloadTooLargeMakesNoNetworkCall` — the oversized-payload
+case makes zero network calls, not merely returns an error after
+sending) close the resource-exhaustion angle a webhook to an
+operator-configured, potentially attacker-influenced destination would
+otherwise open. See [DOMAIN.md § Alert](DOMAIN.md#alert) for the domain
+model and [ADR 0007](adr/0007-alert-package-is-public.md) for why
+`alert` is a public package.
+
+**What remains deliberately unimplemented:** delivery retry, a
+delivery-state/dead-letter mechanism, and deduplication are the
+separately-scoped Reliability stage's job (see
+[ROADMAP.md § Alert & Notification
+phase](ROADMAP.md#alert--notification-phase)), not this one's — a
+failed or dropped delivery today simply returns an error to the caller,
+with no automatic recovery. Full SSRF protection (DNS-resolution-based
+destination validation, not just literal-IP loopback checks) is
+explicitly out of scope for the same reason `docs/ARCHITECTURE.md`
+already draws this boundary for the rest of Trustvian: Trustvian is not
+itself a network-egress enforcement point, and real SSRF protection
+belongs at the deploying application's network layer.
 
 ## Explainability as a security property
 

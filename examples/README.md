@@ -1,19 +1,20 @@
 # Examples
 
-Six small, runnable `package main` programs demonstrating the full
+Seven small, runnable `package main` programs demonstrating the full
 `Event -> Features -> Fingerprint -> Baseline -> Anomaly -> Trust ->
-Policy -> Decision` pipeline against the real
+Policy -> Decision` pipeline — and, since v0.4, the downstream Alert &
+Notification Foundation — against the real
 `github.com/Trustvian/trustvian` Go SDK. Each is a genuinely external
 consumer of the module — `examples/go.mod` is a separate Go module with
 a `replace github.com/Trustvian/trustvian => ../` directive back to this
 repository root, so these programs only ever see what an outside caller
 actually sees (no `internal/` imports anywhere under this directory).
 
-Five of the six scenarios port event sequences already verified in
+Five of the first six scenarios port event sequences already verified in
 [docs/use-cases.md](../docs/use-cases.md) and
 [docs/sdk-guide.md § watching trust mature](../docs/sdk-guide.md#watching-trust-mature)
-almost verbatim; the sixth (`frequency-abuse`) is new. Every README below
-has real, `go run`-captured output, not hand-written output.
+almost verbatim; `frequency-abuse` and `alert-webhook` are new. Every
+README below has real, `go run`-captured output, not hand-written output.
 
 | Example | What it demonstrates | README |
 |---|---|---|
@@ -23,12 +24,13 @@ has real, `go run`-captured output, not hand-written output.
 | [external-destination](external-destination/) | An order service's baseline matures against a normal internal RPC call, then it suddenly reaches an external secrets manager | [external-destination/README.md](external-destination/README.md) |
 | [frequency-abuse](frequency-abuse/) | A fully mature, familiar fingerprint bursts far outside its learned request cadence — `frequency_deviation` is detected with zero categorical novelty, and reported even though it ships opt-in (`FrequencyWeight` defaults to `0`) | [frequency-abuse/README.md](frequency-abuse/README.md) |
 | [ai-agent](ai-agent/) | An AI agent's baseline matures against a benign CRM-lookup tool call, then the same agent reaches for a credentials store | [ai-agent/README.md](ai-agent/README.md) |
+| [alert-webhook](alert-webhook/) | A cold-start, highly novel event resolves to `OBSERVE_ONLY`, but an `alert.Rule` matching on anomaly score alone still produces a `HIGH`-severity `Alert`, signed and delivered over HTTPS to a webhook — proving `Decision != Alert` end to end via the direct Go SDK, no OTel involved | [alert-webhook/README.md](alert-webhook/README.md) |
 
 ## Running them
 
 ```bash
 cd examples/basic && go run .
-# ...or all six at once, from the repository root:
+# ...or all seven at once, from the repository root:
 make examples
 ```
 
