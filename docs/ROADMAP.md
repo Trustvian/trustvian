@@ -62,6 +62,15 @@ before it) — see the milestone section below for the full writeup,
 including the day-of-week scope decision and the empirically-discovered
 `hourActivityAlpha` design correction.
 
+**`v0.4` — Alert & Notification Foundation is scoped, not yet
+implemented.** [Task 018](tasks/018-alert-notification-foundation.md)
+defines a minimal, explainable, externally deliverable `Alert` derived
+from an existing `Result`/`Decision` — a severity concept, a
+`policy.Condition`-shaped Alert Evaluation matcher, the conceptual
+`AlertSink` boundary, and a generic HTTP webhook as the one delivery
+mechanism — without changing `Decision` semantics or the core pipeline.
+No code exists yet; see the milestone section below.
+
 What's **not** yet true, concretely — the gaps this roadmap's remaining
 milestones exist to close:
 
@@ -76,18 +85,20 @@ milestones exist to close:
   during `v0.3` scoping, not built (see the `v0.3` section below).
 - No Alert & Notification implementation — the architecture is
   specified ([`trustvian-project-spec.md` § 18](../trustvian-project-spec.md#18-alert--notification-system))
-  and roadmapped (below), but nothing under this phase has been built.
+  and now scoped as `v0.4`'s Foundation stage ([task
+  018](tasks/018-alert-notification-foundation.md)), but not yet
+  implemented.
 - AI-agent event types work today only through the generic `Event`
   model (`ActorTypeAIAgent` + `OperationCategoryTool`) — no session,
   delegation, or tool-sequence concepts exist.
 - No MCP interface, no Trustvian Control.
 
-**Next up: the Alert & Notification phase's Foundation stage** is
-unblocked (it only depends on `v0.1`'s stable `Result` shape) but not
-yet scoped as a task file. With `v0.1`–`v0.3.0` all tagged, it is the
-roadmap's next candidate body of work, alongside AI-agent session/
-delegation concepts — neither is predetermined by this document as
-"first."
+**Next up: `v0.4` — Alert & Notification Foundation** ([task
+018](tasks/018-alert-notification-foundation.md)) is scoped and ready
+for implementation — see the milestone section below. AI-agent
+session/delegation concepts remain unblocked and unscoped as an
+alternative next body of work; `v0.4` is not predetermined as strictly
+"first," only as the one with a written task file today.
 
 This roadmap's job is to close the remaining gaps in the order that
 respects the roadmap principles (deterministic before ML, security
@@ -306,52 +317,89 @@ Criteria section — all met, verified by
 
 ---
 
+## v0.4 — Alert & Notification Foundation
+
+**Objective.** Turn a Trustvian `Result`/`Decision` into a minimal,
+explainable, externally deliverable `Alert`, without changing
+`Decision` semantics or the existing detection pipeline. This is the
+"Foundation" stage of the broader Alert & Notification phase (see
+below for the stages sequenced after it) — the only stage that must
+ship before the rest are useful. See
+[`trustvian-project-spec.md` § 18](../trustvian-project-spec.md#18-alert--notification-system)
+for the full architecture this milestone implements against.
+
+**Scope** (task file [018](tasks/018-alert-notification-foundation.md)).
+
+- **018 Alert & Notification Foundation — scoped, not yet
+  implemented.** The `Alert` domain concept (reusing `Trust`/`Anomaly`/
+  `Decision`/`Event.Actor`/`Event.Target`/`Result.Explain()` — no
+  parallel model), the severity concept
+  (`INFO`/`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`, explicitly distinct from
+  risk/anomaly score/trust score/decision), a minimal Alert Evaluation
+  matcher (flat AND-of-optional-fields on decision/risk/actor
+  type/target category/anomaly score/trust score — no combinators,
+  mirroring `internal/policy.Condition`'s existing discipline), the
+  conceptual `AlertSink` boundary, a generic HTTP webhook sink, and the
+  first version of a versioned webhook payload contract. Task 018 also
+  names a genuine open architecture question this milestone must
+  resolve during implementation: unlike `policy.Policy`/
+  `anomaly.Config` (kept `internal/` per [ADR
+  0002](adr/0002-public-api-boundary.md) because no external consumer
+  needs to construct them), `AlertSink`'s entire purpose is for
+  third-party code to implement it against a stable `Alert` type — which
+  Go's `internal/` visibility rule makes impossible if `Alert` stays
+  `internal/`. See [task 018 §
+  Architecture](tasks/018-alert-notification-foundation.md#architecture)
+  for the two candidate resolutions and the requirement to record
+  whichever is chosen in a new ADR.
+
+**Non-goals.** No boolean combinators or expression language for alert
+rules; no `Policy` reuse or coupling (Alert Evaluation is a
+structurally independent, read-only consumer of `Result`, not a second
+decision stage); no provider SDKs (Slack/Teams/PagerDuty/Kafka/SMTP/
+Redis/database-backed queue) — the generic webhook is the only
+transport; no delivery reliability subsystem (retry, backoff,
+delivery-state, idempotency, deduplication, cooldown, suppression,
+escalation, dead-letter handling — see the Reliability stage below); no
+incident-management domain (an `Alert` is one notification-worthy
+event, not a grouped investigation); no multi-tenancy, RBAC, or Control
+integration. See [task 018's own Non-Goals
+section](tasks/018-alert-notification-foundation.md#non-goals) for the
+full, precise list.
+
+**Dependencies.** `v0.1`'s stable `Result` shape (Alert Evaluation
+reads `Result`; a still-moving `Result` shape would mean redesigning
+the `Alert` view underneath it) — satisfied. Not blocked on `v0.2` or
+`v0.3` — Alert Evaluation depends on `Decision`/`Trust`/`Anomaly`, not
+on OTel outbound attributes or baseline/anomaly depth — but sequenced
+here, after those, because neither this roadmap nor the spec commits to
+shipping it before them.
+
+**Acceptance criteria.** See [task
+018](tasks/018-alert-notification-foundation.md)'s own Acceptance
+Criteria section.
+
+---
+
 ## Alert & Notification phase
 
-**Objective.** Turn a `Decision` into an actionable, externally-delivered
-notification, without changing what a `Decision` is or reordering the
-existing pipeline. See
-[`trustvian-project-spec.md` § 18](../trustvian-project-spec.md#18-alert--notification-system)
-for the full architecture this phase implements against — this entry is
-the implementation-ordering summary, not a restatement of it.
+**This section now covers only the stages after `v0.4`.** The
+Foundation stage above is `v0.4`, with its own numbered task file
+(018); this section is what comes after it. The remaining two stages
+named in
+[`trustvian-project-spec.md` §
+18](../trustvian-project-spec.md#18-alert--notification-system) depend
+on it and are not yet scoped as task files — each gets its own task
+file (following the existing template) once the prior stage is done and
+its real shape is known, per this roadmap's own "small vertical slices"
+principle. No milestone number or task ID is reserved for either yet:
 
-Conceptually, this phase adds one thing downstream of the existing
-pipeline, never inside it:
-
-```
-Event → Features → Fingerprint → Baseline → Anomaly → Trust → Policy → Decision
-                                                                            ↓
-                                                                  Alert Evaluation
-                                                                            ↓
-                                                                          Alert
-                                                                            ↓
-                                                              Notification Dispatcher
-                                                                            ↓
-                                                                     Alert Sink(s)
-```
-
-**Scope**, split into three stages by how load-bearing they are — no
-dedicated task file numbers are reserved yet; each stage gets its own
-task file (following the existing template) once the prior stage is
-done and its real shape is known, per this roadmap's own "small
-vertical slices" principle:
-
-- **Foundation** (architecture + a first working slice): the `Alert`
-  domain concept (reusing `Trust`/`Anomaly`/`Decision`/`Event.Actor`/
-  `Event.Target`/`Result.Explain()` — no parallel model), the severity
-  concept, a minimal Alert Evaluation matcher (flat AND-of-optional-
-  fields on severity/decision/risk/actor type/target category/anomaly
-  score/trust score — no combinators, mirroring `internal/policy.Condition`'s
-  existing discipline), the `AlertSink` abstraction, a generic HTTP
-  webhook sink, and the first version of the versioned webhook payload
-  contract. This is the only stage that must ship before the rest are
-  useful.
-- **Reliability** (depends on Foundation): delivery retry with
-  exponential backoff, delivery status, idempotency, deduplication, and
-  a cooldown window — closing the "one incident, one alert" and "a
-  flaky endpoint doesn't lose alerts" gaps Foundation deliberately
-  leaves open.
-- **Additional sinks and governance** (depends on Foundation; mostly
+- **Reliability** (depends on `v0.4`): delivery retry with exponential
+  backoff, delivery status, idempotency, deduplication, and a cooldown
+  window — closing the "one incident, one alert" and "a flaky endpoint
+  doesn't lose alerts" gaps Foundation deliberately leaves open (spec §
+  18.11–18.12).
+- **Additional sinks and governance** (depends on `v0.4`; mostly
   Trustvian Control/Enterprise territory per the OSS/Enterprise
   boundary in the spec's § 18.16): Slack, Microsoft Teams, PagerDuty,
   and anything past those, plus centralized notification management,
@@ -361,26 +409,18 @@ vertical slices" principle:
   automation platforms (n8n, SOAR, custom relays), so this stage is
   explicitly not required for the OSS core to be useful.
 
-**Non-goals (this phase, all stages).** No incident-management domain
-(an `Alert` is one notification-worthy event, not a grouped
-investigation — see spec § 18.13); no boolean combinators or a general
-expression language for alert rules in the first version; no Slack/Teams/
-PagerDuty SDK, HTTP client, Kafka, Redis, or PostgreSQL dependency added
-to the core detection engine merely to support alerting — every provider
-integration lives behind `AlertSink`, the same way `internal/otel` is
-the only package depending on OpenTelemetry today.
+**Non-goals (both stages).** No incident-management domain (an `Alert`
+is one notification-worthy event, not a grouped investigation — see
+spec § 18.13); no boolean combinators or a general expression language
+for alert rules; no Slack/Teams/PagerDuty SDK, HTTP client, Kafka,
+Redis, or PostgreSQL dependency added to the core detection engine
+merely to support alerting — every provider integration lives behind
+`AlertSink`, the same way `internal/otel` is the only package depending
+on OpenTelemetry today.
 
-**Dependencies.** `v0.1`'s stable `Result` shape (Alert Evaluation reads
-`Result`; a still-moving `Result` shape would mean redesigning the
-`Alert` view underneath it). Not blocked on `v0.2` or `v0.3` — Alert
-Evaluation depends on `Decision`/`Trust`/`Anomaly`, not on OTel outbound
-attributes or baseline/anomaly depth — but sequenced here, after those,
-because neither this roadmap nor the spec commits to shipping it before
-them.
-
-**Acceptance criteria.** Defined when the Foundation stage's own task
-file is written — not before, per "small vertical slices" and this
-roadmap's standing policy of not pre-committing to unscoped work.
+**Acceptance criteria.** Defined when each stage's own task file is
+written — not before, per "small vertical slices" and this roadmap's
+standing policy of not pre-committing to unscoped work.
 
 ## AI Agent phase
 
