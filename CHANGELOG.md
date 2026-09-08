@@ -39,8 +39,7 @@ seasonality was explicitly scoped and deferred, not built.
 ### Changed
 
 - [docs/ROADMAP.md](docs/ROADMAP.md)'s "Current status" section now
-  reflects `v0.3` (baseline & anomaly depth) as complete and
-  release-ready.
+  reflects `v0.3.0` (baseline & anomaly depth) as shipped.
 
 ## v0.2.0 — OpenTelemetry maturation
 

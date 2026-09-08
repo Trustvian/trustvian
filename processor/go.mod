@@ -2,10 +2,8 @@ module trustvian-processor
 
 go 1.27
 
-replace github.com/Trustvian/trustvian => ../
-
 require (
-	github.com/Trustvian/trustvian v0.0.0-00010101000000-000000000000
+	github.com/Trustvian/trustvian v0.3.0
 	go.opentelemetry.io/collector/component v1.66.0
 	go.opentelemetry.io/collector/component/componenttest v0.160.0
 	go.opentelemetry.io/collector/confmap v1.66.0
