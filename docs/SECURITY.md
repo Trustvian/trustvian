@@ -363,6 +363,28 @@ means the data is already scoped in a way a future `TenantID` addition
 extends rather than restructures — a deliberate choice to make that
 future work an access-control addition, not a data migration.
 
+### Future: Alert/notification delivery integrity
+
+**Threat:** once a `Decision` can produce an externally-delivered
+`Alert` (webhook, chat, paging system — see
+[`trustvian-project-spec.md` § 18](../trustvian-project-spec.md#18-alert--notification-system)),
+a forged, replayed, or tampered delivery could make an external system
+act on a notification Trustvian never actually sent, or fail to notice
+a real one was dropped.
+
+**Status: not implemented; the architecture already names the
+requirements.** No alert or notification code exists in this
+repository today — `internal/policy.Result` still ends at `Decision`,
+nothing consumes it further. The spec's § 18.9 already commits any
+future webhook delivery to HTTPS, HMAC request signing, a delivery
+timestamp with replay-window enforcement, and payload validation on the
+receiving end, before any such delivery ships — this is a requirement
+recorded ahead of implementation, not a gap being papered over.
+**Future work:** this threat gets its own entry in the table above,
+with a real test reference, once the Alert & Notification phase's
+Foundation stage (see [ROADMAP.md](ROADMAP.md#alert--notification-phase))
+actually ships a sink.
+
 ## Explainability as a security property
 
 Every `Anomaly` retains its `Contributors`; every `policy.Result`

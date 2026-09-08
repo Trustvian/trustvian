@@ -513,7 +513,476 @@ REQUIRE_APPROVAL
 BLOCK
 ```
 
-## 18. Roadmap
+## 18. Alert & Notification System
+
+**Status: architectural target, not implemented.** Everything in this
+section describes where Trustvian is headed, not what `go get
+github.com/Trustvian/trustvian` gives you today. See
+[`docs/ROADMAP.md`](docs/ROADMAP.md) for what's actually scheduled and
+in what order, and [Current Implementation Status](#current-implementation-status)
+above for the same caveat this whole document carries.
+
+### 18.1 Why Alert is not Decision
+
+Trustvian's existing pipeline —
+
+```text
+Event
+ -> Features
+ -> Fingerprint
+ -> Baseline
+ -> Anomaly
+ -> Trust
+ -> Policy
+ -> Decision
+```
+
+— answers one question: **what should Trustvian do about this
+behavior** (`ALLOW`, `OBSERVE_ONLY`, `ALERT`, `CHALLENGE`,
+`REQUIRE_APPROVAL`, `BLOCK`). This pipeline is not being redesigned,
+extended with a new stage, or reordered by anything in this section.
+
+Alerting answers a different question: **should this security event be
+communicated to an external system** (a webhook, a chat channel, a
+paging system)? A `Decision` of `BLOCK` at `RiskHigh` might well
+produce an alert; a `Decision` of `OBSERVE_ONLY` on a routine,
+low-severity event usually should not. The two concepts are related
+but distinct. Conflating them would either force every `Decision` to
+carry notification-delivery concerns it has no business knowing about,
+or force every notification integration to reimplement policy
+evaluation. Neither is acceptable.
+
+Alerting is a layer that consumes the pipeline's output without
+becoming part of it:
+
+```text
+Event
+ -> Features
+ -> Fingerprint
+ -> Baseline
+ -> Anomaly
+ -> Trust
+ -> Policy
+ -> Decision
+ -> Alert Evaluation
+ -> Alert
+ -> Notification Dispatcher
+ -> Alert Sink(s)
+```
+
+```text
+Decision
+   |
+   v
+Alert Evaluation
+   |
+   v
+ Alert
+   |
+   v
+Notification Dispatcher
+   |
+   +----------+----------+----------+-------------+
+   |          |          |          |             |
+Webhook     Slack      Teams    PagerDuty      Other
+```
+
+Not every `Decision` produces an `Alert`; an `Alert` never changes what
+a `Decision` already was. Alert Evaluation reads `Result` (or whatever
+its future stable equivalent is); it never writes back into the
+pipeline, and nothing upstream of `Decision` ever needs to know
+alerting exists.
+
+### 18.2 Alert domain concept
+
+An `Alert` is the notification-worthy summary of one behavioral
+decision. Its domain semantics — not a frozen Go struct — are:
+
+- an alert identifier
+- a timestamp
+- a severity (see [§18.3](#183-alert-severity))
+- the decision that produced it
+- the risk level
+- the actor
+- the target
+- the trust score
+- the anomaly score
+- the reasons / explanation for the decision
+- a behavior identifier (the actor's behavioral history this event
+  belongs to)
+- the fingerprint identifier
+- open metadata for extension
+
+Deliberately absent from this list: a second copy of trust score,
+anomaly score, risk, decision, actor, target, or explanation logic.
+Every one of those concepts already exists — `Trust.Score`,
+`Anomaly.Score`, `Trust.Risk`, `Decision`, `Event.Actor`,
+`Event.Target`, and `Result.Explain()`/`Anomaly.Contributors` today.
+`Alert` is a view assembled from an existing `Result`, not a parallel
+model that could drift from it. When this is implemented, the concrete
+Go shape should be decided against the actual `Result` shape at that
+time, not designed speculatively now — this section fixes the
+*concepts* an `Alert` must carry, not their field names or types.
+
+### 18.3 Alert severity
+
+`Alert` introduces one genuinely new concept: **severity**, initially:
+
+```text
+INFO
+LOW
+MEDIUM
+HIGH
+CRITICAL
+```
+
+Severity answers "how loudly should this be communicated," which is a
+distinct question from:
+
+- **anomaly score** — how different this event looks from the baseline
+- **trust score** — how much this event should be trusted, combining
+  anomaly, identity, and context
+- **risk level** — `Trust`'s own qualitative bucket
+- **decision** — what the policy engine chose to do
+
+These four already exist and are not being redefined. Severity is not
+assumed to map one-to-one onto any of them (a `BLOCK` at `RiskCritical`
+against a known-sensitive target might always be `CRITICAL` severity by
+an operator's own rule; a `CHALLENGE` at `RiskMedium` on a first-time
+integration might reasonably be `INFO`). Alert Evaluation — not
+`Decision` — is responsible for turning risk/decision/anomaly into a
+severity, using operator-defined rules (§18.4).
+
+### 18.4 Alert rules
+
+Alert Evaluation is driven by rules an operator configures, matching on
+concepts Trustvian already exposes:
+
+- severity
+- decision
+- risk level
+- actor type
+- target category
+- anomaly score
+- trust score
+
+Illustrative only — not a contract, not implemented, not a policy
+language:
+
+```yaml
+alerts:
+  - name: critical-security-event
+    when:
+      severity: critical
+    actions:
+      - webhook
+
+  - name: blocked-sensitive-operation
+    when:
+      decision: block
+      target_category: sensitive
+    actions:
+      - webhook
+
+  - name: high-anomaly
+    when:
+      anomaly_score: ">0.90"
+    actions:
+      - webhook
+```
+
+The initial architecture supports simple, flat matching on these
+existing concepts — the same shape `internal/policy.Condition` already
+uses for `Decision` evaluation (AND-of-optional-fields, no
+combinators). It does **not** introduce boolean combinators, a general
+expression language, or dynamic rule loading in its first version;
+those are explicitly future evolution, not a v1 requirement, following
+the same "don't build the complex policy language yet" discipline
+`docs/policy-guide.md` already documents for `Condition` itself.
+
+### 18.5 Notification Dispatcher
+
+The Notification Dispatcher's one job:
+
+```text
+Alert
+  -> determine which configured notification actions match
+  -> dispatch to each matching Alert Sink
+```
+
+It contains no provider-specific logic. It does not know what a Slack
+message looks like, what a webhook's HTTP method is, or how PagerDuty's
+API is shaped — it only knows "this alert matched these named actions,
+dispatch to them."
+
+```text
+Alert
+  |
+  v
+Notification Dispatcher
+  +-- Webhook Sink
+  +-- Slack Sink
+  +-- Teams Sink
+  +-- PagerDuty Sink
+  +-- Custom Sink
+```
+
+### 18.6 Alert Sink abstraction
+
+The architecture calls for a single, narrow abstraction every
+notification provider implements — conceptually:
+
+```go
+type AlertSink interface {
+    Send(ctx context.Context, alert Alert) error
+}
+```
+
+This is a specification-level interface, not a commitment to this
+exact signature, this exact package, or an implementation timeline. It
+exists so a new provider can be added by implementing one method
+against a stable `Alert` shape, without the Notification Dispatcher —
+or anything upstream of it — changing. Where this interface eventually
+lives is deliberately undecided here — see
+[§18.13](#1813-alert-vs-incident) for the equally deliberate restraint
+on scope, and [ROADMAP.md](docs/ROADMAP.md) for when a package location
+decision would actually get made.
+
+### 18.7 Generic webhook is the primary integration
+
+The first, and most important, notification target is a **generic
+HTTP webhook** — provider-neutral, and the integration point every
+other target (n8n, a SIEM, a SOAR platform, a ticketing system, a
+custom internal API) can build on without Trustvian knowing any of them
+exist:
+
+```text
+Trustvian -> Alert -> Notification Dispatcher -> Webhook -> External system
+```
+
+Slack and Microsoft Teams are not hard-coded into the core engine, and
+are not the first integration built — they are two of many things that
+could eventually sit behind the same `AlertSink` abstraction the
+webhook itself uses.
+
+### 18.8 Slack / Microsoft Teams
+
+Documented here as **future** notification adapters, behind the same
+`AlertSink` abstraction as the webhook — not as Trustvian Core
+dependencies. The initial implementation priority is the generic
+webhook (§18.7); Slack and Teams (and PagerDuty, and anything else)
+follow once that abstraction is proven, not before. Trustvian Core must
+never import a Slack or Teams SDK to support this.
+
+### 18.9 Webhook security
+
+A future webhook delivery must consider, at minimum:
+
+- HTTPS only
+- HMAC request signing
+- a delivery timestamp (for replay-window enforcement)
+- replay protection
+- authentication for whoever configures the destination
+- secret management (the signing key is a secret, not a config value
+  logged or echoed back)
+- a request timeout
+- payload validation on the receiving end
+
+Illustrative future request headers — not implemented, not a
+commitment to this exact header naming:
+
+```http
+X-Trustvian-Signature: sha256=...
+X-Trustvian-Timestamp: ...
+X-Trustvian-Alert-ID: ...
+X-Trustvian-Delivery-ID: ...
+```
+
+This section intentionally stops at the architectural requirement, not
+a cryptographic implementation (which HMAC construction, which
+timestamp tolerance window) — that belongs with the actual
+implementation task, informed by real delivery requirements at that
+time.
+
+### 18.10 Stable, versioned webhook payload
+
+Whatever the webhook payload becomes, it is a **versioned contract**
+from its first release — not an internal struct serialized as a
+convenience. Illustrative shape, explicitly not binding on the eventual
+implementation:
+
+```json
+{
+  "event": "trustvian.alert",
+  "version": "1",
+  "severity": "critical",
+  "decision": "block",
+  "risk": "high",
+  "actor": {
+    "id": "payment-service",
+    "type": "service"
+  },
+  "target": {
+    "id": "/customers/export",
+    "category": "sensitive"
+  },
+  "trust_score": 0.31,
+  "anomaly_score": 0.94,
+  "reasons": [
+    "Previously unseen operation",
+    "Abnormal request frequency",
+    "Unexpected behavioral sequence"
+  ],
+  "fingerprint_id": "fp_...",
+  "behavior_id": "bhv_...",
+  "timestamp": "2026-09-07T09:42:12Z"
+}
+```
+
+### 18.11 Delivery reliability
+
+A future delivery layer needs, at minimum: a timeout, retry with
+exponential backoff, a maximum retry count, a delivery status, explicit
+handling of a permanently-failed delivery (a dead-letter/failure
+state), idempotency, and a delivery identifier distinct from the
+alert's own identifier.
+
+```text
+Alert -> Delivery -> Webhook -> 503 -> Retry -> Retry -> Success
+```
+
+An `Alert` is independent of any one delivery attempt — the same alert
+can have multiple delivery attempts, across multiple sinks, each with
+its own independent outcome:
+
+```text
+Alert
+  +-- Delivery #1 -> Webhook   -> Success
+  +-- Delivery #2 -> Slack     -> Failed
+  +-- Delivery #3 -> Teams     -> Success
+```
+
+None of this is implemented today.
+
+### 18.12 Deduplication and cooldown
+
+A single behavioral incident can produce many qualifying events —
+`payment-service` calling `POST /customers/export` at `CRITICAL`
+severity a hundred times in a minute must not become a hundred
+identical alerts. The architecture calls for, eventually: an alert
+fingerprint/key distinct from the behavioral `Fingerprint.ID`,
+deduplication against that key, a cooldown window, suppression, and
+escalation when suppression itself becomes suspicious. Keep the first
+version of this simple; a full incident-management system is
+explicitly out of scope — see §18.13.
+
+### 18.13 Alert vs. Incident
+
+For the current roadmap: **an Alert is one notification-worthy security
+event.** An Incident — a higher-level concept that groups multiple
+related alerts into one investigation — may be a future evolution, but
+is not designed, scoped, or implied by anything in this section.
+Trustvian is not introducing an incident-management domain now.
+
+### 18.14 Relationship to OpenTelemetry
+
+The Alert/Notification system does not change Trustvian's OTel
+boundary. OTel remains strictly an *input* integration:
+
+```text
+Application / Agent -> OTel -> Trustvian OTel Adapter / Collector Processor -> Trustvian Engine
+```
+
+Alerting is downstream of the engine's own output, entirely separate
+from how events arrived:
+
+```text
+Trustvian Engine -> Decision -> Alert -> Notification Dispatcher
+```
+
+The Alert system must never depend on OpenTelemetry, and notification
+delivery must work identically whether or not the deployment uses OTel
+at all — exactly the same independence `internal/otel` already
+maintains from the core engine (see
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)).
+
+### 18.15 Core architecture constraint
+
+This constraint is as important as anything else in this section: none
+of the following may become a dependency of Trustvian's core detection
+engine merely to support alerting —
+
+```text
+Slack SDK · Teams SDK · an HTTP client · Kafka · Redis · PostgreSQL · a PagerDuty SDK
+```
+
+Trustvian Core stays:
+
+```text
+Trustvian Core -> domain logic -> decision
+```
+
+with every external notification integration living behind the
+`AlertSink` boundary (§18.6), the same philosophy `internal/otel`
+already enforces for OpenTelemetry — see
+[`docs/ARCHITECTURE.md` § package boundaries](docs/ARCHITECTURE.md#package-boundaries).
+
+### 18.16 OSS / Enterprise boundary
+
+Evolutionary and adoption-driven, not fixed today. The OSS core should
+carry enough of this to be genuinely useful standalone:
+
+- the `Alert` domain model
+- basic alert evaluation
+- a generic webhook sink
+- the base notification-dispatch abstraction
+- local, file/config-based rule configuration
+
+Trustvian Control/Enterprise is where centralization and governance
+belong once they're needed:
+
+- centralized alert management
+- advanced alert rules (combinators, richer expressions)
+- multi-tenant notification configuration
+- notification routing and escalation
+- suppression policy management
+- alert history
+- delivery observability
+- RBAC over alert configuration
+- audit of who changed what alert rule
+- centralized/managed Slack, Teams, PagerDuty integrations
+- enterprise notification governance
+
+No feature above is locked into Enterprise as a permanent,
+non-negotiable line — this list reflects where things would sensibly
+start, informed by real adoption, matching how [§13](#13-free--open-source-edition)
+and [§14](#14-enterprise-edition) already draw this line for the rest
+of the product.
+
+### 18.17 Future package direction (illustrative only)
+
+If and when this is implemented, a plausible (not committed) package
+shape:
+
+```text
+internal/
+    alert/
+    notification/
+        webhook/
+        slack/
+        teams/
+```
+
+This is not created now, and this exact structure is not a commitment —
+whether `alert`/`notification` deserve their own top-level `internal/`
+packages, whether they compose the way this sketch implies, and where
+the `AlertSink` interface itself should live are all decisions to make
+against the real code at implementation time, following the same
+"prove the interface is needed, then place it" discipline
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) already applies to every
+other package boundary in this codebase.
+
+## 19. Roadmap
 
 The phases below are this document's original, long-term framing.
 [`docs/ROADMAP.md`](docs/ROADMAP.md) is the authoritative, current
@@ -605,7 +1074,7 @@ document's Phase ordering vs. `docs/ROADMAP.md`'s milestone grouping),
 - Advanced analytics
 - Enterprise support
 
-## 19. Business Model
+## 20. Business Model
 
 ### Free
 
@@ -655,7 +1124,7 @@ Advanced analytics
 Support
 ```
 
-## 20. Differentiation
+## 21. Differentiation
 
 Trustvian is not:
 
@@ -682,7 +1151,7 @@ Trustvian
   = Should this behavior be trusted?
 ```
 
-## 21. Brand Architecture
+## 22. Brand Architecture
 
 ```text
 Trustvian
@@ -706,7 +1175,7 @@ Trustvian
     └── Managed enterprise offering
 ```
 
-## 22. Brand Messaging
+## 23. Brand Messaging
 
 **Primary:**  
 > Trust the Behavior.
@@ -723,7 +1192,7 @@ Trustvian
 **OpenTelemetry:**  
 > Turn telemetry into behavioral security signals.
 
-## 23. Claude Code Implementation Instructions
+## 24. Claude Code Implementation Instructions
 
 Build Trustvian as a production-quality open-source Go project.
 
@@ -763,7 +1232,7 @@ Every major component must have:
 - Example usage
 - Documentation
 
-## 24. Initial MVP Acceptance Criteria
+## 25. Initial MVP Acceptance Criteria
 
 The first usable release must support:
 
@@ -786,7 +1255,7 @@ Output:
 
 The MVP must work locally with no external SaaS dependency.
 
-## 25. Long-Term Vision
+## 26. Long-Term Vision
 
 Trustvian should evolve from an open-source Go engine into a behavioral security platform and eventually a behavioral trust layer for applications and AI agents.
 
