@@ -86,6 +86,17 @@ type Config struct {
 	// examples/frequency-abuse for a worked opt-in.
 	FrequencyWeight float64
 
+	// TimePatternWeight defaults to 0, for the identical reason
+	// FrequencyWeight does: an EWMA-smoothed hour-of-day distribution
+	// needs real traffic to calibrate against before it's trustworthy,
+	// and a fingerprint that matures past MinObservations within a
+	// single calendar day would show a spuriously sharp (but
+	// statistically meaningless) pattern — see
+	// docs/tasks/017-baseline-time-patterns.md's Non-Goals. The signal
+	// is still computed and reported in Anomaly.Contributors; only its
+	// contribution to Score is opt-in.
+	TimePatternWeight float64
+
 	// SensitiveTargetFloor maps a Target name to a minimum anomaly
 	// contribution that always applies when that target is touched,
 	// regardless of how familiar the Baseline is with it. This is what
@@ -113,6 +124,7 @@ func DefaultConfig() Config {
 		LatencyWeight:        0.6,
 		ErrorWeight:          0.8,
 		FrequencyWeight:      0,
+		TimePatternWeight:    0,
 		SensitiveTargetFloor: map[string]float64{},
 	}
 }
@@ -188,6 +200,21 @@ func Score(feat features.Features, fp fingerprint.Fingerprint, bl baseline.Basel
 			if s := frequencySignal(interval, stats, cfg); s.Value > 0 {
 				signals = append(signals, s)
 			}
+		}
+	}
+
+	// TimePatternObservations, not Count, gates maturity here — a
+	// FingerprintStats loaded from a store.FileStore file written
+	// before this signal existed unmarshals HourActivity to its zero
+	// value, and gating on Count alone would treat that as a fully
+	// mature but suspiciously empty distribution (every hour reading
+	// as maximally novel) rather than correctly re-accumulating fresh
+	// evidence, exactly like a brand-new fingerprint. See
+	// docs/tasks/017-baseline-time-patterns.md.
+	if known && stats.TimePatternObservations >= cfg.MinObservations {
+		hour := feat.Volatile.Timestamp.UTC().Hour()
+		if s := timePatternSignal(hour, stats, cfg); s.Value > 0 {
+			signals = append(signals, s)
 		}
 	}
 
@@ -278,6 +305,32 @@ func frequencySignal(currentInterval time.Duration, stats baseline.FingerprintSt
 		detail = fmt.Sprintf("interval %s deviates from a stable baseline of %s (stddev ~0)", currentInterval, time.Duration(mean))
 	}
 	return Signal{Name: "frequency_deviation", Value: value, Weight: cfg.FrequencyWeight, Detail: detail}
+}
+
+// timePatternSignal only formats its Detail string once it knows the
+// signal actually contributes (Value > 0) — mirrors latencySignal's
+// and frequencySignal's cost discipline.
+//
+// uniformShare is the HourActivity[hour] value a fingerprint with
+// genuinely no time-of-day pattern converges toward (1/24, one bucket
+// per hour) — not a threshold tuned by feel, but the direct
+// mathematical reference point a uniform distribution over 24 buckets
+// implies. value scales how far below that reference the current
+// hour's bucket reads: at or above uniformShare, this hour is at least
+// as active as an unpatterned fingerprint's average hour, so value is
+// 0; at HourActivity[hour] == 0 (never observed at this hour), value
+// is 1.
+func timePatternSignal(hour int, stats baseline.FingerprintStats, cfg Config) Signal {
+	const uniformShare = 1.0 / 24.0
+	activity := max(stats.HourActivity[hour], 0)
+	value := 1 - min(activity/uniformShare, 1)
+
+	if value == 0 {
+		return Signal{Name: "time_pattern_deviation", Weight: cfg.TimePatternWeight}
+	}
+
+	detail := fmt.Sprintf("hour-of-day %02d:00 UTC has historically accounted for %.1f%% of this fingerprint's traffic (uniform baseline: %.1f%%)", hour, activity*100, uniformShare*100)
+	return Signal{Name: "time_pattern_deviation", Value: value, Weight: cfg.TimePatternWeight, Detail: detail}
 }
 
 func errorSignal(known bool, stats baseline.FingerprintStats, cfg Config) Signal {

@@ -382,3 +382,85 @@ func TestFingerprintStatsIsStaleNeverObserved(t *testing.T) {
 		t.Fatalf("IsStale() = true for a never-observed FingerprintStats, want false (cold start, not staleness)")
 	}
 }
+
+// baselineAtHour observes fp count times, every observation timestamped
+// at the same UTC hour-of-day (different days, so only the hour
+// repeats) — the fixed input TestFingerprintStatsHourActivityConverges
+// and the anomaly package's own time-pattern tests build against.
+func baselineAtHour(fp fingerprint.Fingerprint, hour, count int) baseline.Baseline {
+	b := baseline.New(testKey)
+	day := time.Date(2026, 1, 1, hour, 0, 0, 0, time.UTC)
+	for i := range count {
+		b = b.Observe(fp, features.VolatileFeatures{}, day.AddDate(0, 0, i))
+	}
+	return b
+}
+
+func TestFingerprintStatsHourActivityConverges(t *testing.T) {
+	fp := testFingerprint()
+	const hour = 9
+	// hourActivityAlpha (0.02) is deliberately much slower than
+	// emaAlpha (0.2) — see its doc comment in baseline.go — so
+	// convergence here needs far more observations than the
+	// latency/interval EWMA convergence tests do at the package's
+	// faster rate; 300 observations at hourActivityAlpha=0.02 reaches
+	// 1-(0.98)^300 ≈ 0.9977, comfortably inside a 0.01 tolerance.
+	const observations = 300
+	b := baselineAtHour(fp, hour, observations)
+
+	stats := b.Fingerprints[fp.ID]
+	if stats.TimePatternObservations != observations {
+		t.Fatalf("TimePatternObservations = %d, want %d", stats.TimePatternObservations, observations)
+	}
+	if got := stats.HourActivity[hour]; math.Abs(got-1.0) > 0.01 {
+		t.Errorf("HourActivity[%d] = %v, want ~1.0 (every observation at this hour)", hour, got)
+	}
+	for h := range 24 {
+		if h == hour {
+			continue
+		}
+		if got := stats.HourActivity[h]; math.Abs(got) > 1e-9 {
+			t.Errorf("HourActivity[%d] = %v, want ~0.0 (never observed at this hour)", h, got)
+		}
+	}
+}
+
+func TestFingerprintStatsHourActivityFirstObservationIsOneHot(t *testing.T) {
+	fp := testFingerprint()
+	b := baseline.New(testKey)
+	b = b.Observe(fp, features.VolatileFeatures{}, time.Date(2026, 1, 1, 14, 0, 0, 0, time.UTC))
+
+	stats := b.Fingerprints[fp.ID]
+	if stats.TimePatternObservations != 1 {
+		t.Fatalf("TimePatternObservations = %d, want 1", stats.TimePatternObservations)
+	}
+	for h := range 24 {
+		want := 0.0
+		if h == 14 {
+			want = 1.0
+		}
+		if got := stats.HourActivity[h]; got != want {
+			t.Errorf("HourActivity[%d] = %v, want %v after a single observation", h, got, want)
+		}
+	}
+}
+
+func TestFingerprintStatsHourActivityUniformTraffic(t *testing.T) {
+	fp := testFingerprint()
+	b := baseline.New(testKey)
+	// Ten full days, one observation per hour each day.
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for day := range 10 {
+		for hour := range 24 {
+			b = b.Observe(fp, features.VolatileFeatures{}, start.AddDate(0, 0, day).Add(time.Duration(hour)*time.Hour))
+		}
+	}
+
+	stats := b.Fingerprints[fp.ID]
+	const uniformShare = 1.0 / 24.0
+	for h := range 24 {
+		if got := stats.HourActivity[h]; math.Abs(got-uniformShare) > 0.02 {
+			t.Errorf("HourActivity[%d] = %v, want ~%v (uniform traffic across all hours)", h, got, uniformShare)
+		}
+	}
+}

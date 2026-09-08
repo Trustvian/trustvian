@@ -107,6 +107,65 @@ work), not code changes.
 | `Engine.Analyze` (sequential) | 435.6 | 456 | 17 |
 | `Engine.Analyze` (12-way parallel) | 158.3 | 456 | 17 |
 
+### v0.3 task 017 re-measurement (HourActivity time-pattern signal)
+
+[Task 017](tasks/017-baseline-time-patterns.md) added a `[24]float64`
+array and a `uint64` counter to `FingerprintStats`
+(`internal/baseline`), and one additional signal-scoring branch to
+`anomaly.Score`. Re-measured same environment (Go 1.27, darwin/arm64,
+Apple M3 Pro), 2026-09-08, `go test ./... -run '^$' -bench . -benchmem`
+(`-cpu 1` for the sequential rows, matching this table's existing
+convention):
+
+| Benchmark | ns/op | B/op | allocs/op |
+|---|---:|---:|---:|
+| `baseline.Observe` (direct, same fingerprint) | 275.7 | 672 | 3 |
+| `anomaly.Score` (familiar, no signal fires) | 79.2 | 0 | 0 |
+| `anomaly.Score` (novel, every signal fires) | 294.9 | 448 | 5 |
+| `store.InMemory.Observe` (same key, sequential) | 349.5 | 672 | 3 |
+| `store.InMemory.Observe` (distinct keys, sequential) | 347.8 | 672 | 3 |
+| `store.InMemory.Observe` memory growth (100 keys) | 339.9 | 672 | 3 |
+| `store.InMemory.Observe` memory growth (1,000 keys) | 405.9 | 672 | 3 |
+| `store.InMemory.Observe` memory growth (10,000 keys) | 435.9 | 672 | 3 |
+| `store.FileStore.Observe` (same key, sequential) | 3,813,890 | 4,320 | 24 |
+| `store.FileStore.Observe` (distinct keys, sequential) | 3,774,905 | 4,432 | 24 |
+| `Engine.Analyze` (sequential) | 502.3 | 456 | 17 |
+| `Engine.Analyze` (12-way parallel) | 176.1 | 456 | 17 |
+
+**`B/op` moved by exactly 208 bytes everywhere `FingerprintStats` is
+copied; `allocs/op` did not move anywhere.** `HourActivity [24]float64`
+is a fixed-size array field, not a slice or map — it adds to the *size*
+of the `FingerprintStats` value, copied wherever the struct already was
+(`FingerprintStats.observe`'s copy-on-write, `Baseline.Observe`'s map
+write), but it does not add a new heap allocation: `baseline.Observe`
+stays at 3 allocs/op (464→672 B/op, +208 bytes exactly), and every
+`store.InMemory.Observe` variant shows the identical 464→672 B/op
+shift with 3 allocs/op unchanged. `store.FileStore.Observe`'s `B/op`
+also grows (v0.1 baseline: 3,777/3,890 same-key/distinct-keys
+sequential → 4,320/4,432 now) because it additionally serializes 24
+extra floats into the persisted JSON per fingerprint; `allocs/op` (24)
+is unchanged, and `ns/op` is unaffected within session noise
+(fsync-dominated, as documented above — see "Persistence costs roughly
+four orders of magnitude").
+
+**`anomaly.Score`'s familiar-path cost moved from ~54ns (v0.1) to
+~79ns; this is a real, small, code-driven cost, not just variance.**
+The new `time_pattern_deviation` branch runs a `TimePatternObservations
+>= MinObservations` check and, when eligible, an array index plus a
+handful of float comparisons (`timePatternSignal`) on every call, known
+or not — cheap, but not free, the same "always evaluated so it can
+report in `Contributors`, only allocates if it actually fires" shape as
+`frequencySignal` before it (see "The common case is the cheap case,
+by design" above). `BenchmarkScoreNovelWithAllSignals`'s
+`B/op`/`allocs/op` (448 B, 5 allocs) is unchanged from the v0.1
+baseline for a structural reason, not luck: this benchmark scores a
+*novel* fingerprint (`known == false`), and `time_pattern_deviation` is
+gated on `known` exactly like `latency_deviation`/`frequency_deviation`
+— so it cannot fire here regardless of `HourActivity`'s contents, the
+same reason `frequencySignal`'s addition in task 004 didn't move this
+benchmark's allocation count either (see "The common case is the cheap
+case, by design" above).
+
 ## Reading the numbers
 
 **Session-to-session `ns/op` moved broadly; allocation counts didn't —

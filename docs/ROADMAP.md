@@ -54,6 +54,14 @@ own [README](../processor/README.md)), verified end-to-end against a
 real OTel-SDK span sent over real OTLP/gRPC to a real running Collector
 binary.
 
+**`v0.3` — Baseline & anomaly depth is also shipped.** Its one task,
+[017](tasks/017-baseline-time-patterns.md), added an hour-of-day time
+pattern signal (`baseline.FingerprintStats.HourActivity`, `anomaly`'s
+`time_pattern_deviation`, shipped opt-in like `frequency_deviation`
+before it) — see the milestone section below for the full writeup,
+including the day-of-week scope decision and the empirically-discovered
+`hourActivityAlpha` design correction.
+
 What's **not** yet true, concretely — the gaps this roadmap's remaining
 milestones exist to close:
 
@@ -64,8 +72,8 @@ milestones exist to close:
   [ADR 0002](adr/0002-public-api-boundary.md), deliberately not
   revisited by task 009 — see
   [`processor/README.md` § Configuration](../processor/README.md#configuration)).
-- Time-based pattern awareness (day-of-week/hour-of-day seasonality) —
-  `v0.3`'s tentative scope, not yet even committed to, let alone built.
+- Day-of-week seasonality — moved to [Future research](#future-research)
+  during `v0.3` scoping, not built (see the `v0.3` section below).
 - No Alert & Notification implementation — the architecture is
   specified ([`trustvian-project-spec.md` § 18](../trustvian-project-spec.md#18-alert--notification-system))
   and roadmapped (below), but nothing under this phase has been built.
@@ -74,12 +82,12 @@ milestones exist to close:
   delegation, or tool-sequence concepts exist.
 - No MCP interface, no Trustvian Control.
 
-**Next up: `v0.3` — Baseline & anomaly depth** (see below) is the
-roadmap's next numbered milestone in sequence. The **Alert &
-Notification phase**'s Foundation stage is also now unblocked (it only
-depends on `v0.1`'s stable `Result` shape, not on `v0.2`) but is not
-scoped as a task file yet — which of the two starts first is a decision
-for whoever picks up the next task, not predetermined by this document.
+**Next up: the Alert & Notification phase's Foundation stage** is
+unblocked (it only depends on `v0.1`'s stable `Result` shape) but not
+yet scoped as a task file. With `v0.1`–`v0.3` all shipped, it is the
+roadmap's next candidate body of work, alongside AI-agent session/
+delegation concepts — neither is predetermined by this document as
+"first."
 
 This roadmap's job is to close the remaining gaps in the order that
 respects the roadmap principles (deterministic before ML, security
@@ -247,28 +255,54 @@ pipeline exists.
 "v2-and-beyond" statistical depth, kept deterministic and explainable,
 not ML.
 
-**Scope.** Time-based pattern awareness (day-of-week/hour-of-day
-seasonality) evaluated as a possible `Baseline` extension — this is
-deliberately not pre-committed to v0.1 or even guaranteed for v0.3,
-because it's the first place in this roadmap where "keep it simple and
-statistical" (CLAUDE.md) is genuinely in tension with "time-based
-patterns" (the brief). If it turns out to need anything beyond a
-straightforward per-hour-bucket EWMA, it moves to
-[Future research](#future-research) instead. No dedicated task file
-number is reserved for this yet — it will be scoped as a proper task
-(following the same template) once v0.2 is done and it's clear whether
-the simple version is sufficient.
+**Scope** (task file [017](tasks/017-baseline-time-patterns.md)).
 
-**Non-goals.** Sequence/n-gram anomaly detection (still deliberately
+- **017 Baseline & anomaly depth: hour-of-day time pattern — done.**
+  Resolved the open question this section previously carried
+  ("does day-of-week/hour-of-day seasonality need anything beyond a
+  straightforward per-hour-bucket EWMA, or does it move to Future
+  research?") by scoping the hour-of-day half narrowly and building it:
+  `baseline.FingerprintStats` gained `HourActivity [24]float64` (a
+  per-UTC-hour EWMA of traffic share) and `TimePatternObservations`
+  (a dedicated maturity counter, gating the signal independently of
+  `Count` so a pre-existing persisted `FileStore` record — where
+  `HourActivity` unmarshals to its zero array — is correctly treated as
+  immature rather than falsely mature-with-empty-data). `anomaly.Score`
+  gained a sixth signal, `time_pattern_deviation`, shipped opt-in
+  (`Config.TimePatternWeight` defaults to `0`, the same precedent as
+  `FrequencyWeight`) both for calibration and because
+  `MinObservations` maturity alone doesn't guarantee a fingerprint has
+  actually been observed across a representative spread of hours. Day-
+  of-week seasonality was **not** built — it remains
+  [Future research](#future-research), since scoping proved the
+  hour-of-day case alone was already substantial enough to warrant its
+  own task, and a second, independent EWMA dimension is a separate
+  vertical slice, not a small addition to this one. See
+  [DOMAIN.md § Baseline / § Anomaly](DOMAIN.md), [SECURITY.md §
+  Baseline poisoning](SECURITY.md), and
+  [PERFORMANCE.md § v0.3 task 017 re-measurement](PERFORMANCE.md) for
+  the full design, security, and performance writeup. A genuinely
+  non-obvious, empirically-discovered result: reusing the existing
+  `emaAlpha = 0.2` for `HourActivity` was tried first and rejected —
+  `TestFingerprintStatsHourActivityUniformTraffic` proved it makes
+  uniform (patternless) hour-of-day traffic look sharply time-anomalous
+  purely as a measurement-phase artifact, which is why a new, slower,
+  separately-justified `hourActivityAlpha = 0.02` constant exists
+  instead of reusing the shared one.
+
+**Non-goals.** Day-of-week seasonality (see above — moved to
+[Future research](#future-research), not merely deferred to a later
+v0.3 task). Sequence/n-gram anomaly detection (still deliberately
 deferred — see [ADR 0001](adr/0001-hexagonal-core-and-pipeline-shape.md)
 and [Future research](#future-research)), ML of any kind.
 
-**Dependencies.** v0.1 (needs the persistent `Store` and
-frequency-tracking groundwork from 003/004).
+**Dependencies.** v0.1 (needed the persistent `Store` and
+frequency-tracking groundwork from 003/004) — satisfied.
 
-**Acceptance criteria.** Defined when this milestone's task file is
-written — not before, per "small vertical slices" and not
-pre-committing to unscoped work.
+**Acceptance criteria.** See
+[task 017](tasks/017-baseline-time-patterns.md)'s own Acceptance
+Criteria section — all met, verified by
+`go test ./... -race -count=1` and `go test -bench=. -benchmem ./...`.
 
 ---
 
@@ -457,3 +491,13 @@ concrete need (not speculation) justifies it:
   goal per the roadmap principles ("no distributed architecture unless
   justified by a concrete milestone"); no milestone above justifies it
   yet.
+- **Day-of-week seasonality** — moved here during
+  [v0.3](#v03--baseline--anomaly-depth)'s scoping pass ([task
+  017](tasks/017-baseline-time-patterns.md)). A second EWMA dimension
+  (7 day-of-week buckets, or a 7×24 joint distribution) is a separate
+  vertical slice from the hour-of-day signal task 017 shipped, not a
+  small addition to it, and needs its own maturity/calibration analysis
+  (a fingerprint needs weeks of traffic to mature a day-of-week
+  distribution the way it needs hours to mature an hour-of-day one) —
+  revisit only if real operator feedback on the hour-of-day signal
+  justifies the added complexity.
