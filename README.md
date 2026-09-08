@@ -16,7 +16,8 @@ Trustvian determines whether what it did should be trusted.
 
 ## Status
 
-`v0.1`–`v0.3` are shipped: the core pipeline, Go SDK, CLI, a persistent
+`v0.1` and `v0.2` are released; `v0.3` is complete and release-ready
+(no `v0.3.0` tag yet). Together: the core pipeline, Go SDK, CLI, a persistent
 file-backed store, an inbound OpenTelemetry adapter, outbound
 `trustvian.*` result attributes, a standalone OTel Collector processor
 ([`processor/`](processor/README.md)), and an opt-in hour-of-day

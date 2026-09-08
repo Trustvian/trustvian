@@ -54,7 +54,10 @@ own [README](../processor/README.md)), verified end-to-end against a
 real OTel-SDK span sent over real OTLP/gRPC to a real running Collector
 binary.
 
-**`v0.3` — Baseline & anomaly depth is also shipped.** Its one task,
+**`v0.3` — Baseline & anomaly depth is COMPLETE / RELEASE READY**
+(implemented, tested, benchmarked, and documented on `develop`; no
+`v0.3.0` tag exists yet — this line updates to "shipped" once one does).
+Its one task,
 [017](tasks/017-baseline-time-patterns.md), added an hour-of-day time
 pattern signal (`baseline.FingerprintStats.HourActivity`, `anomaly`'s
 `time_pattern_deviation`, shipped opt-in like `frequency_deviation`
@@ -84,10 +87,10 @@ milestones exist to close:
 
 **Next up: the Alert & Notification phase's Foundation stage** is
 unblocked (it only depends on `v0.1`'s stable `Result` shape) but not
-yet scoped as a task file. With `v0.1`–`v0.3` all shipped, it is the
-roadmap's next candidate body of work, alongside AI-agent session/
-delegation concepts — neither is predetermined by this document as
-"first."
+yet scoped as a task file. With `v0.1`/`v0.2` tagged and `v0.3` complete
+and release-ready, it is the roadmap's next candidate body of work,
+alongside AI-agent session/delegation concepts — neither is
+predetermined by this document as "first."
 
 This roadmap's job is to close the remaining gaps in the order that
 respects the roadmap principles (deterministic before ML, security
