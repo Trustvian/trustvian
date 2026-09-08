@@ -1,18 +1,73 @@
 # Roadmap
 
-Milestone-based (`v0.1`/`v0.2`/`v0.3`/...), reconciled against what's
-actually in this repository today — verified by reading source, tests,
-and benchmarks, not assumed from the original vision document. Each
-milestone maps to one or more detailed task files in
-[`docs/tasks/`](tasks/); each task file is independently
+Milestone-based (`v0.1` through a `v1.0.0` production-readiness gate),
+reconciled against what's actually in this repository today — verified
+by reading source, tests, and benchmarks, not assumed from the original
+vision document. Each milestone maps to one or more detailed task files
+in [`docs/tasks/`](tasks/); each task file is independently
 understandable and carries its own objective, scope, non-goals,
 technical requirements, tests, benchmarks, documentation, and
-acceptance criteria.
+acceptance criteria. Milestones without a task file yet (`v0.5`–`v0.9`
+below) are deliberately not pre-scoped in detail — this roadmap's own
+"small vertical slices" principle, applied to itself.
 
 Cross-references: [ARCHITECTURE.md](ARCHITECTURE.md) (system shape),
 [DOMAIN.md](DOMAIN.md) (what exists today), [SECURITY.md](SECURITY.md)
 (threat model), [PERFORMANCE.md](PERFORMANCE.md) (measured numbers),
 [`adr/`](adr/) (why past decisions were made).
+
+## The OSS / Enterprise product boundary
+
+Stated explicitly, since it governs every milestone below: **Trustvian
+OSS is a complete, standalone, production-usable behavioral security
+product.** Trustvian Control/Enterprise is never the place core
+detection capability lives — nothing an operator needs to *detect,
+score, decide, alert on, integrate, or run* Trustvian in production is
+gated behind a paid product. Concretely, OSS owns the full vertical:
+
+```text
+Detect        — Event, Features, Fingerprint, Baseline, Anomaly
+Score         — Trust, Risk
+Decide        — Policy, Decision, Explainability
+Alert         — Alert Evaluation, Notification, WebhookSink (v0.4+)
+Integrate     — Go SDK, CLI, OTel adapter, OTel Collector processor, MCP
+Run           — persistence, deployment packaging, self-observability, security hardening
+```
+
+Enterprise/Trustvian Control's job is organizational scale and
+governance **on top of** a fully-capable OSS core, never a substitute
+for missing OSS capability:
+
+```text
+Centralized management       Investigation workflows
+Governance                   Case management / audit / compliance
+Multi-tenancy                Reporting
+SSO / SAML / OIDC / RBAC     Fleet management
+Central policy management    HA / scaling operations
+Advanced alert governance    Managed SaaS, support/SLA
+```
+
+The dividing question is never "is this feature valuable enough to
+withhold from OSS" — it is "does this feature only make sense at
+organizational scale" (managing *many* deployments, *many* tenants,
+*many* teams' policies centrally) or "is this an operations/compliance
+concern orthogonal to detection itself" (audit trails, RBAC, SLAs).
+Detecting, scoring, deciding, and alerting on *one deployment's*
+behavior is squarely OSS, regardless of how sophisticated the detection
+gets. **Control consumes the OSS core as a normal external dependency
+and never forks or reimplements it** — the same constraint [task
+016](tasks/016-control.md) already recorded before any Control work
+started, now stated as this roadmap's standing product principle, not
+just that task's own scope note.
+
+This section supersedes any earlier phrasing in this document, the
+[project spec](../trustvian-project-spec.md), or task files that could
+be read as "Enterprise provides X because OSS doesn't" for anything in
+the `Detect`/`Score`/`Decide`/`Alert`/`Integrate`/`Run` list above — see
+[§ Alert & Notification phase](#alert--notification-phase) and
+[§ Control / Enterprise phase](#control--enterprise-phase) below for
+where this principle was applied to correct exactly that kind of
+phrasing.
 
 ## Current status
 
@@ -62,8 +117,8 @@ before it) — see the milestone section below for the full writeup,
 including the day-of-week scope decision and the empirically-discovered
 `hourActivityAlpha` design correction.
 
-**`v0.4` — Alert & Notification Foundation is implemented, not yet
-tagged.** [Task 018](tasks/018-alert-notification-foundation.md) added
+**`v0.4.0` — Alert & Notification Foundation is shipped.**
+[Task 018](tasks/018-alert-notification-foundation.md) added
 a new public package, `alert` (sibling to `event` — see
 [ADR 0007](adr/0007-alert-package-is-public.md) for why it isn't
 `internal/`): `Alert`, a `Severity` concept, a
@@ -76,31 +131,48 @@ at all. See the milestone section below for the full writeup.
 What's **not** yet true, concretely — the gaps this roadmap's remaining
 milestones exist to close:
 
-- No CI/CD, no container image.
 - `processor/`'s processor runs Trustvian's default `Policy` only —
   every span it scores resolves to `observe_only`, since a genuinely
   separate module cannot construct a custom `Policy` today (see
   [ADR 0002](adr/0002-public-api-boundary.md), deliberately not
   revisited by task 009 — see
   [`processor/README.md` § Configuration](../processor/README.md#configuration)).
-- Day-of-week seasonality — moved to [Future research](#future-research)
-  during `v0.3` scoping, not built (see the `v0.3` section below).
-- Alert delivery retry, deduplication, cooldown, escalation, alert
-  history, and every provider-specific sink (Slack, Teams, PagerDuty) —
-  the Reliability and Additional-sinks-and-governance stages, both
-  explicitly deferred past `v0.4` (see [Alert & Notification
-  phase](#alert--notification-phase) below).
+- Day-of-week seasonality — evaluated and kept out of `v0.3`'s
+  hour-of-day slice; classified below as useful-after-`v1.0`, not
+  required for it (see [Future research](#future-research)).
+- Alert delivery retry, deduplication, cooldown, escalation, and alert
+  history — the Reliability stage, an OSS capability not yet built
+  (see [Alert & Notification phase](#alert--notification-phase)
+  below); no `Slack`/`Teams`/`PagerDuty` sink exists yet either, though
+  nothing prevents one from being a future OSS `Sink` implementation
+  (same section).
+- No declarative policy/alert configuration boundary — a custom
+  `Policy` or Alert `Rule` set can only be constructed by code living
+  inside this module today (see [ADR 0002](adr/0002-public-api-boundary.md)
+  and `v0.5` below).
+- Sequence-aware detection (order, not just individual-event anomaly)
+  does not exist — see `v0.6` below.
 - AI-agent event types work today only through the generic `Event`
   model (`ActorTypeAIAgent` + `OperationCategoryTool`) — no session,
-  delegation, or tool-sequence concepts exist.
-- No MCP interface, no Trustvian Control.
+  delegation, or tool-sequence concepts exist (`v0.7`, below).
+- No production-grade persistent `Store` beyond `FileStore`, no Docker
+  deployment path (`v0.8`); no CI/CD, no release automation, no
+  container image (`v0.9`).
+- No MCP interface (an optional integration, not a `v1.0` blocker — see
+  [Trustvian MCP](#trustvian-mcp) below), no Trustvian Control (an
+  organizational-governance layer that consumes OSS, not a
+  prerequisite for OSS to be complete — see
+  [§ The OSS / Enterprise product boundary](#the-oss--enterprise-product-boundary)
+  above).
 
-**Next up:** with `v0.1`–`v0.4` all implemented, the Alert &
-Notification phase's Reliability stage and AI-agent session/delegation
-concepts are both unblocked candidates for the next body of work,
-neither predetermined as "first" by this document — see [Alert &
-Notification phase](#alert--notification-phase) and [AI Agent
-phase](#ai-agent-phase) below.
+**Next up:** with `v0.1`–`v0.4.0` all shipped, this roadmap's remaining
+milestones (`v0.5` Policy & Configuration through `v1.0` Production-Ready
+OSS, defined below) chart the path to a complete, standalone,
+production-usable OSS product — see each milestone section for
+dependencies; none of `v0.5`–`v0.9` are strictly ordered relative to
+the still-unscoped Alert Reliability stage or AI-agent work, only
+relative to each other where a real dependency exists (stated per
+milestone).
 
 This roadmap's job is to close the remaining gaps in the order that
 respects the roadmap principles (deterministic before ML, security
@@ -404,70 +476,414 @@ file (following the existing template) once the prior stage is done and
 its real shape is known, per this roadmap's own "small vertical slices"
 principle. No milestone number or task ID is reserved for either yet:
 
-- **Reliability** (depends on `v0.4`): delivery retry with exponential
-  backoff, delivery status, idempotency, deduplication, and a cooldown
-  window — closing the "one incident, one alert" and "a flaky endpoint
-  doesn't lose alerts" gaps Foundation deliberately leaves open (spec §
-  18.11–18.12).
-- **Additional sinks and governance** (depends on `v0.4`; mostly
-  Trustvian Control/Enterprise territory per the OSS/Enterprise
-  boundary in the spec's § 18.16): Slack, Microsoft Teams, PagerDuty,
-  and anything past those, plus centralized notification management,
-  advanced alert rules, multi-tenant configuration, escalation, alert
-  history, delivery observability, RBAC, and audit. The generic webhook
-  from Foundation already covers most of what these providers offer via
-  automation platforms (n8n, SOAR, custom relays), so this stage is
-  explicitly not required for the OSS core to be useful.
+- **Reliability** — OSS scope (per [§ The OSS / Enterprise product
+  boundary](#the-oss--enterprise-product-boundary) above: "Alert" is
+  squarely in OSS's `Detect...Alert` vertical, not an Enterprise
+  add-on). Delivery retry with exponential backoff, delivery status,
+  idempotency, deduplication, and a cooldown window — closing the "one
+  incident, one alert" and "a flaky endpoint doesn't lose alerts" gaps
+  Foundation deliberately leaves open (spec § 18.11–18.12). Depends on
+  `v0.4`.
+- **Provider-specific sinks** (Slack, Microsoft Teams, PagerDuty, and
+  anything past those) — **also OSS scope, if architecturally clean**,
+  correcting this section's own earlier framing (which lumped them in
+  with governance below): a `Sink` implementation for a specific
+  provider is no different in kind from `WebhookSink` itself, and
+  nothing in [ADR 0007](adr/0007-alert-package-is-public.md)'s
+  reasoning is provider-specific. They are simply **not required**
+  for the OSS core to be useful, since the generic webhook already
+  covers most of what these providers offer via automation platforms
+  (n8n, SOAR, custom relays) — "not yet built because not urgent," not
+  "reserved for a paid product." Depends on `v0.4`.
+- **Notification governance** — genuinely Trustvian Control/Enterprise
+  territory, per the boundary above (organizational-scale concerns, not
+  detection/alerting capability): centralized notification management
+  across many deployments, advanced/combinator alert rules, multi-tenant
+  notification configuration, escalation policy, alert history at
+  scale, delivery observability dashboards, RBAC over alert
+  configuration, and audit of who changed what rule. Depends on `v0.4`
+  and, practically, on Control existing at all.
 
-**Non-goals (both stages).** No incident-management domain (an `Alert`
-is one notification-worthy event, not a grouped investigation — see
-spec § 18.13); no boolean combinators or a general expression language
-for alert rules; no Slack/Teams/PagerDuty SDK, HTTP client, Kafka,
-Redis, or PostgreSQL dependency added to the core detection engine
-merely to support alerting — every provider integration lives behind
-`AlertSink`, the same way `internal/otel` is the only package depending
-on OpenTelemetry today.
+**Non-goals (all three items above).** No incident-management domain
+(an `Alert` is one notification-worthy event, not a grouped
+investigation — see spec § 18.13); no boolean combinators or a general
+expression language for alert rules; no Kafka, Redis, or PostgreSQL
+dependency added to the core detection engine merely to support
+alerting — every provider integration lives behind `Sink`, the same
+way `internal/otel` is the only package depending on OpenTelemetry
+today. A provider-specific `Sink` package may depend on that
+provider's own SDK/HTTP client — the constraint is that the *core
+detection engine* (`event` through `internal/policy`, `Engine`) never
+does, exactly as it doesn't today for `net/http` via `alert`.
 
-**Acceptance criteria.** Defined when each stage's own task file is
+**Acceptance criteria.** Defined when each item's own task file is
 written — not before, per "small vertical slices" and this roadmap's
-standing policy of not pre-committing to unscoped work.
+standing policy of not pre-committing to unscoped work. No task file
+number is reserved for any of the three yet.
 
-## AI Agent phase
+## v0.5 — Policy & Configuration
+
+**Objective.** Make Trustvian usable without embedding custom Go code.
+Today, a meaningful custom `Policy` (task 006) or Alert `Rule` set
+(task 018) can only be constructed by code living inside this module —
+[ADR 0002](adr/0002-public-api-boundary.md) named this precisely for
+`Policy`, and it applies equally to `alert.Rule` even though `alert`
+itself is public, since `Rule`'s `When Condition` fields are
+constructible from Go literals but not from a config file without a
+loader. This milestone closes that gap with a narrow, stable,
+declarative configuration boundary usable identically by the Go SDK,
+the CLI, the OTel Collector processor, and a standalone deployment.
+
+**Scope** (no task file yet — written when this milestone is picked
+up, per this roadmap's "small vertical slices" principle):
+
+- A stable, versioned configuration file format expressing `Policy`
+  rules and Alert `Rule`s declaratively. Conceptual shape only, not an
+  implementation commitment:
+
+  ```yaml
+  policies:
+    - name: suspicious-secret-access
+      when:
+        anomaly_score: "> 0.8"
+        target_category: secret
+      decision: require_approval
+
+  alerts:
+    - when:
+        risk: critical
+      notify:
+        - security-webhook
+  ```
+
+- A **narrow public configuration contract** — re-reviewing
+  [ADR 0002](adr/0002-public-api-boundary.md)'s reasoning before
+  proposing any public-boundary change, and following the same
+  resolution [ADR 0007](adr/0007-alert-package-is-public.md) already
+  used for `alert`: promote the *minimum* types an external loader
+  needs to construct a `Policy`/`[]alert.Rule` from parsed config,
+  not `internal/policy` wholesale. This is the concrete fix for
+  `processor/`'s own documented limitation (it "runs Trustvian's
+  default `Policy` only" — see
+  [`processor/README.md` § Configuration](../processor/README.md#configuration))
+  and for any future standalone deployment that wants config-file-driven
+  behavior without writing Go.
+- A loader (`internal/config` or similar — package location decided the
+  same deliberate way ADR 0007 decided `alert`'s, when this is
+  implemented) that parses the file format into the public
+  `Policy`/`Rule` types above.
+
+**Non-goals.** No general expression language, no scripting, no
+boolean-combinator DSL for `when:` blocks beyond what
+`policy.Condition`/`alert.Condition` already support natively — the
+config format is a serialization of the existing flat matcher shape,
+not a new, more powerful one. No implementation in *this* roadmap
+edit — this section is planning only, per this document's own
+practice of not designing ahead of a task file.
+
+**Dependencies.** `v0.1` (stable `Policy`/`Decision`) and `v0.4.0`
+(stable `alert.Rule`) — this milestone's config format expresses both,
+so both must already be stable to design against.
+
+**Acceptance criteria.** Defined when this milestone's own task file is
+written — not before.
+
+## v0.6 — Behavioral Detection Depth
+
+**Objective.** OSS detection should not stop at individual-event
+anomaly signals. Promote sequence-aware detection from
+[Future research](#future-research) into an intentional, deterministic
+OSS capability — the one item this document's prior "Future research"
+section named that a production-usable OSS product genuinely needs
+before `v1.0`, per this roadmap's now-explicit product boundary.
+
+**Scope** (no task file yet):
+
+- **Sequence deviation** — the genuinely new capability here. Today's
+  signals (`categorical_novelty`, `latency_deviation`,
+  `frequency_deviation`, `error_deviation`, `sensitive_target`,
+  `time_pattern_deviation`) all score one event in isolation against a
+  fingerprint's own history; none of them see *order*. A deterministic,
+  statistical sequence model — n-gram frequency over recent operation
+  sequences, or a Markov transition model over `Fingerprint.ID`
+  transitions per actor — closes that gap, following the exact
+  "ships opt-in, weight defaults to 0" precedent `frequency_deviation`
+  and `time_pattern_deviation` already established, and the same
+  "needs a concrete design before it earns a package" bar
+  [ADR 0001](adr/0001-hexagonal-core-and-pipeline-shape.md) sets.
+- Already covered by existing signals, named here only to close the
+  gap between this document's language and the original spec's
+  ([`trustvian-project-spec.md` §
+  6](../trustvian-project-spec.md#6-sequence-analysis)) — no new work
+  needed: "target deviation" and "destination deviation"
+  (`categorical_novelty` on `Target`/`sensitive_target`), "dependency
+  deviation" (`categorical_novelty` on an unexpected internal/external
+  call — see
+  [`examples/unexpected-dependency`](../examples/unexpected-dependency/README.md)),
+  "operation deviation" (`categorical_novelty` on `Operation`), and
+  "frequency"/"time-of-day deviation" (`frequency_deviation`,
+  `time_pattern_deviation`, both already shipped).
+
+**Preferred architecture** (explicit, to close off scope creep before
+it starts):
+
+```text
+Deterministic/statistical engine   (existing signals + sequence deviation)
+        ↓
+Sequence-aware detection            (this milestone)
+        ↓
+Optional ML plugins/research        (never a core dependency — see Non-goals)
+```
+
+**Non-goals.** ML is not required anywhere in this milestone or the
+core detection path generally — n-gram/Markov transition modeling are
+deterministic/statistical, not ML, and are the entire scope here.
+Graph-based behavioral deviation and ML-based sequence models remain
+[Future research](#future-research), revisited only if a concrete
+design and consumer need emerge — this milestone does not build them
+speculatively. Day-of-week seasonality is a separate, independent
+EWMA dimension ([task 017](tasks/017-baseline-time-patterns.md)'s own
+Non-Goals already established this) and stays in
+[Future research](#future-research) rather than being folded in here.
+
+**Dependencies.** `v0.1` (stable `Baseline`/`Anomaly` — a sequence
+signal reads a fingerprint's recent history the same way
+`frequency_deviation` reads its interval history). Independent of
+`v0.5`/`v0.7`.
+
+**Acceptance criteria.** Defined when this milestone's own task file is
+written — not before.
+
+## v0.7 — AI Agent Behavioral Security
 
 **Objective.** Extend the *existing* event model for richer AI-agent
 behavioral context, without building a separate security engine for
-agents — per the brief's own explicit instruction, agents remain
-"another behavioral source" through the same pipeline.
+agents — per the original brief's own explicit instruction, agents
+remain "another behavioral source" through the same pipeline:
 
-**Scope** (task file [014](tasks/014-ai-agent.md)):
+```text
+Event → Features → Fingerprint → Baseline → Anomaly → Trust → Policy → Decision
+```
+
+**Scope** (task file [014](tasks/014-ai-agent.md), not yet
+implemented — confirmed by checking `event/event.go` directly: no
+`SessionID`/`DelegatedFrom` field exists there today):
 
 - Optional new dimensions on `Event`/`Context` for session grouping and
   agent-to-agent delegation.
 - Human-approval *workflow* semantics layered onto the existing
   `REQUIRE_APPROVAL` decision (which already exists) rather than a new
   decision type.
-- Tool-sequence analysis explicitly stays out of this phase — it's a
-  new anomaly *algorithm* (sequence-aware, not just new event fields),
-  which is `v0.3`+/[Future research](#future-research) territory per
-  [ADR 0001](adr/0001-hexagonal-core-and-pipeline-shape.md)'s "add a
-  second algorithm only when it has a concrete design" stance.
+- Agent-to-agent calls, tool calls, external destinations, file
+  access, database access, and secret access are all already
+  representable through the generic `Event`/`Actor`/`Target` model
+  (`ActorTypeAIAgent`, `OperationCategoryTool`,
+  `TargetCategoryExternal`/`Database`) — this milestone adds session
+  and delegation *correlation* fields, not new representational
+  capability the pipeline lacks.
+- Tool-sequence analysis explicitly stays out of this milestone — it's
+  `v0.6`'s sequence-deviation capability applied to
+  `Fingerprint.ID`-per-tool-call sequences, not a new, agent-specific
+  algorithm. An agent's tool-call sequence is scored by the *same*
+  sequence signal any other actor's operation sequence would be.
 
 **Non-goals.** No agent-specific `Fingerprint`/`Baseline`/`Anomaly`
 implementation — the same `internal/*` packages must keep working
 unchanged for agent-sourced events, proven by reusing existing tests
-against the extended `Event` shape, not writing parallel ones.
+against the extended `Event` shape, not writing parallel ones. No
+second security engine, no dedicated agent package beyond optional
+`Event` fields.
 
-**Dependencies.** v0.1 (stable `Event`/public API — extending `Event`
+**Dependencies.** `v0.1` (stable `Event`/public API — extending `Event`
 after `v0.1` ships means doing it in a backward-compatible way, adding
-optional fields only).
+optional fields only). Benefits from, but does not require, `v0.6`
+(tool-sequence analysis is more useful once sequence deviation exists,
+but session/delegation fields are independently useful without it).
 
 **Acceptance criteria.** See [014-ai-agent.md](tasks/014-ai-agent.md).
+
+## v0.8 — Production Runtime & Storage
+
+**Objective.** OSS should be deployable as a real production system,
+not only a library and a CLI against a local file.
+
+**Scope** (no task file yet):
+
+- **A production-grade persistent `Store` candidate.** Today:
+  `store.InMemory`, `store.FileStore` (JSON, synchronous `fsync`,
+  documented as the MVP's *only* persistent implementation — see
+  [ADR 0006](adr/0006-file-backed-persistent-store.md)). This
+  milestone documents — does not yet implement — the preferred next
+  `Store` implementation:
+
+  ```text
+  Store interface (internal/store)
+   ├─ InMemory      (existing)
+   ├─ FileStore     (existing)
+   └─ PostgreSQLStore   (documented candidate, this milestone)
+  ```
+
+  PostgreSQL is the preferred candidate specifically for: durability
+  and transactional guarantees `FileStore`'s single-file-plus-rename
+  approach can't offer at higher write volume; broad operational
+  familiarity (most teams already run and back up Postgres); real
+  queryability (ad hoc inspection of learned baselines without writing
+  a custom tool against `FileStore`'s JSON blob); and OSS-friendliness
+  (no proprietary licensing, a mature Go driver ecosystem). This is a
+  documented preference, not a commitment made blindly — the actual
+  schema/transaction design is this milestone's own task file's job,
+  not this roadmap edit's.
+- **A production-like deployment path**: `Docker` + `Docker Compose`
+  wiring together the OTel Collector, Trustvian (as a library inside a
+  consuming service, or via the Collector processor), and the
+  persistent store above — a documented, runnable reference deployment,
+  not a Helm chart.
+
+**Non-goals.** No Redis, Kafka, ClickHouse, or OpenSearch — none of
+these have a concrete milestone justification today, and introducing
+one "because security products use it" is exactly the infrastructure
+creep this roadmap's principles reject (see [§ Architecture
+constraints](#the-oss--enterprise-product-boundary) and
+[CLAUDE.md](../CLAUDE.md)'s "avoid... premature microservices").
+Kubernetes/Helm support explicitly follows *only* once a real
+deployment need justifies it — not scoped here, not a `v1.0` blocker.
+
+**Dependencies.** `v0.1` (the `Store` interface already exists and is
+narrow — [ADR 0004](adr/0004-narrow-store-port-in-memory-only.md)).
+Independent of `v0.5`–`v0.7`.
+
+**Acceptance criteria.** Defined when this milestone's own task file is
+written — not before.
+
+## v0.9 — Operational Readiness
+
+**Objective.** Production engineering hygiene, so `v1.0` is a real
+release, not just a version number bump.
+
+**Scope** (no task file yet; items are capabilities to have, not a
+prescription of specific tooling beyond what's already established in
+this repository):
+
+```text
+CI, build gates (go vet / gofmt / go test -race — already run manually
+  every task, this milestone automates them)
+Release automation
+Multi-arch binaries/images
+Docker image (packaging the reference deployment v0.8 designed)
+SBOM
+Dependency / vulnerability scanning
+Signed artifacts/images where practical
+SemVer discipline (already documented — see CHANGELOG.md § Public API
+  compatibility promise; this milestone is enforcing it in CI, not
+  inventing it)
+Module version consistency (root/processor/examples go.mod alignment —
+  see Version and Module Consistency Review notes below)
+Health checks, readiness checks
+Self-observability (Trustvian observing its own runtime health, not to
+  be confused with the OTel *input* adapter)
+Resource limits, graceful shutdown
+Backup/restore documentation (for the v0.8 persistent store)
+Upgrade/migration documentation
+Security disclosure process
+CONTRIBUTING.md, issue templates
+Production examples (beyond examples/'s current SDK-usage demos)
+```
+
+**Non-goals.** No specific tool mandated here beyond what this
+repository already uses (`go vet`, `gofmt`, `go test -race`, the
+existing `Makefile` targets) unless a concrete need is identified when
+this milestone starts.
+
+**Dependencies.** `v0.8` (the Docker image packages that milestone's
+deployment path). Otherwise independent of `v0.5`–`v0.7`.
+
+**Acceptance criteria.** Defined when this milestone's own task file is
+written — not before.
+
+## v1.0 — Production-Ready OSS
+
+**Objective.** `v1.0.0` is a real production-readiness milestone, not
+merely the next version number. It is the point at which Trustvian OSS
+is a complete, standalone, production-usable behavioral security
+product per [§ The OSS / Enterprise product
+boundary](#the-oss--enterprise-product-boundary) — everything an
+operator needs to detect, score, decide, alert, integrate, and run
+Trustvian in production, without Trustvian Control.
+
+**Release gate**, organized by theme (each verified against the real
+repository state when this milestone is evaluated, the same "verified
+by reading source, tests, and benchmarks, not assumed" discipline this
+whole document already follows):
+
+- **Correctness** — unit/integration/end-to-end tests across every
+  package named in `v0.1`–`v0.9`; `go test -race ./...` clean;
+  deterministic behavior proven by test wherever a formula or algorithm
+  is involved (this document's existing "test the documented formula"
+  standard, applied to every new signal added through `v0.6`).
+- **Performance** — every hot path benchmarked (extending
+  [PERFORMANCE.md](PERFORMANCE.md)'s existing table through `v0.6`'s
+  sequence signal and `v0.5`'s config loading path); bounded memory
+  documented for the `v0.8` persistent store; a load test against the
+  `v0.8` reference deployment.
+- **Security** — every threat in [SECURITY.md](SECURITY.md)'s test
+  index still passing, extended to cover: baseline poisoning against
+  the new sequence signal (`v0.6`), untrusted telemetry at the config
+  boundary (`v0.5`'s loader must fail closed on malformed config, the
+  same discipline `policy.Policy.Evaluate` already has), cardinality/
+  resource exhaustion for sequence state (bounded per-fingerprint
+  memory, the same discipline `HourActivity`'s fixed `[24]float64`
+  already established), webhook security (already implemented —
+  [SECURITY.md § Alert/notification delivery
+  integrity](SECURITY.md#alertnotification-delivery-integrity)),
+  secrets handling (`v0.5`'s config format and `v0.8`'s persistent
+  store connection credentials), and dependency vulnerability scanning
+  (`v0.9`).
+- **Operations** — `v0.8`'s deployment path, health/readiness checks,
+  persistence, and self-observability all real and documented, not
+  aspirational.
+- **Documentation** — install, configure, deploy, integrate,
+  troubleshoot, and upgrade all have a real, verified document (most
+  already exist for the current feature set — [Getting
+  Started](getting-started.md), [SDK Guide](sdk-guide.md), [CLI
+  Guide](cli-guide.md), [Policy Guide](policy-guide.md); `v0.5`–`v0.9`
+  each add their own as they land, per each milestone's own
+  Documentation practice).
+
+**Dependencies.** `v0.1`–`v0.9`, or the applicable subset — this
+milestone is a gate over what preceded it, not a place to invent new
+scope. Anything discovered missing at gate time becomes a new task
+under the milestone it actually belongs to, not a `v1.0`-specific
+exception.
+
+**Non-goals.** Everything explicitly Enterprise/Control per [§ The OSS
+/ Enterprise product boundary](#the-oss--enterprise-product-boundary)
+above — `v1.0` is not gated on Trustvian Control existing, on MCP
+existing (see [Trustvian MCP](#trustvian-mcp) below), or on any
+Kafka/Redis/Kubernetes infrastructure without its own concrete
+milestone justification.
+
+**Acceptance criteria.** All release-gate themes above verified
+against the real repository state; defined precisely (specific test
+names, specific benchmark numbers) when this milestone's own task file
+is written, mirroring how every prior milestone's acceptance criteria
+were only fixed once its task file existed.
 
 ## Trustvian MCP
 
 **Objective.** Expose Trustvian's read/query surface
 (`get_behavior`, `get_trust_score`, `explain_decision`, etc.) to AI
-agents and developer tooling via MCP.
+agents and developer tooling via MCP. This is an OSS integration
+surface — it fits the architecture the same way `cmd/trustvian` and
+`internal/otel` already do (a thin adapter depending on the core, the
+core never depending on it) — but it is explicitly **not the
+Trustvian security engine**, and it does not gate OSS `v1.0`.
+
+**Direction, stated explicitly because it's easy to get backwards:**
+
+```text
+MCP → Trustvian Engine       (correct: MCP wraps/queries/evaluates through the core)
+Trustvian Engine → MCP       (wrong: the core must never depend on or know about MCP)
+```
 
 **Scope** (task file [015](tasks/015-trustvian-mcp.md)): a new adapter
 (a new `cmd/`-style binary or a separate module, mirroring how
@@ -477,10 +893,16 @@ the core knowing they exist) implementing an MCP server backed by
 
 **Non-goals.** No new decision-making logic in the MCP layer itself —
 it is a read/query and evaluate-via-existing-`Engine` adapter, not a
-second policy engine.
+second policy engine. **Not required for `v1.0`**: MCP is a valuable
+integration surface for AI-tooling ecosystems, not a load-bearing part
+of "detect, score, decide, alert, integrate, run" — [§ v1.0
+above](#v10--production-ready-oss) does not list it as a release-gate
+item, and nothing about production-usability depends on it existing.
+Revisit this only if a concrete, strong architectural or product
+reason emerges to promote it — not scheduled ahead of that signal.
 
 **Dependencies.** v0.1 (a stable public API and `Result` shape to
-expose), ideally after the AI Agent phase (richer context to query).
+expose), ideally after `v0.7` (richer AI-agent context to query).
 
 **Acceptance criteria.** See [015-trustvian-mcp.md](tasks/015-trustvian-mcp.md).
 
@@ -489,18 +911,43 @@ expose), ideally after the AI Agent phase (richer context to query).
 ## Control / Enterprise phase
 
 **Objective.** Only after the OSS core has demonstrated real-world
-value (external adoption, not just internal completeness) — a
-commercial management layer.
+value (external adoption, not just internal completeness) — an
+organizational-scale management and governance layer, per
+[§ The OSS / Enterprise product
+boundary](#the-oss--enterprise-product-boundary) above. Restated
+because it's the single most important constraint this phase carries:
+**Control never becomes the place core detection capability lives.**
+Everything in `Detect`/`Score`/`Decide`/`Alert`/`Integrate`/`Run` is
+OSS, full stop, regardless of how far `v0.5`–`v1.0` above advance that
+capability. Control's job starts where "one deployment's behavior" ends
+and "many deployments/tenants/teams, governed centrally" begins:
+
+```text
+Centralized management        Investigation UI / case management
+Governance                    Historical analytics
+Multi-tenancy                 Audit / compliance
+SSO / SAML / OIDC             Enterprise reporting
+Enterprise RBAC               Fleet management
+Central policy management     HA / scaling management
+Advanced alert governance     Enterprise integrations
+                               Managed cloud, support / SLA
+```
 
 **Scope** (task file [016](tasks/016-control.md)): explicitly a
 placeholder today. Defines what Trustvian Control *would* need
 (consumes the OSS core as a dependency; never forks it) without
 speculatively designing dashboards, RBAC, or multi-tenancy now.
 
-**Non-goals.** Everything in the original spec's Phase 6/7: web
-dashboard, central API, historical analytics, RBAC, SSO, multi-tenancy,
-audit, SIEM/Kafka integration, HA/horizontal scaling. None of this is
-scoped, designed, or implemented as part of any milestone above.
+**Non-goals.** Everything in the list above and the original spec's
+Phase 6/7: web dashboard, central API, historical analytics, RBAC,
+SSO, multi-tenancy, audit, SIEM/Kafka integration, HA/horizontal
+scaling. None of this is scoped, designed, or implemented as part of
+any milestone above (`v0.1`–`v1.0` are all OSS). Also non-goals,
+correcting language this document and the project spec previously
+carried: Control does **not** provide alerting, notification delivery,
+sequence detection, AI-agent behavioral context, or any other item
+already listed as OSS scope above — those are shipped or roadmapped in
+`v0.4`–`v0.7`, not withheld for this phase.
 
 **Dependencies.** v0.1 shipped and adopted. Not otherwise defined yet.
 
@@ -512,42 +959,74 @@ existing to design against.
 
 ## Future research
 
-Explicitly not committed to any milestone above; revisit only when a
-concrete need (not speculation) justifies it:
+Re-evaluated against the `v1.0` product goal, per [§ The OSS /
+Enterprise product boundary](#the-oss--enterprise-product-boundary)
+above. Each item below is classified as **required before `v1.0`**
+(and therefore now has a real milestone, not just a research note),
+**useful after `v1.0`**, **research only** (no concrete design/consumer
+yet), or an **Enterprise operational concern** (organizational-scale,
+not detection capability). Explicitly not blindly promoted wholesale —
+most items stay exactly where they were, with the reasoning restated
+against the new goal rather than just carried over.
 
-- **Sequence/n-gram/Markov anomaly detection** over operation order —
-  the original spec's own "potential future algorithms" list. Needs a
-  concrete design before it earns a package, per
-  [ADR 0001](adr/0001-hexagonal-core-and-pipeline-shape.md).
-- **ML-based anomaly detection** — explicitly deferred behind
+- **Sequence/n-gram/Markov anomaly detection** — **reclassified:
+  required before `v1.0`.** Moved out of this section into
+  [v0.6 — Behavioral Detection Depth](#v06--behavioral-detection-depth):
+  a production-usable OSS behavioral security product needs
+  order-aware detection, and n-gram/Markov transition modeling are
+  deterministic/statistical, not ML, so they don't conflict with "no ML
+  required." Graph-based sequence analysis and ML-based sequence models
+  remain here (below), since neither has a concrete design or consumer
+  yet.
+- **ML-based anomaly detection (including graph-based sequence
+  models)** — **research only.** Explicitly deferred behind
   deterministic/statistical methods per the roadmap principle "no ML
-  before deterministic detection." No timeline.
-- **Automatic sensitive-target classification** — today
-  `anomaly.Config.SensitiveTargetFloor` requires an operator to name
-  sensitive destinations explicitly (see
+  before deterministic detection," and explicitly **never required** —
+  [v0.6](#v06--behavioral-detection-depth)'s own architecture keeps ML
+  as an optional plugin layer beneath the deterministic engine, never a
+  dependency of the core detection path. No timeline.
+- **Automatic sensitive-target classification** — **research only,
+  unchanged.** Today `anomaly.Config.SensitiveTargetFloor` requires an
+  operator to name sensitive destinations explicitly (see
   [SECURITY.md § malicious agents](SECURITY.md#malicious-agents--privilege-escalation)).
   Automatic classification would need either heuristics or ML — the
   latter is out of scope per the above, so this stays research until a
-  concrete heuristic design exists.
-- **Splitting `internal/otel` into its own Go module** — see
-  [ADR 0003](adr/0003-opentelemetry-adapter-single-module.md); revisit
-  if an external consumer reports OTel appearing in their build for a
-  core-only import.
-- **Promoting `Policy`/`Config`/`Store` to a public package** — see
-  [ADR 0002](adr/0002-public-api-boundary.md); revisit when a real
-  external consumer needs to configure an `Engine` from outside this
-  module.
-- **Multi-instance / distributed baseline sharing** — explicitly not a
-  goal per the roadmap principles ("no distributed architecture unless
-  justified by a concrete milestone"); no milestone above justifies it
-  yet.
-- **Day-of-week seasonality** — moved here during
-  [v0.3](#v03--baseline--anomaly-depth)'s scoping pass ([task
-  017](tasks/017-baseline-time-patterns.md)). A second EWMA dimension
-  (7 day-of-week buckets, or a 7×24 joint distribution) is a separate
-  vertical slice from the hour-of-day signal task 017 shipped, not a
-  small addition to it, and needs its own maturity/calibration analysis
-  (a fingerprint needs weeks of traffic to mature a day-of-week
-  distribution the way it needs hours to mature an hour-of-day one) —
-  revisit only if real operator feedback on the hour-of-day signal
-  justifies the added complexity.
+  concrete heuristic design exists. Not required for `v1.0`: explicit
+  operator configuration is a complete, production-usable answer to
+  this threat on its own.
+- **Splitting `internal/otel` into its own Go module** — **useful after
+  `v1.0`.** See [ADR 0003](adr/0003-opentelemetry-adapter-single-module.md);
+  revisit if an external consumer reports OTel appearing in their build
+  for a core-only import. Purely a packaging/dependency-footprint
+  concern, not a capability gap — doesn't block `v1.0`.
+- **Promoting `Policy`/`Config`/`Store` to a public package** —
+  **reclassified: required before `v1.0`, addressed by
+  [v0.5 — Policy & Configuration](#v05--policy--configuration).** This
+  was the single most direct blocker to "OSS is a complete, standalone,
+  production-usable product": without it, `processor/` and any future
+  standalone deployment cannot express a meaningful custom `Policy` at
+  all. `v0.5` resolves it the same deliberate way
+  [ADR 0007](adr/0007-alert-package-is-public.md) resolved the
+  equivalent question for `alert` — a narrow public contract, not
+  promoting `internal/policy` wholesale.
+- **Multi-instance / distributed baseline sharing** — **Enterprise
+  operational concern.** Explicitly not a goal per the roadmap
+  principles ("no distributed architecture unless justified by a
+  concrete milestone"); sharing baselines across many instances is
+  exactly the "operate organizationally, at scale" territory
+  [§ Control / Enterprise phase](#control--enterprise-phase) above
+  reserves for Control, not a gap in OSS's single-deployment
+  capability. No milestone above justifies it, and none should until a
+  concrete need does.
+- **Day-of-week seasonality** — **useful after `v1.0`, not required.**
+  Moved here during [v0.3](#v03--baseline--anomaly-depth)'s scoping
+  pass ([task 017](tasks/017-baseline-time-patterns.md)). A second EWMA
+  dimension (7 day-of-week buckets, or a 7×24 joint distribution) is a
+  separate vertical slice from the hour-of-day signal task 017 shipped,
+  not a small addition to it, and needs its own maturity/calibration
+  analysis (a fingerprint needs weeks of traffic to mature a
+  day-of-week distribution the way it needs hours to mature an
+  hour-of-day one). `v1.0`'s "time-aware detection" release-gate item
+  is already satisfied by the shipped hour-of-day signal — revisit
+  day-of-week only if real operator feedback on it justifies the added
+  complexity.

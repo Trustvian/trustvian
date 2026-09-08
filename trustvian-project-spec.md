@@ -198,6 +198,14 @@ Identity/context attributes
 
 Order matters. Trustvian should support sequence-based anomaly detection.
 
+**Scoped, not yet implemented:** deterministic n-gram/Markov sequence
+detection is now a real pre-`v1.0` OSS milestone — see
+[`docs/ROADMAP.md` §
+v0.6](docs/ROADMAP.md#v06--behavioral-detection-depth). Graph-based
+analysis and ML-based sequence models remain research only, and — per
+[`docs/ROADMAP.md`](docs/ROADMAP.md)'s explicit product boundary — ML
+must never become a dependency of the core detection path.
+
 Potential future algorithms:
 
 - N-gram behavioral models
@@ -408,13 +416,23 @@ A developer should be able to install Trustvian locally and analyze real telemet
 
 ### Trustvian Control
 
+**Correction (see [`docs/ROADMAP.md` § The OSS / Enterprise product
+boundary](docs/ROADMAP.md#the-oss--enterprise-product-boundary)):**
+this section's original list named "Alerting" as a potential
+Enterprise feature. That is no longer the product direction and was
+never correct once alerting was scoped — Trustvian OSS ships alert
+evaluation and generic-webhook notification delivery itself (see
+[§ 18](#18-alert--notification-system) and `docs/ROADMAP.md`'s `v0.4`).
+Enterprise governs and centralizes; it does not provide the
+capability. The list below is corrected accordingly:
+
 Potential enterprise features:
 
 - Centralized management
 - Multi-tenancy
 - RBAC
 - SSO / SAML / OIDC
-- Policy management
+- Central/organization-wide policy management
 - Behavioral profiles
 - Historical analysis
 - Security investigations
@@ -422,7 +440,8 @@ Potential enterprise features:
 - Service inventory
 - Agent inventory
 - Trust-score dashboards
-- Alerting
+- Centralized alert governance (routing, escalation, alert history at
+  scale — not alerting itself, which is OSS)
 - SIEM integration
 - Kafka integration
 - High availability
@@ -515,9 +534,12 @@ BLOCK
 
 ## 18. Alert & Notification System
 
-**Status: architectural target, not implemented.** Everything in this
-section describes where Trustvian is headed, not what `go get
-github.com/Trustvian/trustvian` gives you today. See
+**Status: the Foundation stage (§ 18.1–18.10) is implemented, as of
+`v0.4.0` — a public `alert` package (`Alert`, `Severity`,
+`Condition`/`Rule`/`Evaluate`, `Sink`, `WebhookSink`).** The remaining
+stages this section describes (§ 18.11 delivery reliability, § 18.12
+deduplication/cooldown, provider-specific sinks beyond the generic
+webhook) are still architectural target, not implemented. See
 [`docs/ROADMAP.md`](docs/ROADMAP.md) for what's actually scheduled and
 in what order, and [Current Implementation Status](#current-implementation-status)
 above for the same caveat this whole document carries.
