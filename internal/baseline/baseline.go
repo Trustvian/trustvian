@@ -32,6 +32,33 @@ import (
 // production data justifies tuning it.
 const emaAlpha = 0.2
 
+// hourActivityAlpha is the EWMA smoothing factor for HourActivity —
+// deliberately much slower than emaAlpha, not an arbitrary second
+// constant. Every observation updates all 24 HourActivity buckets (see
+// observe), but only one of them matches the current hour; the other
+// 23 only ever decay. With emaAlpha's 0.2, a bucket that is hit exactly
+// once every 24 observations (uniform hour-of-day traffic — the
+// textbook "no real time pattern" case) decays to ~0.2% of its peak
+// value between hits and rebounds to ~20% right after one, a >200x
+// swing depending purely on *when* it happens to be read relative to
+// its own last hit — which would make even genuinely patternless
+// traffic look sharply time-anomalous, purely as a measurement-phase
+// artifact, not a real behavioral signal
+// (TestFingerprintStatsHourActivityUniformTraffic pins this down: it
+// failed under emaAlpha before this constant was introduced).
+// hourActivityAlpha=0.02 keeps that same 24-step round-trip decay to
+// within about ±0.01 of the true 1/24 uniform share — small enough
+// that the anomaly signal built on it (see internal/anomaly) reads as
+// only mildly, not severely, anomalous for uniform traffic, and small
+// enough in absolute terms to be a non-issue given the signal ships
+// with a zero default weight (see anomaly.Config.TimePatternWeight)
+// until an operator has calibrated it against real traffic anyway.
+// The tradeoff is slower adaptation to genuine hour-of-day drift
+// (effective memory of roughly 100 observations, vs. emaAlpha's ~9) —
+// appropriate here, since a real hour-of-day pattern is a weeks-scale
+// phenomenon, not something that should shift on the last 5-10 calls.
+const hourActivityAlpha = 0.02
+
 // Key scopes a Baseline to a single actor within a single deployment
 // environment. Scoping by environment from the start — even though the
 // OSS engine is single-tenant — keeps the data model tenant-shaped, so a
@@ -79,6 +106,24 @@ type FingerprintStats struct {
 	// ErrorRate is the EWMA-smoothed proportion of observations that
 	// carried an error, in [0,1].
 	ErrorRate float64
+
+	// TimePatternObservations counts every observation this
+	// FingerprintStats has recorded an hour-of-day sample for — always
+	// equal to Count going forward, but tracked separately so a
+	// FingerprintStats loaded from a persisted file written before this
+	// field existed (HourActivity unmarshals to its zero value) is
+	// correctly treated as immature for this specific signal, exactly
+	// like a brand-new fingerprint, rather than as fully mature with a
+	// suspiciously empty distribution. See internal/anomaly's
+	// time-pattern signal, gated on this field rather than on Count.
+	TimePatternObservations uint64
+	// HourActivity is an EWMA-smoothed distribution over UTC
+	// hour-of-day (index 0-23): each bucket estimates the fraction of
+	// this Fingerprint's traffic that historically falls in that hour.
+	// A fingerprint with no time-of-day pattern converges toward
+	// 1/24 in every bucket; one concentrated at a specific hour
+	// converges toward 1.0 there and 0.0 elsewhere.
+	HourActivity [24]float64
 
 	// Stable is the shape this Fingerprint represents, retained for
 	// explainability so a consumer never has to recompute it.
@@ -157,6 +202,32 @@ func (s FingerprintStats) observe(stable features.StableFeatures, vol features.V
 		s.LastObserved = now
 	}
 	s.Stable = stable
+
+	// HourActivity tracks the same EWMA-of-indicator shape ErrorRate
+	// already uses, applied per hour-of-day bucket instead of a single
+	// scalar: every observation nudges the bucket matching now's UTC
+	// hour toward 1 and every other bucket toward 0. Unlike the
+	// interval/latency EWMAs above, this uses now (the event's own
+	// timestamp), not a derived value, and is unaffected by the
+	// out-of-order guard above — an out-of-order event's hour is still
+	// real information about when this fingerprint fires, even though
+	// its *interval* isn't trustworthy.
+	hour := now.UTC().Hour()
+	if s.TimePatternObservations == 0 {
+		for h := range s.HourActivity {
+			s.HourActivity[h] = 0
+		}
+		s.HourActivity[hour] = 1
+	} else {
+		for h := range s.HourActivity {
+			sample := 0.0
+			if h == hour {
+				sample = 1.0
+			}
+			s.HourActivity[h] += hourActivityAlpha * (sample - s.HourActivity[h])
+		}
+	}
+	s.TimePatternObservations++
 
 	if vol.HasLatency {
 		latencyNS := float64(vol.Latency)

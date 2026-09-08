@@ -162,6 +162,17 @@ follow:
   **Future work:** if a deployment needs it, per-sample outlier
   rejection belongs in `FingerprintStats.observe` alongside the
   ordering guard, not in caller discipline.
+- **`HourActivity` (task [017](tasks/017-baseline-time-patterns.md))
+  is the same bounded, self-correcting shape, not a new threat class.**
+  `FingerprintStats.HourActivity` is an EWMA-of-indicator per UTC
+  hour-of-day, structurally identical to `ErrorRate` above except
+  applied to 24 buckets instead of one. A single allowed-but-unusual-
+  hour observation nudges its bucket the same bounded, decaying amount
+  the interval/latency/error EWMAs already tolerate — no new poisoning
+  primitive is introduced. It ships with `anomaly.Config.TimePatternWeight
+  = 0` (see [DOMAIN.md § Anomaly](DOMAIN.md)), so this signal
+  contributes nothing to `Anomaly.Score` in the default configuration
+  regardless.
 
 **Persistence-adjacent note:** `store.FileStore`
 ([ADR 0006](adr/0006-file-backed-persistent-store.md)) flushes to disk

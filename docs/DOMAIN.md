@@ -173,6 +173,29 @@ says to add only when needed, not speculatively.
 - **Expiration** — not implemented as active pruning today; the EWMA
   decay means stale patterns lose statistical weight over time rather
   than being explicitly expired. See [ROADMAP.md](ROADMAP.md).
+- **Time-of-day pattern** — `HourActivity [24]float64` is a second,
+  independent EWMA per `FingerprintStats`: one bucket per UTC
+  hour-of-day, each estimating the fraction of this fingerprint's
+  traffic that historically falls in that hour. It uses its own
+  smoothing constant, `hourActivityAlpha = 0.02`, deliberately much
+  slower than the `emaAlpha = 0.2` used everywhere else in this
+  package. Every observation updates all 24 buckets (the matching hour
+  toward 1, the other 23 toward 0), so a bucket that is hit only once
+  every 24 observations decays heavily between hits under a fast alpha
+  — `TestFingerprintStatsHourActivityUniformTraffic` measured swings of
+  two orders of magnitude around the true 1/24 uniform share under
+  `emaAlpha`, a pure measurement-phase artifact rather than a real
+  behavioral signal. `hourActivityAlpha = 0.02` bounds that swing to
+  about ±0.01 in exchange for slower adaptation to genuine hour-of-day
+  drift (~100-observation effective memory vs. ~9), which is the right
+  tradeoff since a real hour-of-day pattern is a weeks-scale
+  phenomenon. `TimePatternObservations` tracks maturity for this signal
+  specifically (not reusing `Count`), so a `FingerprintStats` loaded
+  from a `store.FileStore` file written before this field existed —
+  where `HourActivity` unmarshals to its zero array — is correctly
+  treated as immature rather than as a suspiciously empty, fully mature
+  distribution. See `internal/anomaly`'s `time_pattern_deviation` signal
+  below, and [task 017](tasks/017-baseline-time-patterns.md).
 
 ## Anomaly
 
@@ -190,15 +213,31 @@ signals:
 | `frequency_deviation` | The current inter-observation interval's z-score against the baseline's EWMA mean/stddev interval exceeds `Config.FrequencyZThreshold` — the "this actor normally calls this operation every 10s; it just called it every 100ms" signal (a classic abuse/exfiltration pattern). Requires the fingerprint to be known, at least one recorded interval (`FingerprintStats.IntervalObservations > 0`), and a strictly positive current interval; a fingerprint's very first observation has no prior `LastObserved` to measure from, so it never fires on cold start, mirroring `latency_deviation`'s `LatencyObservations > 0` gate. **Contributes 0 to `Score` by default** — see below |
 | `error_deviation` | An error occurred against a fingerprint whose baseline error rate is low |
 | `sensitive_target` | The destination is in `Config.SensitiveTargetFloor` — a fixed penalty that persists *regardless of familiarity* |
+| `time_pattern_deviation` | The event's UTC hour-of-day has historically accounted for a much smaller share of this fingerprint's traffic than a uniform 1/24 baseline would predict. Requires the fingerprint to be known and `FingerprintStats.TimePatternObservations >= Config.MinObservations`. **Contributes 0 to `Score` by default** — see below |
 
-**Two of the five ship inert.** `DefaultConfig()` leaves
+**Three of the six ship inert.** `DefaultConfig()` leaves
 `SensitiveTargetFloor` empty (so `sensitive_target` never fires until an
-operator names their sensitive destinations) and sets `FrequencyWeight`
-to `0` (so `frequency_deviation` is detected and reported in
-`Contributors`, but multiplies to nothing inside the noisy-OR). In both
-cases the mechanism is complete and tested; only the deployment-specific
-value that makes it count is left to the operator, because no default is
-correct everywhere.
+operator names their sensitive destinations), and sets both
+`FrequencyWeight` and `TimePatternWeight` to `0` (so `frequency_deviation`
+and `time_pattern_deviation` are detected and reported in `Contributors`,
+but multiply to nothing inside the noisy-OR). In all three cases the
+mechanism is complete and tested; only the deployment-specific value that
+makes it count is left to the operator, because no default is correct
+everywhere.
+
+`time_pattern_deviation` ships opt-in for a second, distinct reason
+beyond calibration: `HourActivity`'s per-bucket EWMA (see Baseline above)
+only reaches its documented convergence bound after enough elapsed wall
+time for its slow `hourActivityAlpha` to smooth out a real distribution —
+`MinObservations` alone does not guarantee a fingerprint has actually
+been observed across a representative spread of hours, only that it has
+been observed *some* number of times. A fingerprint that happens to
+cross `MinObservations` within a single day's traffic has a
+`HourActivity` distribution concentrated by pure sampling luck, not by a
+real time-of-day pattern; scoring against it before the operator has
+confirmed enough elapsed-time coverage for their own traffic would
+misattribute normal activity in an unseen hour as anomalous. This is a
+known limitation, not a bug — see [task 017's Non-Goals](tasks/017-baseline-time-patterns.md).
 
 For `frequency_deviation` specifically, the reason is calibration
 against real jitter. The signal divides by the standard deviation of a

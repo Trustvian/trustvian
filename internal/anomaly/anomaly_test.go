@@ -519,6 +519,44 @@ func TestScoreMatchesDocumentedNoisyOrFormulaWithFrequencySignal(t *testing.T) {
 	}
 }
 
+func TestScoreMatchesDocumentedNoisyOrFormulaWithTimePatternSignal(t *testing.T) {
+	// Same bar as the frequency-signal sibling test above: reproduce
+	// combine()'s exact noisy-OR arithmetic with a firing
+	// time_pattern_deviation signal included, not just spot-check its
+	// direction.
+	fp := fingerprint.Compute(stable("payment-db"))
+	cfg := anomaly.DefaultConfig()
+	// TimePatternWeight is 0 by default (opt-in); set it explicitly.
+	cfg.TimePatternWeight = 0.6
+
+	const observedHour = 9
+	b := baselineAtHour(fp, observedHour, int(cfg.MinObservations)+10)
+	// A different hour: activity there is exactly 0 (one-hot seeded,
+	// never updated toward 1 since every observation was at
+	// observedHour), so timePatternSignal's value is exactly 1 —
+	// the same nearZeroStdDev-style "fully deterministic" case
+	// frequencySignal's own exact-formula sibling test relies on.
+	const novelHour = 3
+	feat := features.Features{
+		Stable:   stable("payment-db"),
+		Volatile: features.VolatileFeatures{Timestamp: time.Date(2026, 6, 1, novelHour, 0, 0, 0, time.UTC)},
+	}
+	got := anomaly.Score(feat, fp, b, cfg)
+
+	if !hasSignal(got.Contributors, "time_pattern_deviation") {
+		t.Fatalf("Contributors = %+v, want time_pattern_deviation", got.Contributors)
+	}
+
+	// Fingerprint is fully mature (Count > MinObservations), so
+	// categorical_novelty does not fire at all.
+	timePatternContribution := 1.0 * cfg.TimePatternWeight // HourActivity[novelHour] == 0 exactly
+	want := 1 - (1 - timePatternContribution)
+
+	if diff := got.Score - want; diff > 1e-9 || diff < -1e-9 {
+		t.Fatalf("Score = %v, want %v (documented noisy-OR formula, including time_pattern_deviation)", got.Score, want)
+	}
+}
+
 func TestScoreFingerprintIDMatchesComputedFingerprint(t *testing.T) {
 	feat := features.Features{Stable: stable("payment-db")}
 	fp := fingerprint.Compute(feat.Stable)
@@ -528,6 +566,158 @@ func TestScoreFingerprintIDMatchesComputedFingerprint(t *testing.T) {
 
 	if got.FingerprintID != want {
 		t.Fatalf("FingerprintID = %q, want %q", got.FingerprintID, want)
+	}
+}
+
+// baselineAtHour returns a Baseline where fp has been observed count
+// times, always at the same UTC hour-of-day (different calendar days),
+// mirroring internal/baseline's own test helper of the same shape.
+func baselineAtHour(fp fingerprint.Fingerprint, hour, count int) baseline.Baseline {
+	b := baseline.New(testKey)
+	day := time.Date(2026, 1, 1, hour, 0, 0, 0, time.UTC)
+	for i := range count {
+		b = b.Observe(fp, features.VolatileFeatures{}, day.AddDate(0, 0, i))
+	}
+	return b
+}
+
+// baselineUniformAcrossHours returns a Baseline where fp has been
+// observed once per hour, every hour, for the given number of days —
+// the "no real time-of-day pattern" fixture.
+func baselineUniformAcrossHours(fp fingerprint.Fingerprint, days int) baseline.Baseline {
+	b := baseline.New(testKey)
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for day := range days {
+		for hour := range 24 {
+			b = b.Observe(fp, features.VolatileFeatures{}, start.AddDate(0, 0, day).Add(time.Duration(hour)*time.Hour))
+		}
+	}
+	return b
+}
+
+func TestScoreTimePatternDeviation(t *testing.T) {
+	fp := fingerprint.Compute(stable("payment-db"))
+	cfg := anomaly.DefaultConfig()
+	cfg.TimePatternWeight = 0.6 // opt-in: default is 0, see TestDefaultConfigTimePatternWeightIsOptIn
+
+	t.Run("normal hour does not fire", func(t *testing.T) {
+		b := baselineAtHour(fp, 9, int(cfg.MinObservations)+10)
+		feat := features.Features{
+			Stable:   stable("payment-db"),
+			Volatile: features.VolatileFeatures{Timestamp: time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC)},
+		}
+		got := anomaly.Score(feat, fp, b, cfg)
+		if hasSignal(got.Contributors, "time_pattern_deviation") {
+			t.Errorf("time_pattern_deviation fired for an event at this fingerprint's established hour: %+v", got.Contributors)
+		}
+	})
+
+	t.Run("novel hour fires strongly", func(t *testing.T) {
+		b := baselineAtHour(fp, 9, int(cfg.MinObservations)+10)
+		feat := features.Features{
+			Stable:   stable("payment-db"),
+			Volatile: features.VolatileFeatures{Timestamp: time.Date(2026, 6, 1, 3, 0, 0, 0, time.UTC)},
+		}
+		got := anomaly.Score(feat, fp, b, cfg)
+		found := false
+		for _, s := range got.Contributors {
+			if s.Name == "time_pattern_deviation" {
+				found = true
+				if s.Value < 0.9 {
+					t.Errorf("time_pattern_deviation.Value = %v, want near 1 for an hour this fingerprint has never fired at", s.Value)
+				}
+			}
+		}
+		if !found {
+			t.Error("time_pattern_deviation did not fire for an hour this fingerprint has never been observed at")
+		}
+	})
+
+	t.Run("cold start does not fire", func(t *testing.T) {
+		b := baseline.New(testKey)
+		feat := features.Features{Stable: stable("payment-db"), Volatile: features.VolatileFeatures{Timestamp: time.Now()}}
+		got := anomaly.Score(feat, fp, b, cfg)
+		if hasSignal(got.Contributors, "time_pattern_deviation") {
+			t.Errorf("time_pattern_deviation fired on an unknown fingerprint: %+v", got.Contributors)
+		}
+	})
+
+	t.Run("below MinObservations does not fire even at a novel hour", func(t *testing.T) {
+		b := baselineAtHour(fp, 9, int(cfg.MinObservations)-1)
+		feat := features.Features{
+			Stable:   stable("payment-db"),
+			Volatile: features.VolatileFeatures{Timestamp: time.Date(2026, 6, 1, 3, 0, 0, 0, time.UTC)},
+		}
+		got := anomaly.Score(feat, fp, b, cfg)
+		if hasSignal(got.Contributors, "time_pattern_deviation") {
+			t.Errorf("time_pattern_deviation fired before TimePatternObservations reached MinObservations: %+v", got.Contributors)
+		}
+	})
+
+	// Uniform hour-of-day traffic produces a small, bounded residual
+	// reading, not an exact zero: HourActivity is only updated once
+	// per 24 observations for any given bucket (see
+	// hourActivityAlpha's doc comment in internal/baseline/baseline.go),
+	// so at any single instant the 24 buckets sit at different points
+	// along their own decay-then-refresh cycle relative to each other,
+	// even though the underlying traffic has no real pattern. This is
+	// the documented, accepted tradeoff of a bounded-memory EWMA — the
+	// bound matters, not an unachievable exact zero, and it is exactly
+	// why TimePatternWeight ships at 0 by default (see
+	// TestDefaultConfigTimePatternWeightIsOptIn): an operator who
+	// enables the signal is opting into this bounded noise floor, not
+	// a false claim that it doesn't exist.
+	t.Run("uniform traffic across all hours stays within the documented noise bound", func(t *testing.T) {
+		b := baselineUniformAcrossHours(fp, 30)
+		const maxUniformNoise = 0.3 // measured worst case ~0.22 at hourActivityAlpha=0.02; 0.3 leaves headroom without hiding a regression
+		for hour := range 24 {
+			feat := features.Features{
+				Stable:   stable("payment-db"),
+				Volatile: features.VolatileFeatures{Timestamp: time.Date(2026, 6, 1, hour, 0, 0, 0, time.UTC)},
+			}
+			got := anomaly.Score(feat, fp, b, cfg)
+			for _, s := range got.Contributors {
+				if s.Name == "time_pattern_deviation" && s.Value > maxUniformNoise {
+					t.Errorf("hour %d: time_pattern_deviation.Value = %v, want <= %v for genuinely uniform hour-of-day traffic", hour, s.Value, maxUniformNoise)
+				}
+			}
+		}
+	})
+}
+
+// TestScoreTimePatternIgnoresZeroValueHourActivity is the persistence-
+// migration regression test task 017 requires: a FingerprintStats with
+// a mature Count but a zero-value HourActivity (simulating one loaded
+// from a store.FileStore file written before this task) must not fire
+// the signal — TimePatternObservations, not Count, is what gates it.
+func TestScoreTimePatternIgnoresZeroValueHourActivity(t *testing.T) {
+	fp := fingerprint.Compute(stable("payment-db"))
+	cfg := anomaly.DefaultConfig()
+	cfg.TimePatternWeight = 0.6
+
+	// Build a mature baseline the normal way, then simulate a
+	// pre-task-017 persisted record by resetting only the new fields —
+	// Count (and everything else) stays mature.
+	b := matureBaseline(fp, int(cfg.MinObservations)+10, 10)
+	stats := b.Fingerprints[fp.ID]
+	stats.HourActivity = [24]float64{}
+	stats.TimePatternObservations = 0
+	b.Fingerprints[fp.ID] = stats
+
+	feat := features.Features{
+		Stable:   stable("payment-db"),
+		Volatile: features.VolatileFeatures{Timestamp: time.Date(2026, 6, 1, 3, 0, 0, 0, time.UTC)},
+	}
+	got := anomaly.Score(feat, fp, b, cfg)
+	if hasSignal(got.Contributors, "time_pattern_deviation") {
+		t.Errorf("time_pattern_deviation fired for a migrated record with zero-value HourActivity: %+v", got.Contributors)
+	}
+}
+
+func TestDefaultConfigTimePatternWeightIsOptIn(t *testing.T) {
+	cfg := anomaly.DefaultConfig()
+	if cfg.TimePatternWeight != 0 {
+		t.Errorf("DefaultConfig().TimePatternWeight = %v, want 0 (opt-in, like FrequencyWeight)", cfg.TimePatternWeight)
 	}
 }
 
