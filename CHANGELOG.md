@@ -6,9 +6,14 @@ All notable changes to Trustvian are documented in this file. Prior to
 point where a tag first exists for something external users can
 actually depend on.
 
-## Unreleased
+## v0.4.0 — Alert & Notification Foundation
 
-Work merged to `develop` since `v0.3.0`, not yet tagged.
+Adds the Foundation stage of the Alert & Notification phase: a
+minimal, explainable, externally deliverable `Alert`, without changing
+`Decision` semantics or the existing detection pipeline. Delivery
+reliability (retry, deduplication, cooldown) and provider-specific
+sinks (Slack, Teams, PagerDuty) remain explicitly out of scope for this
+release.
 
 ### Added
 
@@ -45,8 +50,10 @@ Work merged to `develop` since `v0.3.0`, not yet tagged.
 ### Changed
 
 - [docs/ROADMAP.md](docs/ROADMAP.md)'s "Current status" section now
-  reflects `v0.4` (Alert & Notification Foundation) as implemented on
-  `develop`.
+  reflects `v0.4.0` (Alert & Notification Foundation) as shipped, and
+  the roadmap was extended with the planned milestone sequence toward
+  `v1.0.0` (`v0.5` Policy & Configuration through `v0.9` Operational
+  Readiness).
 
 ## v0.3.0 — Baseline & anomaly depth
 
