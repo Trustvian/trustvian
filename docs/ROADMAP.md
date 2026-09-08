@@ -47,10 +47,16 @@ What's **not** yet true, concretely — the `v0.2`-and-later gaps this
 roadmap's remaining milestones exist to close:
 
 - No CI/CD, no container image.
-- The six *outbound* `trustvian.*` OTel enrichment attributes (from
-  the original spec) are undocumented-as-implemented because they
-  aren't — only the four *inbound* override attributes exist.
-- No OTel Collector processor.
+- Of the six *outbound* `trustvian.*` OTel enrichment attributes named
+  in the original spec, five are implemented as of
+  [task 008](tasks/008-otel.md)
+  (`internal/otel.AttributesFromResult`); the sixth
+  (`trustvian.behavior.id`) is deliberately not — see
+  [OPENTELEMETRY.md](OPENTELEMETRY.md#trustvian-output-attributes) for
+  why.
+- No OTel Collector processor — nothing yet attaches
+  `AttributesFromResult`'s output to a live span or exports it; that's
+  [task 009](tasks/009-otel-collector.md), next up.
 - AI-agent event types work today only through the generic `Event`
   model (`ActorTypeAIAgent` + `OperationCategoryTool`) — no session,
   delegation, or tool-sequence concepts exist.
@@ -165,13 +171,24 @@ the core.
 
 **Scope** (task files [008](tasks/008-otel.md), [009](tasks/009-otel-collector.md)):
 
-- **008 OTel integration v2** — implement the six outbound
-  `trustvian.*` attributes (write a `Result` back onto a span/attribute
-  set); review semantic-convention mapping completeness now that real
-  usage exists.
-- **009 OTel Collector processor** — design, and build a minimal
+- **008 OTel integration v2 — done.** `internal/otel.AttributesFromResult`
+  derives five of the six outbound `trustvian.*` attributes
+  (`anomaly.score`, `trust.score`, `risk.level`, `decision`,
+  `fingerprint.id`) from a `Result`. `trustvian.behavior.id` — the
+  sixth, never defined beyond its name in the original spec — is
+  deliberately not implemented: every plausible meaning collapses into
+  `Fingerprint.ID`, so implementing it as a duplicate, or inventing a
+  new domain concept to justify a distinct one, would be exactly the
+  kind of undocumented telemetry attribute CLAUDE.md's OpenTelemetry
+  section warns against. See [OPENTELEMETRY.md § Trustvian output
+  attributes](OPENTELEMETRY.md#trustvian-output-attributes) for the
+  full rationale and mapping table. Verified via `go list -deps` that
+  this introduces no import cycle and that `internal/otel` remains the
+  sole package in this module depending on OpenTelemetry.
+- **009 OTel Collector processor — next.** Design, and build a minimal
   version of, a Collector processor as a **separate Go module**,
-  consuming this module's public API exactly like any other embedder.
+  consuming this module's public API exactly like any other embedder,
+  now that 008 gives it something to enrich a span with.
 
 **Non-goals.** No distributed Trustvian server, no processor-side
 persistence beyond what `v0.1`'s `Store` already provides, no

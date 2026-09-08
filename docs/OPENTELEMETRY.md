@@ -87,43 +87,67 @@ maps to an `Event` with `Actor.Type = ActorTypeAIAgent`,
 [Use Cases § AI-agent security](use-cases.md#ai-agent-security) example
 constructs directly as JSON, just sourced from a live span instead.
 
-## Trustvian output attributes (not yet implemented)
+## Trustvian output attributes
 
-The project spec names six `trustvian.*` attributes meant to *enrich*
-telemetry with Trustvian's verdict, for export back into the
-observability pipeline:
+```go
+func AttributesFromResult(result trustvian.Result) []attribute.KeyValue
+```
 
-| Attribute | Meaning |
+A pure function deriving the outbound `trustvian.*` attributes from a
+`Result`, for a caller to attach to a span or export alongside one. It
+does not write to a live span itself — attaching the returned
+attributes to a real span (e.g. inside a future OTel Collector
+processor, [task 009](tasks/009-otel-collector.md)) is that caller's
+concern, not this adapter's. This is the one function in `internal/otel`
+that depends on the root `trustvian` package rather than only `event`;
+verified via `go list -deps` to introduce no import cycle and to leave
+`internal/otel` the sole package in this module that imports
+`go.opentelemetry.io/otel*`.
+
+| Attribute | Derived from |
 |---|---|
 | `trustvian.anomaly.score` | `Anomaly.Score` |
 | `trustvian.trust.score` | `Trust.Score` |
 | `trustvian.risk.level` | `Trust.Risk` |
 | `trustvian.decision` | `Result.Decision` |
 | `trustvian.fingerprint.id` | `Fingerprint.ID` |
-| `trustvian.behavior.id` | reserved; not yet defined — see below |
 
-**These are not implemented anywhere in this repository today.**
-`internal/otel.EventFromSpan` is inbound-only (span → `Event`); nothing
-writes attributes back onto a span or exports them. Do not confuse
-these *output* attributes with the four *input* override attributes
-above (`trustvian.actor.id`, etc.) — the two serve opposite directions
-of the same adapter boundary, and only the input direction exists so
-far. `trustvian.behavior.id` in particular has no defined meaning yet
-in this codebase (it's carried over from the spec's original naming
-and hasn't been reconciled against `Fingerprint.ID`, which may be all
-that's needed). See [ROADMAP.md](ROADMAP.md) (`v0.2`) and
-[`tasks/008-otel.md`](tasks/008-otel.md) for the scoped implementation
-task, naturally paired with the Collector processor below since a
-Collector processor is the most likely place enrichment actually
-happens (enriching a trace as it passes through, rather than the core
-engine reaching back into telemetry it doesn't own).
+Do not confuse these *output* attributes with the four *input* override
+attributes above (`trustvian.actor.id`, etc.) — the two serve opposite
+directions of the same adapter boundary.
+
+**`trustvian.behavior.id` is deliberately not implemented.** The
+original project spec named it alongside the five above, but never
+defined what it means beyond "carried over from the spec's original
+naming." [Task 008](tasks/008-otel.md) resolved this by tracing every
+plausible reading back to `Fingerprint.ID`: `internal/fingerprint`'s
+`Fingerprint` already *is* the identity of one behavioral shape for an
+actor (see [DOMAIN.md § Fingerprint](DOMAIN.md#fingerprint)), so a
+second "behavior ID" attribute would either duplicate it exactly or
+require inventing a new domain concept — an actor-level profile
+spanning multiple `Fingerprint`s — that nothing in this codebase tracks
+today. CLAUDE.md's OpenTelemetry section is explicit: don't invent
+telemetry attributes without documenting them; documenting an attribute
+whose meaning is still undefined is the same mistake with extra steps.
+The name is reserved, not implemented, and stays that way until a real,
+distinct behavior-level identity concept is scoped.
+
+Values are not independently re-validated for `NaN`/`Inf` at this
+boundary: `internal/trust.Compute` already clamps its inputs and output
+to `[0,1]`, and `internal/anomaly`'s noisy-OR combination is bounded to
+`[0,1]` by construction — both proven by
+`TestComputeScenarioMatrixBoundsAndMonotonicity` and
+`TestComputeClampsOutOfRangeInputs`. `AttributesFromResult` reads values
+that are already guaranteed finite and bounded; re-checking them here
+would duplicate an already-tested invariant, not close a real gap.
 
 ## The OTel Collector processor (planned, separate module)
 
 The spec's Phase 2 also calls for an OTel Collector processor — a
-deployable Collector component that scores telemetry in-flight and
-(once the output attributes above exist) enriches it. This is
-intentionally **not** part of this module:
+deployable Collector component that scores telemetry in-flight and, now
+that `AttributesFromResult` above exists to produce them, enriches it
+with the resulting attributes. This is intentionally **not** part of
+this module:
 
 - It depends on the `otelcol-builder` toolchain, a materially heavier
   dependency tree than the lightweight OTel API/SDK packages
