@@ -6,6 +6,14 @@ All notable changes to Trustvian are documented in this file. Prior to
 point where a tag first exists for something external users can
 actually depend on.
 
+## Unreleased
+
+No code changes yet. `v0.4` — Alert & Notification Foundation is
+scoped as [task 018](docs/tasks/018-alert-notification-foundation.md)
+and [docs/ROADMAP.md](docs/ROADMAP.md#v04--alert--notification-foundation),
+ready for implementation. This placeholder is a planning record, not a
+release entry — nothing in this section is implemented.
+
 ## v0.3.0 — Baseline & anomaly depth
 
 Adds the one piece of time-based pattern awareness the roadmap
