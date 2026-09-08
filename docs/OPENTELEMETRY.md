@@ -141,28 +141,54 @@ to `[0,1]`, and `internal/anomaly`'s noisy-OR combination is bounded to
 that are already guaranteed finite and bounded; re-checking them here
 would duplicate an already-tested invariant, not close a real gap.
 
-## The OTel Collector processor (planned, separate module)
+## The OTel Collector processor
 
-The spec's Phase 2 also calls for an OTel Collector processor — a
-deployable Collector component that scores telemetry in-flight and, now
-that `AttributesFromResult` above exists to produce them, enriches it
-with the resulting attributes. This is intentionally **not** part of
-this module:
+[`processor/`](../processor/) (module `trustvian-processor`) is a
+minimal, working OpenTelemetry Collector processor that scores every
+span passing through a Collector pipeline and enriches it with the
+`trustvian.*` attributes above — see [its own
+README](../processor/README.md) for the full picture. This is
+intentionally **not** part of this module:
 
-- It depends on the `otelcol-builder` toolchain, a materially heavier
-  dependency tree than the lightweight OTel API/SDK packages
-  `internal/otel` uses.
-- Building it means importing this module's public API (`Engine`) plus
-  `internal/otel`'s mapping (or a similar one), from a separate
-  repository/module — the same shape as any other embedder, not a
-  privileged internal dependency.
+- It depends on the `go.opentelemetry.io/collector/*` component APIs, a
+  materially heavier dependency tree than the lightweight OTel API/SDK
+  packages `internal/otel` uses.
+- It imports this module's public API (`github.com/Trustvian/trustvian`,
+  for `Engine`/`Result`) via a `replace` directive during development,
+  the same relationship any other embedder has — not a privileged
+  internal dependency. `go list -deps ./...` in *this* module's root
+  confirms `go.mod`/`go.sum` here are completely unaffected by
+  `processor/`'s existence.
 
-See [ADR 0003](adr/0003-opentelemetry-adapter-single-module.md) for
-the full reasoning, [ROADMAP.md](ROADMAP.md) (`v0.2`) for status, and
+**It cannot reuse `internal/otel.EventFromSpan`/`AttributesFromResult`**,
+for two independent reasons: those functions are under `internal/` and
+therefore unreachable from a genuinely separate module (see [ADR
+0002](adr/0002-public-api-boundary.md)); and, even ignoring that,
+`EventFromSpan` takes `sdktrace.ReadOnlySpan` — a type only the OTel
+**SDK**'s in-process span-export path produces — while a Collector
+processor receives `ptrace.Span`, the OTLP/pipeline data model, which
+shares no relationship with `sdktrace.ReadOnlySpan` at all. `processor/`
+therefore carries its own parallel mapping and attribute-writing code,
+reusing the same semantic-convention key constants
+(`go.opentelemetry.io/otel/semconv`) so the convention *names* stay in
+sync even though the traversal code necessarily differs.
+
+**[ADR 0002](adr/0002-public-api-boundary.md)'s public API boundary was
+considered and deliberately NOT revisited** as part of building this
+processor — an explicit decision, not a silent gap. Building this
+processor is not, by itself, the "real external consumer" trigger ADR
+0002 named for promoting `Policy`/`Config` to a public package: it is
+built and maintained alongside the core module, not by an independent
+third party with an unmet need. Concretely, this means the processor
+runs Trustvian's zero-configuration default `Policy` — every span it
+scores today resolves to `trustvian.decision = "observe_only"`. See
+[`processor/README.md` § Configuration](../processor/README.md#configuration)
+for the full reasoning.
+
+See [ADR 0003](adr/0003-opentelemetry-adapter-single-module.md) for why
+this lives in a separate module at all, and
 [`tasks/009-otel-collector.md`](tasks/009-otel-collector.md) for the
-scoped implementation task — including the open question of whether
-building this is what finally justifies revisiting
-[ADR 0002](adr/0002-public-api-boundary.md)'s public API boundary.
+task this closes.
 
 ## Best-effort, not validated
 
