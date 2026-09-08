@@ -16,30 +16,35 @@ Trustvian determines whether what it did should be trusted.
 
 ## Status
 
-`v0.1`–`v0.3` are released, and `v0.4` — Alert & Notification
-Foundation — is implemented (tagged shortly): the core pipeline, Go
-SDK, CLI, a persistent file-backed store, an inbound OpenTelemetry
-adapter, outbound `trustvian.*` result attributes, a standalone OTel
-Collector processor ([`processor/`](processor/README.md)), an opt-in
-hour-of-day time-pattern anomaly signal, and a public
+`v0.1`–`v0.4.0` are shipped: the core pipeline, Go SDK, CLI, a
+persistent file-backed store, an inbound OpenTelemetry adapter, outbound
+`trustvian.*` result attributes, a standalone OTel Collector processor
+([`processor/`](processor/README.md)), an opt-in hour-of-day
+time-pattern anomaly signal, and a public
 [`alert`](docs/DOMAIN.md#alert) package — turning a `Result`/`Decision`
 into a minimal, explainable `Alert`, evaluated by a
 `policy.Condition`-shaped rule matcher and delivered to a generic,
 HMAC-signed HTTPS webhook, all reachable directly from the Go SDK with
 no OpenTelemetry involvement (see
 [`examples/alert-webhook`](examples/alert-webhook/README.md)) — are all
-implemented, tested, and benchmarked. Not yet built: day-of-week
-seasonality, sequence/ML-based anomaly detection, alert delivery
-retry/deduplication/cooldown and any provider-specific sink
-(Slack/Teams/PagerDuty — see
-[`trustvian-project-spec.md` § 18](trustvian-project-spec.md#18-alert--notification-system)
-for the planned architecture beyond Foundation), AI-agent
-session/delegation concepts, an MCP interface, and everything under
-Trustvian Control/Cloud (dashboard, multi-tenancy, SSO). See
-[`trustvian-project-spec.md`](trustvian-project-spec.md) for the full
-long-term vision and [`CLAUDE.md`](CLAUDE.md) for the engineering
-conventions this repository follows. For guides, worked examples, and
-four real-world use cases with verified input/output, see
+implemented, tested, and benchmarked.
+
+**Trustvian OSS is meant to be a complete, standalone,
+production-usable behavioral security product on its own** — detect,
+score, decide, alert, integrate, and run, all without Trustvian
+Control. Not yet built, on the path there: order-aware sequence
+detection, delivery reliability (retry/deduplication/cooldown) and any
+provider-specific alert sink (Slack/Teams/PagerDuty), a declarative
+policy/alert configuration file format, AI-agent session/delegation
+concepts, a production-grade persistent store beyond `FileStore`, and
+release/operational engineering (CI, Docker image, SBOM). See
+[`docs/ROADMAP.md`](docs/ROADMAP.md#the-oss--enterprise-product-boundary)
+for the explicit OSS/Control boundary and the full milestone sequence
+through `v1.0`. ML-based detection stays optional research, never a
+core dependency. See [`trustvian-project-spec.md`](trustvian-project-spec.md)
+for the full long-term vision and [`CLAUDE.md`](CLAUDE.md) for the
+engineering conventions this repository follows. For guides, worked
+examples, and four real-world use cases with verified input/output, see
 [`docs/`](docs/README.md). For what's shipped, in progress, and planned
 next, see [`docs/ROADMAP.md`](docs/ROADMAP.md) and its detailed task
 breakdown under [`docs/tasks/`](docs/tasks/).

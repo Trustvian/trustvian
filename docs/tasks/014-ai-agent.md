@@ -1,10 +1,11 @@
 # 014 — AI Agent Security: Extend the Event Model
 
-**Milestone:** AI Agent phase · **Depends on:** v0.1 shipped (stable
-`Event` shape — extensions here must be backward-compatible additions)
-· **Blocks:** [015](015-trustvian-mcp.md) (richer agent context makes
-the MCP layer more useful, though not strictly required for it to
-exist)
+**Milestone:** v0.7 (previously the unnumbered "AI Agent phase" — see
+[ROADMAP.md § v0.7](../ROADMAP.md#v07--ai-agent-behavioral-security))
+· **Depends on:** v0.1 shipped (stable `Event` shape — extensions here
+must be backward-compatible additions) · **Blocks:** [015](015-trustvian-mcp.md)
+(richer agent context makes the MCP layer more useful, though not
+strictly required for it to exist)
 
 ## Objective
 
@@ -56,7 +57,10 @@ meaning.
   (order-aware, not just new fields), explicitly out of scope per
   [ADR 0001](../adr/0001-hexagonal-core-and-pipeline-shape.md)'s "add a
   second algorithm only when it has a concrete design" — belongs in
-  `v0.3`+/[Future research](../ROADMAP.md#future-research), not here.
+  [ROADMAP.md § v0.6 — Behavioral Detection
+  Depth](../ROADMAP.md#v06--behavioral-detection-depth), not here. This
+  task's tool-call sequences are simply the input a future `v0.6`
+  sequence signal would score; this task does not build that signal.
 - **No agent-specific `Fingerprint`/`Baseline`/`Anomaly` types.** The
   existing generic types must be reused unchanged — this task adds
   optional `Event` fields, not new domain types.
@@ -110,8 +114,8 @@ meaning.
   features.
 - [use-cases.md](../use-cases.md): extend the existing AI-agent
   scenario to show session grouping in action.
-- [ROADMAP.md](../ROADMAP.md): mark this phase's scope implemented;
-  keep tool-sequence analysis clearly in Future research.
+- [ROADMAP.md](../ROADMAP.md): mark `v0.7`'s scope implemented; keep
+  tool-sequence analysis scoped to `v0.6`, not folded into this task.
 
 ## Acceptance Criteria
 
