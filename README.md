@@ -16,20 +16,24 @@ Trustvian determines whether what it did should be trusted.
 
 ## Status
 
-This is an early, single-tenant MVP. The core pipeline, Go SDK, CLI, and
-an OpenTelemetry adapter are implemented and tested. Not yet built: the
-OpenTelemetry Collector processor, sequence/ML-based anomaly detection,
-an Alert & Notification system (a `Decision` does not yet produce an
-externally-delivered alert — see
+`v0.1`–`v0.3` are shipped: the core pipeline, Go SDK, CLI, a persistent
+file-backed store, an inbound OpenTelemetry adapter, outbound
+`trustvian.*` result attributes, a standalone OTel Collector processor
+([`processor/`](processor/README.md)), and an opt-in hour-of-day
+time-pattern anomaly signal are all implemented, tested, and
+benchmarked. Not yet built: day-of-week seasonality, sequence/ML-based
+anomaly detection, an Alert & Notification system (a `Decision` does
+not yet produce an externally-delivered alert — see
 [`trustvian-project-spec.md` § 18](trustvian-project-spec.md#18-alert--notification-system)
-for the planned architecture), and everything under Trustvian
-Control/Cloud (dashboard, multi-tenancy, SSO). See
+for the planned architecture), AI-agent session/delegation concepts, an
+MCP interface, and everything under Trustvian Control/Cloud (dashboard,
+multi-tenancy, SSO). See
 [`trustvian-project-spec.md`](trustvian-project-spec.md) for the full
 long-term vision and [`CLAUDE.md`](CLAUDE.md) for the engineering
 conventions this repository follows. For guides, worked examples, and
 four real-world use cases with verified input/output, see
-[`docs/`](docs/README.md). For what's planned next and in what order,
-see [`docs/ROADMAP.md`](docs/ROADMAP.md) and its detailed task
+[`docs/`](docs/README.md). For what's shipped, in progress, and planned
+next, see [`docs/ROADMAP.md`](docs/ROADMAP.md) and its detailed task
 breakdown under [`docs/tasks/`](docs/tasks/).
 
 ## How it works
@@ -175,10 +179,14 @@ is a self-contained adapter that maps a finished span
 (`sdktrace.ReadOnlySpan`) into an `event.Event` using standard semantic
 conventions (HTTP, DB, RPC, `deployment.environment.name`,
 `service.name`) plus four documented `trustvian.*` override attributes
-for what no convention covers yet. An OpenTelemetry Collector processor
-is planned as a separate deliverable — it needs the heavier
-collector-builder toolchain, which is deliberately kept out of this
-module's dependency graph.
+for what no convention covers yet, and derives five outbound
+`trustvian.*` result attributes (`AttributesFromResult`) for a caller
+to attach to a span. A standalone OTel Collector processor
+([`processor/`](processor/README.md), a separate Go module using the
+heavier collector-builder toolchain deliberately kept out of this
+module's dependency graph) consumes this SDK's public API to score
+every span passing through a Collector pipeline. See
+[`docs/OPENTELEMETRY.md`](docs/OPENTELEMETRY.md) for the full mapping.
 
 ## Project layout
 

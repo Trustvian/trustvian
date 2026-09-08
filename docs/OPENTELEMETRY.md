@@ -7,10 +7,12 @@ dependency — see
 [Architecture § package boundaries](ARCHITECTURE.md#package-boundaries).
 
 It's currently `internal/`, so — like `Policy` and the `Config` types —
-it's usable by code inside this repository (this is where a future
-OpenTelemetry Collector processor, itself a separate module/deliverable,
-would use it) but not yet importable from a separate Go module. See
-[Go SDK Guide § the public/internal boundary today](sdk-guide.md#the-publicinternal-boundary-today).
+it's usable by code inside this repository but not yet importable from
+a separate Go module. Note this means the shipped [OTel Collector
+processor](#the-otel-collector-processor) does *not* use it — see that
+section for why it necessarily carries its own parallel mapping code
+instead. See [Go SDK Guide § the public/internal boundary
+today](sdk-guide.md#the-publicinternal-boundary-today).
 
 ## What it does
 
@@ -96,9 +98,11 @@ func AttributesFromResult(result trustvian.Result) []attribute.KeyValue
 A pure function deriving the outbound `trustvian.*` attributes from a
 `Result`, for a caller to attach to a span or export alongside one. It
 does not write to a live span itself — attaching the returned
-attributes to a real span (e.g. inside a future OTel Collector
-processor, [task 009](tasks/009-otel-collector.md)) is that caller's
-concern, not this adapter's. This is the one function in `internal/otel`
+attributes to a real span is that caller's concern, not this adapter's
+(the shipped [OTel Collector processor](#the-otel-collector-processor),
+[task 009](tasks/009-otel-collector.md), is one such caller, though it
+writes its own parallel attribute set rather than calling this function
+directly — see that section for why). This is the one function in `internal/otel`
 that depends on the root `trustvian` package rather than only `event`;
 verified via `go list -deps` to introduce no import cycle and to leave
 `internal/otel` the sole package in this module that imports

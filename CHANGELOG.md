@@ -6,6 +6,90 @@ All notable changes to Trustvian are documented in this file. Prior to
 point where a tag first exists for something external users can
 actually depend on.
 
+## Unreleased
+
+Work merged to `develop` since `v0.2.0`, not yet tagged.
+
+### Added
+
+- **Hour-of-day time-pattern anomaly signal**
+  ([task 017](docs/tasks/017-baseline-time-patterns.md)) —
+  `baseline.FingerprintStats` gained `HourActivity [24]float64` (a
+  per-UTC-hour EWMA of traffic share) and a dedicated
+  `TimePatternObservations` maturity counter, gating the signal
+  independently of `Count` so a pre-existing persisted `FileStore`
+  record — where `HourActivity` unmarshals to its zero array — is
+  correctly treated as immature rather than falsely mature-with-empty-
+  data. `anomaly.Score` gained a sixth signal, `time_pattern_deviation`,
+  shipped **opt-in** like `frequency_deviation` before it
+  (`Config.TimePatternWeight` defaults to `0`). An empirically
+  discovered result: reusing the existing `emaAlpha = 0.2` for
+  `HourActivity` was tried first and rejected — it made uniform,
+  patternless hour-of-day traffic look sharply time-anomalous purely as
+  a measurement-phase artifact — so a new, slower, separately-justified
+  `hourActivityAlpha = 0.02` constant exists instead. Day-of-week
+  seasonality was scoped and explicitly **not** built; it moved to
+  [ROADMAP.md § Future research](docs/ROADMAP.md#future-research) as a
+  separate vertical slice. See
+  [DOMAIN.md § Baseline / § Anomaly](docs/DOMAIN.md).
+
+### Changed
+
+- [docs/ROADMAP.md](docs/ROADMAP.md)'s "Current status" section now
+  reflects `v0.3` (baseline & anomaly depth) as shipped on `develop`.
+
+## v0.2.0 — OpenTelemetry maturation
+
+Completes the OpenTelemetry integration story in the outbound
+direction, and takes the first step toward a production Collector
+deployment — without pulling OTel, or the Collector toolchain, into the
+core.
+
+### Added
+
+- **Outbound `trustvian.*` result attributes**
+  ([task 008](docs/tasks/008-otel.md)) —
+  `internal/otel.AttributesFromResult` derives five outbound attributes
+  (`trustvian.anomaly.score`, `trustvian.trust.score`,
+  `trustvian.risk.level`, `trustvian.decision`,
+  `trustvian.fingerprint.id`) from a `Result`, for a caller to attach to
+  a span or export alongside one. `trustvian.behavior.id` — named in the
+  original spec alongside the five above but never defined beyond its
+  name — is deliberately not implemented: every plausible meaning
+  collapses into `Fingerprint.ID`, and CLAUDE.md's OpenTelemetry section
+  is explicit about not inventing telemetry attributes without
+  documenting them. Verified via `go list -deps` that this introduces no
+  import cycle and that `internal/otel` remains the sole package in this
+  module depending on OpenTelemetry. See
+  [OPENTELEMETRY.md § Trustvian output
+  attributes](docs/OPENTELEMETRY.md#trustvian-output-attributes).
+- **Standalone OTel Collector processor**
+  ([task 009](docs/tasks/009-otel-collector.md)) —
+  [`processor/`](processor/README.md), a separate Go module
+  (`trustvian-processor`) implementing a real OpenTelemetry Collector
+  traces processor: maps `ptrace.Span` into Trustvian events, runs them
+  through the public `Engine` API, and writes the outbound
+  `trustvian.*` attributes onto enriched spans before forwarding them.
+  Verified end-to-end against a real OTel-SDK span sent over real
+  OTLP/gRPC to a real running Collector binary built with this
+  processor. Necessarily a parallel implementation of task 008's
+  mapping/attribute code, not a reuse of it — `internal/otel` is
+  unreachable from a genuinely separate module, and the Collector's
+  `ptrace.Span` data model shares no relationship with the SDK's
+  `sdktrace.ReadOnlySpan`. [ADR 0002](docs/adr/0002-public-api-boundary.md)'s
+  public API boundary was considered and deliberately not revisited, so
+  the processor runs Trustvian's zero-configuration default `Policy`
+  today — every span it scores resolves to `trustvian.decision =
+  "observe_only"` — documented as a known limitation. See
+  [`processor/README.md` §
+  Configuration](processor/README.md#configuration).
+
+### Changed
+
+- [docs/ROADMAP.md](docs/ROADMAP.md)'s "Current status" section now
+  reflects `v0.2` as shipped; `v0.3` (baseline & anomaly depth) became
+  the new "next up."
+
 ## v0.1.0 — Behavioral core hardening & first public release
 
 The core pipeline — `Event → Features → Fingerprint → Baseline →
