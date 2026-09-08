@@ -43,28 +43,43 @@ baseline (see
 and a dedicated, threat-organized security test suite (see
 [SECURITY.md](SECURITY.md)) all shipped as part of this milestone.
 
-What's **not** yet true, concretely — the `v0.2`-and-later gaps this
-roadmap's remaining milestones exist to close:
+**`v0.2` — OpenTelemetry maturation is also shipped.** Both of its
+tasks are done: [008](tasks/008-otel.md) added the five well-defined
+outbound `trustvian.*` attributes (`internal/otel.AttributesFromResult`;
+`trustvian.behavior.id` deliberately omitted — see
+[OPENTELEMETRY.md](OPENTELEMETRY.md#trustvian-output-attributes)), and
+[009](tasks/009-otel-collector.md) added a real, working OTel Collector
+processor as a separate module ([`processor/`](../processor/) — see its
+own [README](../processor/README.md)), verified end-to-end against a
+real OTel-SDK span sent over real OTLP/gRPC to a real running Collector
+binary.
+
+What's **not** yet true, concretely — the gaps this roadmap's remaining
+milestones exist to close:
 
 - No CI/CD, no container image.
-- Of the six *outbound* `trustvian.*` OTel enrichment attributes named
-  in the original spec, five are implemented as of
-  [task 008](tasks/008-otel.md)
-  (`internal/otel.AttributesFromResult`); the sixth
-  (`trustvian.behavior.id`) is deliberately not — see
-  [OPENTELEMETRY.md](OPENTELEMETRY.md#trustvian-output-attributes) for
-  why.
-- No OTel Collector processor — nothing yet attaches
-  `AttributesFromResult`'s output to a live span or exports it; that's
-  [task 009](tasks/009-otel-collector.md), next up.
+- `processor/`'s processor runs Trustvian's default `Policy` only —
+  every span it scores resolves to `observe_only`, since a genuinely
+  separate module cannot construct a custom `Policy` today (see
+  [ADR 0002](adr/0002-public-api-boundary.md), deliberately not
+  revisited by task 009 — see
+  [`processor/README.md` § Configuration](../processor/README.md#configuration)).
+- Time-based pattern awareness (day-of-week/hour-of-day seasonality) —
+  `v0.3`'s tentative scope, not yet even committed to, let alone built.
+- No Alert & Notification implementation — the architecture is
+  specified ([`trustvian-project-spec.md` § 18](../trustvian-project-spec.md#18-alert--notification-system))
+  and roadmapped (below), but nothing under this phase has been built.
 - AI-agent event types work today only through the generic `Event`
   model (`ActorTypeAIAgent` + `OperationCategoryTool`) — no session,
   delegation, or tool-sequence concepts exist.
 - No MCP interface, no Trustvian Control.
 
-**Next up: `v0.2` — OpenTelemetry maturation** (see below), completing
-the outbound OTel integration story now that `v0.1`'s `Result` shape is
-stable enough to write an exporter against.
+**Next up: `v0.3` — Baseline & anomaly depth** (see below) is the
+roadmap's next numbered milestone in sequence. The **Alert &
+Notification phase**'s Foundation stage is also now unblocked (it only
+depends on `v0.1`'s stable `Result` shape, not on `v0.2`) but is not
+scoped as a task file yet — which of the two starts first is a decision
+for whoever picks up the next task, not predetermined by this document.
 
 This roadmap's job is to close the remaining gaps in the order that
 respects the roadmap principles (deterministic before ML, security
@@ -185,10 +200,27 @@ the core.
   full rationale and mapping table. Verified via `go list -deps` that
   this introduces no import cycle and that `internal/otel` remains the
   sole package in this module depending on OpenTelemetry.
-- **009 OTel Collector processor — next.** Design, and build a minimal
-  version of, a Collector processor as a **separate Go module**,
-  consuming this module's public API exactly like any other embedder,
-  now that 008 gives it something to enrich a span with.
+- **009 OTel Collector processor — done.** [`processor/`](../processor/)
+  (module `trustvian-processor`) is a minimal, working Collector
+  processor consuming this module's public API exactly like any other
+  embedder — verified via `go list -deps` in *this* module's root that
+  `go.mod`/`go.sum` here are completely unaffected by its existence.
+  Its own `ptrace.Span → event.Event` mapping and `Result → attributes`
+  writer are necessarily parallel implementations of task 008's, not
+  reuses of it: `ptrace.Span` (the Collector's pdata model) shares no
+  relationship with `sdktrace.ReadOnlySpan` (the SDK model
+  `internal/otel.EventFromSpan` requires), and `internal/otel` is
+  unreachable from a separate module regardless. [ADR
+  0002](adr/0002-public-api-boundary.md)'s public API boundary was
+  considered and explicitly *not* revisited — building this processor
+  isn't the "real external consumer" trigger that ADR named, so it
+  runs Trustvian's default `Policy` (every span resolves to
+  `observe_only` today), documented as a known limitation rather than
+  worked around. See [`processor/README.md`](../processor/README.md)
+  for the full design and a real, captured end-to-end run (a genuine
+  OTel-SDK span sent over real OTLP/gRPC to a real running Collector
+  binary built with this processor, correctly enriched with all five
+  `trustvian.*` attributes).
 
 **Non-goals.** No distributed Trustvian server, no processor-side
 persistence beyond what `v0.1`'s `Store` already provides, no
