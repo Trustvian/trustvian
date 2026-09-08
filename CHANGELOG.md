@@ -6,9 +6,12 @@ All notable changes to Trustvian are documented in this file. Prior to
 point where a tag first exists for something external users can
 actually depend on.
 
-## Unreleased
+## v0.3.0 — Baseline & anomaly depth
 
-Work merged to `develop` since `v0.2.0`, not yet tagged.
+Adds the one piece of time-based pattern awareness the roadmap
+committed to for this milestone — hour-of-day seasonality — as a new,
+deterministic, opt-in anomaly signal. No new pipeline stages; day-of-week
+seasonality was explicitly scoped and deferred, not built.
 
 ### Added
 
@@ -36,7 +39,8 @@ Work merged to `develop` since `v0.2.0`, not yet tagged.
 ### Changed
 
 - [docs/ROADMAP.md](docs/ROADMAP.md)'s "Current status" section now
-  reflects `v0.3` (baseline & anomaly depth) as shipped on `develop`.
+  reflects `v0.3` (baseline & anomaly depth) as complete and
+  release-ready.
 
 ## v0.2.0 — OpenTelemetry maturation
 
