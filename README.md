@@ -17,10 +17,12 @@ Trustvian determines whether what it did should be trusted.
 ## Status
 
 This is an early, single-tenant MVP. The core pipeline, Go SDK, CLI, and
-an OpenTelemetry adapter are implemented and tested. Not yet built:
-persistent baseline storage (the current store is in-memory only — see
-[Limitations](#limitations)), the OpenTelemetry Collector processor,
-sequence/ML-based anomaly detection, and everything under Trustvian
+an OpenTelemetry adapter are implemented and tested. Not yet built: the
+OpenTelemetry Collector processor, sequence/ML-based anomaly detection,
+an Alert & Notification system (a `Decision` does not yet produce an
+externally-delivered alert — see
+[`trustvian-project-spec.md` § 18](trustvian-project-spec.md#18-alert--notification-system)
+for the planned architecture), and everything under Trustvian
 Control/Cloud (dashboard, multi-tenancy, SSO). See
 [`trustvian-project-spec.md`](trustvian-project-spec.md) for the full
 long-term vision and [`CLAUDE.md`](CLAUDE.md) for the engineering
@@ -189,7 +191,7 @@ trustvian/
 │   ├── features/          # Event -> stable/volatile Features
 │   ├── fingerprint/       # Features -> deterministic Fingerprint
 │   ├── baseline/          # statistical model (EWMA mean/variance, maturity)
-│   ├── store/              # Baseline persistence port + in-memory implementation
+│   ├── store/              # Baseline persistence port + in-memory and file-backed implementations
 │   ├── anomaly/            # Features + Baseline -> Anomaly (noisy-OR combination)
 │   ├── trust/               # Anomaly + identity + context -> Trust + RiskLevel
 │   ├── policy/               # data-driven rule evaluation -> Decision
@@ -204,12 +206,15 @@ the reasoning.
 
 ## Limitations
 
-- **No persistent baseline storage yet.** The only `Store`
-  implementation is in-memory; a `Baseline` does not survive a process
-  restart. `trustvian baseline build` therefore only proves out its
-  mechanism within a single CLI invocation — a real deployment builds
-  its baseline once, inside the long-running process that then serves
-  `Analyze` calls.
+- **Persistent baseline storage exists but isn't the default.**
+  `store.FileStore` (a JSON file on disk, flushed synchronously after
+  every `Observe`) survives a process restart; `store.InMemory` remains
+  `NewEngine`'s default and does not. Switching is a one-line
+  `trustvian.WithStore(...)` change — see
+  [`docs/ARCHITECTURE.md` § storage boundary](docs/ARCHITECTURE.md#storage-boundary).
+  The CLI's `trustvian baseline build` still only proves out its
+  mechanism within a single invocation regardless of `Store`, since the
+  CLI itself doesn't yet expose a flag to select `FileStore`.
 - **Policy and thresholds aren't yet a public package.** `WithPolicy`,
   `WithAnomalyConfig`, `WithTrustConfig`, `WithStore`, and
   `WithContextRisk` take types from this module's `internal/` packages,

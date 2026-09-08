@@ -321,7 +321,10 @@ renders that whole record as one human-readable summary, so answering
 hand-assembling the story from five separate fields.
 
 This document describes the domain model as it exists today. Planned
-extensions to it (a frequency-deviation anomaly signal, AI-agent
-session/delegation fields, and others) are scoped in
+extensions to it (AI-agent session/delegation fields, an `Alert`
+concept downstream of `Decision` — see
+[ROADMAP.md § Alert & Notification phase](ROADMAP.md#alert--notification-phase)
+and [`trustvian-project-spec.md` § 18](../trustvian-project-spec.md#18-alert--notification-system)
+for the architecture, not implemented here — and others) are scoped in
 [ROADMAP.md](ROADMAP.md) and [`tasks/`](tasks/) — each will
 update this document when it actually ships, not before.

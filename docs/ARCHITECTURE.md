@@ -245,6 +245,30 @@ and [`tasks/016-control.md`](tasks/016-control.md) for this constraint
 recorded as a standing placeholder ahead of any real Control design
 work.
 
+## Relationship to a future Alert & Notification layer
+
+Nothing in this repository implements alerting or notification
+delivery today. If and when it's built, the relationship is the same
+adapter shape as OpenTelemetry and storage: a layer that consumes this
+module's output without becoming part of the pipeline or a dependency
+the core links against.
+
+```
+Decision (internal/policy, via Engine.Result)  --(future)-->  Alert Evaluation  -->  Notification Dispatcher  -->  Alert Sink(s)
+```
+
+`Decision` and `Alert` are different questions — "what should Trustvian
+do" versus "should this be communicated externally" — so an alert
+layer reads `Result` the same way any other embedder would; it does not
+add a new pipeline stage, does not change `Decision`'s meaning, and
+gains no special access `internal/otel` or a future Control/Cloud
+consumer doesn't already have. See
+[`trustvian-project-spec.md` § 18](../trustvian-project-spec.md#18-alert--notification-system)
+for the full architecture and [ROADMAP.md § Alert & Notification
+phase](ROADMAP.md#alert--notification-phase) for sequencing — neither
+is implemented, designed at the package level, or scheduled ahead of
+what those documents state.
+
 ## Hot-path protection in practice
 
 This isn't just a stated principle — it's enforced by benchmarking.

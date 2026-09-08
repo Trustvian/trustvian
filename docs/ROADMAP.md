@@ -223,6 +223,82 @@ pre-committing to unscoped work.
 
 ---
 
+## Alert & Notification phase
+
+**Objective.** Turn a `Decision` into an actionable, externally-delivered
+notification, without changing what a `Decision` is or reordering the
+existing pipeline. See
+[`trustvian-project-spec.md` § 18](../trustvian-project-spec.md#18-alert--notification-system)
+for the full architecture this phase implements against — this entry is
+the implementation-ordering summary, not a restatement of it.
+
+Conceptually, this phase adds one thing downstream of the existing
+pipeline, never inside it:
+
+```
+Event → Features → Fingerprint → Baseline → Anomaly → Trust → Policy → Decision
+                                                                            ↓
+                                                                  Alert Evaluation
+                                                                            ↓
+                                                                          Alert
+                                                                            ↓
+                                                              Notification Dispatcher
+                                                                            ↓
+                                                                     Alert Sink(s)
+```
+
+**Scope**, split into three stages by how load-bearing they are — no
+dedicated task file numbers are reserved yet; each stage gets its own
+task file (following the existing template) once the prior stage is
+done and its real shape is known, per this roadmap's own "small
+vertical slices" principle:
+
+- **Foundation** (architecture + a first working slice): the `Alert`
+  domain concept (reusing `Trust`/`Anomaly`/`Decision`/`Event.Actor`/
+  `Event.Target`/`Result.Explain()` — no parallel model), the severity
+  concept, a minimal Alert Evaluation matcher (flat AND-of-optional-
+  fields on severity/decision/risk/actor type/target category/anomaly
+  score/trust score — no combinators, mirroring `internal/policy.Condition`'s
+  existing discipline), the `AlertSink` abstraction, a generic HTTP
+  webhook sink, and the first version of the versioned webhook payload
+  contract. This is the only stage that must ship before the rest are
+  useful.
+- **Reliability** (depends on Foundation): delivery retry with
+  exponential backoff, delivery status, idempotency, deduplication, and
+  a cooldown window — closing the "one incident, one alert" and "a
+  flaky endpoint doesn't lose alerts" gaps Foundation deliberately
+  leaves open.
+- **Additional sinks and governance** (depends on Foundation; mostly
+  Trustvian Control/Enterprise territory per the OSS/Enterprise
+  boundary in the spec's § 18.16): Slack, Microsoft Teams, PagerDuty,
+  and anything past those, plus centralized notification management,
+  advanced alert rules, multi-tenant configuration, escalation, alert
+  history, delivery observability, RBAC, and audit. The generic webhook
+  from Foundation already covers most of what these providers offer via
+  automation platforms (n8n, SOAR, custom relays), so this stage is
+  explicitly not required for the OSS core to be useful.
+
+**Non-goals (this phase, all stages).** No incident-management domain
+(an `Alert` is one notification-worthy event, not a grouped
+investigation — see spec § 18.13); no boolean combinators or a general
+expression language for alert rules in the first version; no Slack/Teams/
+PagerDuty SDK, HTTP client, Kafka, Redis, or PostgreSQL dependency added
+to the core detection engine merely to support alerting — every provider
+integration lives behind `AlertSink`, the same way `internal/otel` is
+the only package depending on OpenTelemetry today.
+
+**Dependencies.** `v0.1`'s stable `Result` shape (Alert Evaluation reads
+`Result`; a still-moving `Result` shape would mean redesigning the
+`Alert` view underneath it). Not blocked on `v0.2` or `v0.3` — Alert
+Evaluation depends on `Decision`/`Trust`/`Anomaly`, not on OTel outbound
+attributes or baseline/anomaly depth — but sequenced here, after those,
+because neither this roadmap nor the spec commits to shipping it before
+them.
+
+**Acceptance criteria.** Defined when the Foundation stage's own task
+file is written — not before, per "small vertical slices" and this
+roadmap's standing policy of not pre-committing to unscoped work.
+
 ## AI Agent phase
 
 **Objective.** Extend the *existing* event model for richer AI-agent
