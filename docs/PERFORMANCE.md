@@ -62,6 +62,7 @@ versus this session's general measurement noise.
 | `anomaly.Score` (familiar, no signal fires) | 54.1 | 0 | 0 |
 | `anomaly.Score` (novel, every signal fires) | 335.3 | 448 | 5 |
 | `otel.EventFromSpan` | 385.8 | 696 | 10 |
+| `otel.AttributesFromResult` | 59.9 | 320 | 1 |
 | `store.InMemory.Observe` (same key, sequential) | 345.7 | 464 | 3 |
 | `store.InMemory.Observe` (same key, 12-way parallel) | 363.1 | 464 | 3 |
 | `store.InMemory.Observe` (distinct keys, sequential) | 343.8 | 464 | 3 |
@@ -218,6 +219,18 @@ request-method attribute, a measured duration — the same shape as
 not inside it. This closes the first item task 011 was scoped to
 measure (see [tasks/011-performance.md](tasks/011-performance.md)) —
 there was no reason to expect it to be expensive, and it isn't.
+
+**`otel.AttributesFromResult` (task 008) is the cheapest adapter
+function in this table.** At 59.9ns/320B/1 alloc — a single
+five-element `[]attribute.KeyValue` slice, the only allocation — it
+costs roughly a sixth of `otel.EventFromSpan`'s 385.8ns. This is
+expected: it's pure field extraction and type conversion (`float64`,
+`string(...)`) over a `Result` that's already fully computed, with no
+map construction or ID-stringification work like `EventFromSpan`'s
+`attributeMap`/`SpanID().String()` calls. It is not on the
+`Engine.Analyze` hot path itself — it runs after a `Result` already
+exists, for a caller (e.g. a future OTel Collector processor,
+[task 009](tasks/009-otel-collector.md)) choosing to export it.
 
 **`store.InMemory`'s per-`Observe` cost does not grow with the number
 of distinct keys it holds — allocation-wise, at least.** Across 100,
