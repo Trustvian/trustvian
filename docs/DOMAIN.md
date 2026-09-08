@@ -359,11 +359,66 @@ renders that whole record as one human-readable summary, so answering
 "why did Trustvian allow/block/challenge this" never requires
 hand-assembling the story from five separate fields.
 
+## Alert
+
+`alert.Alert` (package `alert`, a public package alongside `event` —
+see [ADR 0007](adr/0007-alert-package-is-public.md) for why it isn't
+under `internal/`) is the notification-worthy summary of one behavioral
+decision, produced by `alert.Evaluate(Result, []Rule) (Alert, bool)` —
+strictly downstream of `Decision`, never a pipeline stage, never
+written back into a `Result`. See
+[ARCHITECTURE.md § Relationship to a future Alert & Notification
+layer](ARCHITECTURE.md#relationship-to-a-future-alert--notification-layer)
+and [`trustvian-project-spec.md` §
+18](../trustvian-project-spec.md#18-alert--notification-system) for the
+full architecture; in domain terms:
+
+- **`Alert` is a view, not a parallel model.** Every field is read from
+  an existing `Result` field — `Decision`, `Trust.Risk`, `Trust.Score`,
+  `Anomaly.Score`, `Event.Actor`, `Event.Target`, `Fingerprint.ID` — plus
+  `Reasons`, built from `Anomaly.Contributors` and `Explanation`, the
+  same material `Result.Explain()` already renders. Nothing here is a
+  second, competing copy of trust score, anomaly score, risk, decision,
+  actor, target, or explanation logic.
+- **Severity is a genuinely new concept**, distinct from every other
+  output value: `severity != risk`, `severity != anomaly score`,
+  `severity != trust score`, `severity != decision`. It is one of
+  `INFO`/`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`, and is always exactly what
+  the matched `Rule` configured — never inferred from
+  risk/decision/anomaly/trust by an implicit mapping. A `BLOCK` at
+  `RiskCritical` might always be `CRITICAL` by an operator's own rule; a
+  `CHALLENGE` at `RiskMedium` on a first-time integration might
+  reasonably be `INFO`. No built-in mapping ships.
+- **Alert Evaluation is a flat, first-match-wins matcher**
+  (`alert.Condition`/`alert.Rule`), shaped exactly like
+  `internal/policy.Condition`: every field optional, zero value means
+  "don't care," no AND/OR/NOT combinators. It is a structurally
+  independent, read-only consumer of `Result` — it does not import or
+  couple back into `internal/policy`, and a `Decision` never
+  automatically implies an `Alert`. Unlike `policy.Policy.Evaluate`,
+  there is no mandatory default and no fail-closed requirement: an
+  empty or non-matching rule set simply means "no alert," a safe,
+  inert outcome — a deliberate, documented asymmetry with
+  `policy.Policy.Evaluate`, not an oversight.
+- **`Sink`** (conceptually `AlertSink` in the spec) is the one-method
+  boundary every notification provider implements —
+  `Send(ctx context.Context, a Alert) error`. `WebhookSink` is this
+  stage's one implementation: a generic HTTPS webhook, signing every
+  delivery with HMAC-SHA256 over a timestamp-bound payload (see
+  [SECURITY.md § Alert/notification delivery
+  integrity](SECURITY.md#alertnotification-delivery-integrity)) and
+  enforcing a bounded timeout and payload size. No retry, backoff,
+  deduplication, or delivery-state tracking exists yet — that is the
+  separately-scoped Reliability stage
+  ([ROADMAP.md § Alert & Notification
+  phase](ROADMAP.md#alert--notification-phase)), not this one.
+- **The webhook payload is a versioned contract**
+  (`alert.Envelope{Version, Alert}`, currently `alert.PayloadVersion =
+  "1"`) from its first release, not an internal struct serialized as a
+  convenience — the same "no silent reinterpretation" discipline
+  `internal/fingerprint`'s versioned hash already established.
+
 This document describes the domain model as it exists today. Planned
-extensions to it (AI-agent session/delegation fields, an `Alert`
-concept downstream of `Decision` — see
-[ROADMAP.md § Alert & Notification phase](ROADMAP.md#alert--notification-phase)
-and [`trustvian-project-spec.md` § 18](../trustvian-project-spec.md#18-alert--notification-system)
-for the architecture, not implemented here — and others) are scoped in
-[ROADMAP.md](ROADMAP.md) and [`tasks/`](tasks/) — each will
+extensions to it (AI-agent session/delegation fields, and others) are
+scoped in [ROADMAP.md](ROADMAP.md) and [`tasks/`](tasks/) — each will
 update this document when it actually ships, not before.

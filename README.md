@@ -16,18 +16,26 @@ Trustvian determines whether what it did should be trusted.
 
 ## Status
 
-`v0.1`–`v0.3` are released: the core pipeline, Go SDK, CLI, a persistent
-file-backed store, an inbound OpenTelemetry adapter, outbound
-`trustvian.*` result attributes, a standalone OTel Collector processor
-([`processor/`](processor/README.md)), and an opt-in hour-of-day
-time-pattern anomaly signal are all implemented, tested, and
-benchmarked. Not yet built: day-of-week seasonality, sequence/ML-based
-anomaly detection, an Alert & Notification system (a `Decision` does
-not yet produce an externally-delivered alert — see
+`v0.1`–`v0.3` are released, and `v0.4` — Alert & Notification
+Foundation — is implemented (tagged shortly): the core pipeline, Go
+SDK, CLI, a persistent file-backed store, an inbound OpenTelemetry
+adapter, outbound `trustvian.*` result attributes, a standalone OTel
+Collector processor ([`processor/`](processor/README.md)), an opt-in
+hour-of-day time-pattern anomaly signal, and a public
+[`alert`](docs/DOMAIN.md#alert) package — turning a `Result`/`Decision`
+into a minimal, explainable `Alert`, evaluated by a
+`policy.Condition`-shaped rule matcher and delivered to a generic,
+HMAC-signed HTTPS webhook, all reachable directly from the Go SDK with
+no OpenTelemetry involvement (see
+[`examples/alert-webhook`](examples/alert-webhook/README.md)) — are all
+implemented, tested, and benchmarked. Not yet built: day-of-week
+seasonality, sequence/ML-based anomaly detection, alert delivery
+retry/deduplication/cooldown and any provider-specific sink
+(Slack/Teams/PagerDuty — see
 [`trustvian-project-spec.md` § 18](trustvian-project-spec.md#18-alert--notification-system)
-for the planned architecture), AI-agent session/delegation concepts, an
-MCP interface, and everything under Trustvian Control/Cloud (dashboard,
-multi-tenancy, SSO). See
+for the planned architecture beyond Foundation), AI-agent
+session/delegation concepts, an MCP interface, and everything under
+Trustvian Control/Cloud (dashboard, multi-tenancy, SSO). See
 [`trustvian-project-spec.md`](trustvian-project-spec.md) for the full
 long-term vision and [`CLAUDE.md`](CLAUDE.md) for the engineering
 conventions this repository follows. For guides, worked examples, and
@@ -194,6 +202,7 @@ every span passing through a Collector pipeline. See
 trustvian/
 ├── trustvian.go, engine.go, options.go, result.go   # public SDK (root package)
 ├── event/               # public domain vocabulary: Event, Actor, Operation, Target, Context
+├── alert/                # public: Result/Decision -> Alert, Evaluate, Sink, WebhookSink
 ├── cmd/trustvian/        # CLI
 ├── internal/
 │   ├── features/          # Event -> stable/volatile Features
@@ -207,8 +216,8 @@ trustvian/
 └── trustvian-project-spec.md, CLAUDE.md   # vision and engineering conventions
 ```
 
-Only the root package and `event` are importable from outside this
-module — everything else is intentionally `internal/`. See
+Only the root package, `event`, and `alert` are importable from outside
+this module — everything else is intentionally `internal/`. See
 [`.claude/rules/architecture.md`](.claude/rules/architecture.md) for
 the reasoning.
 

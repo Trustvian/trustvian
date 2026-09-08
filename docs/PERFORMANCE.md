@@ -166,6 +166,46 @@ same reason `frequencySignal`'s addition in task 004 didn't move this
 benchmark's allocation count either (see "The common case is the cheap
 case, by design" above).
 
+### v0.4 task 018 (Alert & Notification Foundation)
+
+New package, so a new subsection rather than an addition to the main
+table above — nothing existing changed. Measured same environment (Go
+1.27, darwin/arm64, Apple M3 Pro), 2026-09-08, `go test ./alert/... -run
+'^$' -bench . -benchmem -cpu 1`:
+
+| Benchmark | ns/op | B/op | allocs/op |
+|---|---:|---:|---:|
+| `alert.Evaluate` (no rule matches) | 41.8 | 0 | 0 |
+| `alert.Evaluate` (a rule matches) | 494.5 | 208 | 5 |
+| `json.Marshal(alert.NewEnvelope(...))` | 1,051 | 992 | 3 |
+
+**The no-match path is zero-allocation, verified rather than assumed.**
+`BenchmarkEvaluateNoMatch` confirms
+[task 018](tasks/018-alert-notification-foundation.md)'s own
+Acceptance Criteria bullet directly: a `Result` that matches no
+configured `Rule` costs nothing beyond the `Condition.Matches` field
+comparisons themselves — no `Alert` is constructed, no ID is generated,
+no JSON is ever built. This is the same "only pay for what actually
+fires" discipline `anomaly.Score`'s signal functions already follow
+(see "The common case is the cheap case, by design" above).
+
+**Marshaling is a separate cost from evaluation, on purpose.**
+`BenchmarkNewEnvelopeMarshal` is measured independently from
+`BenchmarkEvaluateMatch` specifically to keep this visible: `Evaluate`
+never marshals JSON itself (992 B/3 allocs from `encoding/json`'s own
+reflection-based marshaling only happens inside `WebhookSink.Send`,
+which only runs once an `Alert` has already been produced and a caller
+has chosen to deliver it) — a `Result` that matches a `Rule` but whose
+caller decides not to deliver the resulting `Alert` never pays this
+cost at all.
+
+**`BenchmarkEvaluateMatch`'s 208 B / 5 allocs is `alert.New`'s cost**,
+dominated by `newRandomID` (a 16-byte `crypto/rand.Read` plus a hex
+encode and string concatenation) and `reasonsFromResult`'s slice
+allocation — both proportional to "how much there is to explain," the
+same explainability-costs-proportionally-not-unconditionally property
+`anomaly.Score`'s worst-case benchmark already established.
+
 ## Reading the numbers
 
 **Session-to-session `ns/op` moved broadly; allocation counts didn't —

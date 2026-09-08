@@ -372,7 +372,7 @@ it does not build secret storage.
 
 **Cross-reference, not re-argued:** this closes
 [SECURITY.md § Future: Alert/notification delivery
-integrity](../SECURITY.md#future-alertnotification-delivery-integrity)'s
+integrity](../SECURITY.md#alertnotification-delivery-integrity)'s
 named threat once implemented — that entry gets a real test reference
 at implementation time, per its own "Future work" note.
 
@@ -456,7 +456,7 @@ pass):
   domain concept, severity, and the evaluation matcher, matching this
   file's own Domain Model section once implemented.
 - [SECURITY.md § Future: Alert/notification delivery
-  integrity](../SECURITY.md#future-alertnotification-delivery-integrity):
+  integrity](../SECURITY.md#alertnotification-delivery-integrity):
   promote from "not implemented" to a real entry in the Test Index
   table, with concrete test references.
 - [PERFORMANCE.md](../PERFORMANCE.md): new benchmark numbers for Alert

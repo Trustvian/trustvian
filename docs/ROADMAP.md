@@ -62,14 +62,16 @@ before it) — see the milestone section below for the full writeup,
 including the day-of-week scope decision and the empirically-discovered
 `hourActivityAlpha` design correction.
 
-**`v0.4` — Alert & Notification Foundation is scoped, not yet
-implemented.** [Task 018](tasks/018-alert-notification-foundation.md)
-defines a minimal, explainable, externally deliverable `Alert` derived
-from an existing `Result`/`Decision` — a severity concept, a
-`policy.Condition`-shaped Alert Evaluation matcher, the conceptual
-`AlertSink` boundary, and a generic HTTP webhook as the one delivery
-mechanism — without changing `Decision` semantics or the core pipeline.
-No code exists yet; see the milestone section below.
+**`v0.4` — Alert & Notification Foundation is implemented, not yet
+tagged.** [Task 018](tasks/018-alert-notification-foundation.md) added
+a new public package, `alert` (sibling to `event` — see
+[ADR 0007](adr/0007-alert-package-is-public.md) for why it isn't
+`internal/`): `Alert`, a `Severity` concept, a
+`policy.Condition`-shaped Alert Evaluation matcher (`Condition`/`Rule`/
+`Evaluate`), the `Sink` interface, and `WebhookSink` — a generic,
+HMAC-signed HTTPS webhook, the one delivery mechanism this stage ships
+— without changing `Decision` semantics or touching the core pipeline
+at all. See the milestone section below for the full writeup.
 
 What's **not** yet true, concretely — the gaps this roadmap's remaining
 milestones exist to close:
@@ -83,22 +85,22 @@ milestones exist to close:
   [`processor/README.md` § Configuration](../processor/README.md#configuration)).
 - Day-of-week seasonality — moved to [Future research](#future-research)
   during `v0.3` scoping, not built (see the `v0.3` section below).
-- No Alert & Notification implementation — the architecture is
-  specified ([`trustvian-project-spec.md` § 18](../trustvian-project-spec.md#18-alert--notification-system))
-  and now scoped as `v0.4`'s Foundation stage ([task
-  018](tasks/018-alert-notification-foundation.md)), but not yet
-  implemented.
+- Alert delivery retry, deduplication, cooldown, escalation, alert
+  history, and every provider-specific sink (Slack, Teams, PagerDuty) —
+  the Reliability and Additional-sinks-and-governance stages, both
+  explicitly deferred past `v0.4` (see [Alert & Notification
+  phase](#alert--notification-phase) below).
 - AI-agent event types work today only through the generic `Event`
   model (`ActorTypeAIAgent` + `OperationCategoryTool`) — no session,
   delegation, or tool-sequence concepts exist.
 - No MCP interface, no Trustvian Control.
 
-**Next up: `v0.4` — Alert & Notification Foundation** ([task
-018](tasks/018-alert-notification-foundation.md)) is scoped and ready
-for implementation — see the milestone section below. AI-agent
-session/delegation concepts remain unblocked and unscoped as an
-alternative next body of work; `v0.4` is not predetermined as strictly
-"first," only as the one with a written task file today.
+**Next up:** with `v0.1`–`v0.4` all implemented, the Alert &
+Notification phase's Reliability stage and AI-agent session/delegation
+concepts are both unblocked candidates for the next body of work,
+neither predetermined as "first" by this document — see [Alert &
+Notification phase](#alert--notification-phase) and [AI Agent
+phase](#ai-agent-phase) below.
 
 This roadmap's job is to close the remaining gaps in the order that
 respects the roadmap principles (deterministic before ML, security
@@ -330,28 +332,33 @@ for the full architecture this milestone implements against.
 
 **Scope** (task file [018](tasks/018-alert-notification-foundation.md)).
 
-- **018 Alert & Notification Foundation — scoped, not yet
-  implemented.** The `Alert` domain concept (reusing `Trust`/`Anomaly`/
-  `Decision`/`Event.Actor`/`Event.Target`/`Result.Explain()` — no
-  parallel model), the severity concept
-  (`INFO`/`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`, explicitly distinct from
-  risk/anomaly score/trust score/decision), a minimal Alert Evaluation
-  matcher (flat AND-of-optional-fields on decision/risk/actor
-  type/target category/anomaly score/trust score — no combinators,
-  mirroring `internal/policy.Condition`'s existing discipline), the
-  conceptual `AlertSink` boundary, a generic HTTP webhook sink, and the
-  first version of a versioned webhook payload contract. Task 018 also
-  names a genuine open architecture question this milestone must
-  resolve during implementation: unlike `policy.Policy`/
-  `anomaly.Config` (kept `internal/` per [ADR
-  0002](adr/0002-public-api-boundary.md) because no external consumer
-  needs to construct them), `AlertSink`'s entire purpose is for
-  third-party code to implement it against a stable `Alert` type — which
-  Go's `internal/` visibility rule makes impossible if `Alert` stays
-  `internal/`. See [task 018 §
-  Architecture](tasks/018-alert-notification-foundation.md#architecture)
-  for the two candidate resolutions and the requirement to record
-  whichever is chosen in a new ADR.
+- **018 Alert & Notification Foundation — done.** New public package
+  `alert` (a sibling to `event`, not `internal/` — see
+  [ADR 0007](adr/0007-alert-package-is-public.md)): the `Alert` domain
+  concept (reusing `Trust`/`Anomaly`/`Decision`/`Event.Actor`/
+  `Event.Target`/`Result.Explain()`'s material — no parallel model),
+  `Severity` (`INFO`/`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`, explicitly
+  distinct from risk/anomaly score/trust score/decision, always exactly
+  what the matched `Rule` configured), a minimal Alert Evaluation
+  matcher (`Condition`/`Rule`/`Evaluate` — flat AND-of-optional-fields
+  on decision/risk/actor type/target category/anomaly score/trust
+  score, no combinators, mirroring `internal/policy.Condition`'s
+  existing discipline, structurally independent from `internal/policy`
+  itself), the `Sink` interface, and `WebhookSink` — a generic,
+  HMAC-SHA256-signed HTTPS webhook (the one delivery mechanism this
+  stage ships) with a versioned payload contract
+  (`Envelope{Version, Alert}`, `PayloadVersion = "1"`). Verified
+  end-to-end via [`examples/alert-webhook`](../examples/alert-webhook/README.md) — a
+  genuinely external module (`examples/go.mod`) building an `Alert`
+  from a live `Engine.Analyze` call and delivering it to a signed
+  webhook, no OTel involvement anywhere. Resolved the genuine open
+  architecture question this milestone previously carried here (should
+  `Alert`/`Sink` be public, unlike `policy.Policy`/`anomaly.Config`?) by
+  choosing public, recorded in [ADR
+  0007](adr/0007-alert-package-is-public.md): `Sink`'s entire purpose is
+  for third-party code to implement it against a stable `Alert` type,
+  which Go's `internal/` visibility rule would make impossible
+  otherwise.
 
 **Non-goals.** No boolean combinators or expression language for alert
 rules; no `Policy` reuse or coupling (Alert Evaluation is a
@@ -377,7 +384,10 @@ shipping it before them.
 
 **Acceptance criteria.** See [task
 018](tasks/018-alert-notification-foundation.md)'s own Acceptance
-Criteria section.
+Criteria section — all met, verified by `go test ./... -race -count=1`,
+`go test -bench=. -benchmem ./alert/...`, `go list -deps` confirming no
+new HTTP/provider-SDK dependency reached the core engine, and
+`examples/alert-webhook`'s genuinely-external end-to-end run.
 
 ---
 

@@ -8,11 +8,45 @@ actually depend on.
 
 ## Unreleased
 
-No code changes yet. `v0.4` — Alert & Notification Foundation is
-scoped as [task 018](docs/tasks/018-alert-notification-foundation.md)
-and [docs/ROADMAP.md](docs/ROADMAP.md#v04--alert--notification-foundation),
-ready for implementation. This placeholder is a planning record, not a
-release entry — nothing in this section is implemented.
+Work merged to `develop` since `v0.3.0`, not yet tagged.
+
+### Added
+
+- **Alert & Notification Foundation**
+  ([task 018](docs/tasks/018-alert-notification-foundation.md)) — a new
+  public package, `alert` (a sibling to `event`, not `internal/` — see
+  [ADR 0007](docs/adr/0007-alert-package-is-public.md)), turns a
+  `Result`/`Decision` into a minimal, explainable, externally
+  deliverable `Alert`: `Alert` (a view assembled from `Result`, no
+  parallel model), `Severity`
+  (`INFO`/`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`, explicitly distinct from
+  risk/anomaly score/trust score/decision), a `policy.Condition`-shaped
+  Alert Evaluation matcher (`Condition`/`Rule`/`Evaluate` — flat
+  AND-of-optional-fields, no combinators, structurally independent from
+  `internal/policy`), the `Sink` interface, and `WebhookSink` — a
+  generic HTTPS webhook signed with HMAC-SHA256 over a timestamp-bound
+  payload, delivering a versioned contract
+  (`Envelope{Version, Alert}`, `PayloadVersion = "1"`). No new pipeline
+  stage: `Decision` semantics and the core detection engine are
+  unchanged, verified via `go list -deps` showing zero HTTP/provider-SDK
+  dependency reached `event` through `internal/policy` or `Engine`.
+  Verified end-to-end via
+  [`examples/alert-webhook`](examples/alert-webhook/README.md) — a
+  genuinely external module building an `Alert` from a live
+  `Engine.Analyze` call and delivering it to a signed webhook, no OTel
+  involved. Day-of-week seasonality aside, this closes the last item
+  `trustvian-project-spec.md` § 18 named as unimplemented for the
+  Foundation stage; the Reliability and Additional-sinks-and-governance
+  stages (retry, deduplication, cooldown, Slack/Teams/PagerDuty) remain
+  explicitly deferred — see
+  [ROADMAP.md § Alert & Notification
+  phase](docs/ROADMAP.md#alert--notification-phase).
+
+### Changed
+
+- [docs/ROADMAP.md](docs/ROADMAP.md)'s "Current status" section now
+  reflects `v0.4` (Alert & Notification Foundation) as implemented on
+  `develop`.
 
 ## v0.3.0 — Baseline & anomaly depth
 
