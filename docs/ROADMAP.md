@@ -7,8 +7,10 @@ vision document. Each milestone maps to one or more detailed task files
 in [`docs/tasks/`](tasks/); each task file is independently
 understandable and carries its own objective, scope, non-goals,
 technical requirements, tests, benchmarks, documentation, and
-acceptance criteria. Milestones without a task file yet (`v0.5`–`v0.9`
-below) are deliberately not pre-scoped in detail — this roadmap's own
+acceptance criteria. Milestones without a task file yet (`v0.6`–`v0.9`
+below; `v0.5` has its first task, [019](tasks/019-policy-config-model.md),
+with more of its own scope still unscoped) are deliberately not
+pre-scoped in detail — this roadmap's own
 "small vertical slices" principle, applied to itself.
 
 Cross-references: [ARCHITECTURE.md](ARCHITECTURE.md) (system shape),
@@ -128,6 +130,15 @@ HMAC-signed HTTPS webhook, the one delivery mechanism this stage ships
 — without changing `Decision` semantics or touching the core pipeline
 at all. See the milestone section below for the full writeup.
 
+**`v0.5` — Policy & Configuration is in progress: its first task,
+[019](tasks/019-policy-config-model.md), is done; the milestone as a
+whole is not.** A new public package, `config`, lets a caller outside
+this module compile a `PolicyConfig` into a real `policy.Policy` and
+hand it to `trustvian.WithPolicy` — without `internal/policy` becoming
+public (see [ADR 0008](adr/0008-policy-config-boundary.md)). No file
+format, loader, CLI integration, `processor/` integration, or Alert
+configuration exists yet — see the milestone section below.
+
 What's **not** yet true, concretely — the gaps this roadmap's remaining
 milestones exist to close:
 
@@ -146,10 +157,13 @@ milestones exist to close:
   below); no `Slack`/`Teams`/`PagerDuty` sink exists yet either, though
   nothing prevents one from being a future OSS `Sink` implementation
   (same section).
-- No declarative policy/alert configuration boundary — a custom
-  `Policy` or Alert `Rule` set can only be constructed by code living
-  inside this module today (see [ADR 0002](adr/0002-public-api-boundary.md)
-  and `v0.5` below).
+- A custom `Policy` can now be constructed from outside this module in
+  Go, via the new `config` package ([task
+  019](tasks/019-policy-config-model.md)) — but no declarative *file*
+  format exists yet, no loader, no CLI flag, and `processor/` has not
+  been updated to use it (still runs the default `Policy`). Alert
+  configuration (`config.AlertConfig`, compiling into `[]alert.Rule`)
+  does not exist at all yet. See `v0.5` below.
 - Sequence-aware detection (order, not just individual-event anomaly)
   does not exist — see `v0.6` below.
 - AI-agent event types work today only through the generic `Event`
@@ -165,10 +179,11 @@ milestones exist to close:
   [§ The OSS / Enterprise product boundary](#the-oss--enterprise-product-boundary)
   above).
 
-**Next up:** with `v0.1`–`v0.4.0` all shipped, this roadmap's remaining
-milestones (`v0.5` Policy & Configuration through `v1.0` Production-Ready
-OSS, defined below) chart the path to a complete, standalone,
-production-usable OSS product — see each milestone section for
+**Next up:** with `v0.1`–`v0.4.0` shipped and `v0.5`'s first task done,
+this roadmap's remaining work (the rest of `v0.5` through `v1.0`
+Production-Ready OSS, defined below) charts the path to a complete,
+standalone, production-usable OSS product — see each milestone section
+for
 dependencies; none of `v0.5`–`v0.9` are strictly ordered relative to
 the still-unscoped Alert Reliability stage or AI-agent work, only
 relative to each other where a real dependency exists (stated per
@@ -534,20 +549,54 @@ loader. This milestone closes that gap with a narrow, stable,
 declarative configuration boundary usable identically by the Go SDK,
 the CLI, the OTel Collector processor, and a standalone deployment.
 
-**Scope** (no task file yet — written when this milestone is picked
-up, per this roadmap's "small vertical slices" principle):
+**Scope** (task file [019](tasks/019-policy-config-model.md) for the
+first slice; the rest remain unscoped, per this roadmap's own "small
+vertical slices" principle):
 
-- A stable, versioned configuration file format expressing `Policy`
-  rules and Alert `Rule`s declaratively. Conceptual shape only, not an
-  implementation commitment:
+- **019 Public Policy configuration model + compiler — done.** New
+  public package `config` (a sibling to `event`/`alert`, not
+  `internal/` — see [ADR 0008](adr/0008-policy-config-boundary.md)):
+  `PolicyConfig`/`PolicyRule`/`PolicyCondition` (primitive-typed
+  structs mirroring `policy.Policy`/`Rule`/`Condition` exactly — no new
+  matchable dimension `policy.Condition` doesn't already support),
+  `(PolicyConfig).Validate() error` (fails closed on typo'd enum
+  values, missing/duplicate rule names, an incomplete default, and
+  more — see [SECURITY.md § Configuration-input
+  validation](SECURITY.md#configuration-input-validation)), and
+  `CompilePolicy(PolicyConfig) (policy.Policy, error)`. Resolved the
+  open question this section previously carried ("promote the minimum
+  types an external loader needs to construct a `Policy`") with a
+  narrower answer than expected: `internal/policy` is **not** promoted
+  at all. A Go language property — verified empirically in [ADR
+  0008](adr/0008-policy-config-boundary.md), not assumed — lets an
+  external caller receive a `policy.Policy` from `CompilePolicy` and
+  pass it straight into `trustvian.WithPolicy` via type inference,
+  without ever importing `internal/policy`. Proven end-to-end (not
+  just unit-tested): `TestEndToEndConfiguredPolicyProducesConfiguredDecision`
+  builds a `PolicyConfig`, compiles it, constructs a real `Engine`, and
+  confirms both a matching rule's `Decision` and the configured
+  default fire correctly.
+- **Not yet done:** a stable, versioned configuration *file* format
+  (YAML/JSON) and its loader/parser; CLI integration; wiring
+  `processor/` to use `config` instead of the default `Policy`; Alert
+  configuration (an `AlertConfig` alongside `PolicyConfig`, compiling
+  into `[]alert.Rule` — see [DOMAIN.md §
+  Policy and Decision](DOMAIN.md#policy-and-decision) for why these
+  stay two independently-compiled things, never merged). Each is its
+  own future task, scoped when picked up. The conceptual file shape
+  these will eventually produce, illustrative only, not a syntax
+  commitment:
 
   ```yaml
-  policies:
-    - name: suspicious-secret-access
-      when:
-        anomaly_score: "> 0.8"
-        target_category: secret
-      decision: require_approval
+  version: v1
+  policy:
+    default_decision: observe_only
+    default_reason: no policy rules configured; observing by default
+    rules:
+      - name: suspicious-secret-access
+        when:
+          min_risk_level: critical
+        decision: require_approval
 
   alerts:
     - when:
@@ -556,37 +605,28 @@ up, per this roadmap's "small vertical slices" principle):
         - security-webhook
   ```
 
-- A **narrow public configuration contract** — re-reviewing
-  [ADR 0002](adr/0002-public-api-boundary.md)'s reasoning before
-  proposing any public-boundary change, and following the same
-  resolution [ADR 0007](adr/0007-alert-package-is-public.md) already
-  used for `alert`: promote the *minimum* types an external loader
-  needs to construct a `Policy`/`[]alert.Rule` from parsed config,
-  not `internal/policy` wholesale. This is the concrete fix for
-  `processor/`'s own documented limitation (it "runs Trustvian's
-  default `Policy` only" — see
-  [`processor/README.md` § Configuration](../processor/README.md#configuration))
-  and for any future standalone deployment that wants config-file-driven
-  behavior without writing Go.
-- A loader (`internal/config` or similar — package location decided the
-  same deliberate way ADR 0007 decided `alert`'s, when this is
-  implemented) that parses the file format into the public
-  `Policy`/`Rule` types above.
-
 **Non-goals.** No general expression language, no scripting, no
 boolean-combinator DSL for `when:` blocks beyond what
 `policy.Condition`/`alert.Condition` already support natively — the
 config format is a serialization of the existing flat matcher shape,
-not a new, more powerful one. No implementation in *this* roadmap
-edit — this section is planning only, per this document's own
-practice of not designing ahead of a task file.
+not a new, more powerful one. No numeric `anomaly_score`/`trust_score`
+matcher — `policy.Condition` has no such field today; adding one is a
+separate, future decision about `internal/policy` itself. See
+[task 019's own Non-Goals](tasks/019-policy-config-model.md#non-goals)
+for the complete, precise list.
 
-**Dependencies.** `v0.1` (stable `Policy`/`Decision`) and `v0.4.0`
-(stable `alert.Rule`) — this milestone's config format expresses both,
-so both must already be stable to design against.
+**Dependencies.** `v0.1` (stable `Policy`/`Decision`) — satisfied. Task
+019 did not depend on `v0.4.0`/`alert.Rule` being stable, since it
+scoped Policy configuration alone; a future Alert-configuration task
+will depend on `v0.4.0`.
 
-**Acceptance criteria.** Defined when this milestone's own task file is
-written — not before.
+**Acceptance criteria.** See [task
+019](tasks/019-policy-config-model.md)'s own Acceptance Criteria
+section for the first slice — all met, verified by
+`go test ./... -race -count=1`, `go test -bench=. -benchmem ./config/...`,
+and `go list -deps` confirming no new dependency and no core-engine
+import of `config`. The milestone as a whole remains incomplete: it is
+not done until the remaining, not-yet-scoped items above land too.
 
 ## v0.6 — Behavioral Detection Depth
 
