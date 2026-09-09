@@ -29,15 +29,25 @@ no OpenTelemetry involvement (see
 [`examples/alert-webhook`](examples/alert-webhook/README.md)) — are all
 implemented, tested, and benchmarked.
 
+**`v0.5` — Policy & Configuration is in progress** (its first two
+tasks are done; the milestone as a whole is not): a public `config`
+package now lets a caller outside this module declare a `Policy` in a
+versioned YAML file — strictly validated, strictly parsed — and
+compile it into a real, enforced `policy.Policy`, without ever
+importing `internal/policy`. See [Configuring a Policy](#configuring-a-policy)
+below.
+
 **Trustvian OSS is meant to be a complete, standalone,
 production-usable behavioral security product on its own** — detect,
 score, decide, alert, integrate, and run, all without Trustvian
 Control. Not yet built, on the path there: order-aware sequence
 detection, delivery reliability (retry/deduplication/cooldown) and any
-provider-specific alert sink (Slack/Teams/PagerDuty), a declarative
-policy/alert configuration file format, AI-agent session/delegation
-concepts, a production-grade persistent store beyond `FileStore`, and
-release/operational engineering (CI, Docker image, SBOM). See
+provider-specific alert sink (Slack/Teams/PagerDuty), declarative
+*alert* configuration (`policy` configuration is now implemented — see
+above), CLI/OTel Collector integration for the new policy config, AI-agent
+session/delegation concepts, a production-grade persistent store beyond
+`FileStore`, and release/operational engineering (CI, Docker image,
+SBOM). See
 [`docs/ROADMAP.md`](docs/ROADMAP.md#the-oss--enterprise-product-boundary)
 for the explicit OSS/Control boundary and the full milestone sequence
 through `v1.0`. ML-based detection stays optional research, never a
@@ -177,13 +187,71 @@ func main() {
 different `Store`) is configured via functional options
 (`trustvian.WithPolicy`, `trustvian.WithAnomalyConfig`,
 `trustvian.WithTrustConfig`, `trustvian.WithStore`,
-`trustvian.WithContextRisk`) — see [Limitations](#limitations) for the
-current constraint on using them from outside this module.
+`trustvian.WithContextRisk`). `WithPolicy` now has a real path for a
+genuinely external caller — see [Configuring a
+Policy](#configuring-a-policy) below; the other four still take types
+that only code living inside this module can construct — see
+[Limitations](#limitations).
 
-For six runnable, real `go run`-verified programs against this exact SDK
-— a basic call, credential misuse, an unexpected dependency, an external
-destination, abnormal request frequency, and AI-agent security — see
+For seven runnable, real `go run`-verified programs against this exact
+SDK — a basic call, credential misuse, an unexpected dependency, an
+external destination, abnormal request frequency, AI-agent security,
+and an end-to-end alert delivered to a signed webhook — see
 [`examples/`](examples/README.md).
+
+## Configuring a Policy
+
+By default, `NewEngine()` has no rules and always resolves to
+`OBSERVE_ONLY`. A real `Policy` — one that actually produces
+`ALLOW`/`BLOCK`/`REQUIRE_APPROVAL` differentiation — can now be
+declared in a versioned YAML file and loaded by any caller, including
+a genuinely separate Go module, without ever importing
+`internal/policy`:
+
+```yaml
+# trustvian.yaml
+version: v1
+default_decision: observe_only
+default_reason: no policy rules configured; observing by default
+rules:
+  - name: block-critical-risk
+    when:
+      min_risk_level: critical
+    decision: block
+    reason: critical risk is blocked by configured policy
+```
+
+```go
+cfg, err := config.LoadFile("trustvian.yaml")
+if err != nil {
+	log.Fatal(err)
+}
+p, err := config.CompilePolicy(cfg)
+if err != nil {
+	log.Fatal(err)
+}
+engine := trustvian.NewEngine(trustvian.WithPolicy(p))
+```
+
+`p`'s underlying type is `policy.Policy` (an `internal/` type), but
+this code never names it: `p` is received from `CompilePolicy` and
+passed straight into `WithPolicy` via ordinary Go type inference — a
+deliberate design, not a loophole, recorded in
+[ADR 0008](docs/adr/0008-policy-config-boundary.md).
+
+Loading is strict on purpose: an unrecognized field, an unsupported
+schema version, an invalid decision/actor-type/risk-level value, or a
+duplicate YAML key all fail with an actionable error rather than being
+silently ignored — a config typo should never silently weaken a
+policy. See [Policy Guide § Loading a Policy from a YAML
+file](docs/policy-guide.md#loading-a-policy-from-a-yaml-file) for the
+full field reference and [`docs/tasks/019`](docs/tasks/019-policy-config-model.md)/[`020`](docs/tasks/020-policy-config-loader.md)
+for how this was built. There is no CLI `--config` flag and no OTel
+Collector processor integration yet — both are separately scoped,
+not-yet-started work (see [`docs/ROADMAP.md` §
+v0.5](docs/ROADMAP.md#v05--policy--configuration)). Declarative *alert*
+configuration (as opposed to policy configuration) does not exist
+either — `alert.Rule`s are still constructed in Go only.
 
 ## OpenTelemetry
 
@@ -208,6 +276,7 @@ trustvian/
 ├── trustvian.go, engine.go, options.go, result.go   # public SDK (root package)
 ├── event/               # public domain vocabulary: Event, Actor, Operation, Target, Context
 ├── alert/                # public: Result/Decision -> Alert, Evaluate, Sink, WebhookSink
+├── config/               # public: versioned YAML policy config -> Validate -> CompilePolicy
 ├── cmd/trustvian/        # CLI
 ├── internal/
 │   ├── features/          # Event -> stable/volatile Features
@@ -221,10 +290,15 @@ trustvian/
 └── trustvian-project-spec.md, CLAUDE.md   # vision and engineering conventions
 ```
 
-Only the root package, `event`, and `alert` are importable from outside
-this module — everything else is intentionally `internal/`. See
+Only the root package, `event`, `alert`, and `config` are importable
+from outside this module — everything else is intentionally
+`internal/`. `config` doesn't expose `internal/policy`'s types itself;
+it compiles its own public config structs into them, and a caller
+outside this module can still use the result via `WithPolicy` without
+importing `internal/policy` — see
+[ADR 0008](docs/adr/0008-policy-config-boundary.md). See
 [`.claude/rules/architecture.md`](.claude/rules/architecture.md) for
-the reasoning.
+the general reasoning behind this boundary.
 
 ## Limitations
 
@@ -237,14 +311,27 @@ the reasoning.
   The CLI's `trustvian baseline build` still only proves out its
   mechanism within a single invocation regardless of `Store`, since the
   CLI itself doesn't yet expose a flag to select `FileStore`.
-- **Policy and thresholds aren't yet a public package.** `WithPolicy`,
-  `WithAnomalyConfig`, `WithTrustConfig`, `WithStore`, and
-  `WithContextRisk` take types from this module's `internal/` packages,
-  so a separate Go module can construct an `Engine` and call
-  `Analyze`/`Observe` today, but can't yet supply custom configuration
-  from outside this repository. Promoting those types to a public
-  package is a reasonable next step once an external consumer actually
-  needs it.
+- **A custom `Policy` now has a real external path; thresholds and
+  `Store` don't yet.** `WithAnomalyConfig`, `WithTrustConfig`, and
+  `WithStore` still take types from this module's `internal/` packages
+  that a separate Go module cannot construct — a custom
+  `anomaly.Config`/`trust.Config`, or a custom `store.Store`
+  implementation, still requires code living inside this module.
+  `WithPolicy` is the exception as of `v0.5`: the public `config`
+  package (`config.LoadFile`/`Load`/`Validate`/`CompilePolicy`) lets a
+  genuinely external caller declare a `Policy` in YAML and compile it
+  into the exact type `WithPolicy` accepts, without importing
+  `internal/policy` — see [Configuring a Policy](#configuring-a-policy)
+  above and [ADR 0008](docs/adr/0008-policy-config-boundary.md).
+  Promoting `anomaly.Config`/`trust.Config`/`Store` the same way is a
+  reasonable next step once a concrete external consumer needs it.
+- **Declarative *alert* configuration doesn't exist.** `alert.Rule`s
+  (see the [`alert`](docs/DOMAIN.md#alert) domain model) are
+  constructed in Go only; there is no YAML equivalent of
+  `config.PolicyConfig` for alert rules yet, and no CLI or OTel
+  Collector processor integration for the policy config that does
+  exist — see
+  [`docs/ROADMAP.md` § v0.5](docs/ROADMAP.md#v05--policy--configuration).
 - **Single-tenant.** Baseline/fingerprint keys are already scoped by
   `(ActorID, Environment)`, but there is no multi-tenant access control
   — that's explicitly a Trustvian Control/Cloud concern, not core-engine
