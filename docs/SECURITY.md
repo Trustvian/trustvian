@@ -34,7 +34,7 @@ here, not moved or rewritten.
 | Resource exhaustion | `TestAnalyzeLargeAttributesMapDoesNotPanic`, `TestObserveUnboundedFingerprintsDoesNotPanic` in [`engine_test.go`](../engine_test.go) |
 | Explainability | `TestEvaluateAlwaysProducesNonEmptyExplanationReason` in [`internal/policy/policy_test.go`](../internal/policy/policy_test.go) |
 | Alert/notification delivery integrity | `TestSendSignsPayloadCorrectly`, `TestSendTamperedPayloadFailsVerification`, `TestSendDoesNotLeakSecret`, `TestNewWebhookSinkRejectsNonHTTPS`, `TestNewWebhookSinkRejectsLoopbackDestination`, `TestSendRespectsTimeout`, `TestSendPayloadTooLargeMakesNoNetworkCall` in [`alert/webhook_test.go`](../alert/webhook_test.go) |
-| Configuration-input validation | `TestValidateRejectsUnsupportedVersion`, `TestValidateRejectsInvalidDefaultDecision`, `TestValidateRejectsInvalidRuleDecision`, `TestValidateRejectsInvalidActorType`, `TestValidateRejectsInvalidOperationCategory`, `TestValidateRejectsInvalidRiskLevel`, `TestValidateRejectsDuplicateRuleName`, `TestValidateRejectsEmptyRuleName`, `TestValidateRejectsTooManyRules`, `TestValidateRejectsOverlongName` in [`config/validate_test.go`](../config/validate_test.go) |
+| Configuration-input validation | `TestValidateRejectsUnsupportedVersion`, `TestValidateRejectsInvalidDefaultDecision`, `TestValidateRejectsInvalidRuleDecision`, `TestValidateRejectsInvalidActorType`, `TestValidateRejectsInvalidOperationCategory`, `TestValidateRejectsInvalidRiskLevel`, `TestValidateRejectsDuplicateRuleName`, `TestValidateRejectsEmptyRuleName`, `TestValidateRejectsTooManyRules`, `TestValidateRejectsOverlongName` in [`config/validate_test.go`](../config/validate_test.go); `TestLoadRejectsUnknownTopLevelField`, `TestLoadRejectsUnknownNestedField`, `TestLoadRejectsDuplicateYAMLKeys`, `TestLoadFileRejectsOversizedFile`, `TestLoadRejectsEmptyInput`, `TestLoadDoesNotPanicOnArbitraryInput`, `FuzzLoad` in [`config/load_test.go`](../config/load_test.go)/[`config/fuzz_test.go`](../config/fuzz_test.go) |
 
 ## Threats considered
 
@@ -262,14 +262,49 @@ probe without panicking — a policy config file is human-authored
 operational input, not per-event telemetry volume, so a much stricter
 cap is appropriate and does not constrain any real use case.
 
-**Out of scope for this task, by construction:** `NaN`/`Inf` and
-numeric-range validation do not apply to `PolicyCondition` today,
-since it has no numeric matcher field (`MinRiskLevel` is a qualitative
-string enum, not a float) — `internal/policy.Condition` itself would
-need a numeric matching dimension before this validation surface
-grows to cover it. File-format parsing (a future task) introduces its
-own new threats (unknown-field handling, input-size bounds on the raw
-file) not addressed here, since no parser exists yet.
+**Out of scope by construction:** `NaN`/`Inf` and numeric-range
+validation do not apply to `PolicyCondition` today, since it has no
+numeric matcher field (`MinRiskLevel` is a qualitative string enum,
+not a float) — `internal/policy.Condition` itself would need a numeric
+matching dimension before this validation surface grows to cover it.
+
+**File parsing** ([task 020](tasks/020-policy-config-loader.md),
+`config.Load`/`config.LoadFile`) introduced the threats a file format
+adds beyond `Validate()`'s own checks, all implemented, not deferred:
+
+- **Unknown-field handling is strict, unconditionally.** `Load` uses
+  `go.yaml.in/yaml/v3`'s `Decoder.KnownFields(true)` — an unrecognized
+  field anywhere in the document (top-level or nested inside a rule's
+  `when:`/`unless:`) fails with an error naming it, rather than being
+  silently ignored. This is the file-format-level version of the same
+  threat the paragraphs above address for value-level typos: a
+  field-name typo must not silently produce different security
+  behavior than the operator intended. There is no configuration
+  option to relax this.
+- **Duplicate mapping keys are rejected** — verified as
+  `go.yaml.in/yaml/v3`'s own default `Decoder` behavior via a real
+  test (`TestLoadRejectsDuplicateYAMLKeys`) against the actual
+  library, not assumed from its documentation. A document with two
+  `decision:` keys in the same rule fails to decode at all, rather
+  than silently taking the first or last value.
+- **Input size is bounded.** `LoadFile` reads at most 1 MiB
+  (`io.LimitReader(f, maxConfigFileSize+1)`, with the `+1` used to
+  *detect* an over-limit file rather than silently truncate and parse
+  a partial document) — bounding a pathological input (an
+  accidentally-huge file, a special device file) to a fixed, cheap
+  read. `Load` itself, given an in-memory `[]byte`, has no additional
+  size bound beyond what the caller already chose to hold in memory.
+- **Empty input is a distinct, actionable error** (`ErrEmptyInput`),
+  not a bare `io.EOF` leaked from the decoder.
+- **A fuzz target** (`FuzzLoad`) asserts the one invariant a parser
+  handling untrusted input must have: arbitrary bytes never panic
+  `Load`. Run with `go test ./config -fuzz=FuzzLoad`.
+- **No secret leakage in errors.** Loader/validation errors identify
+  field paths and offending values (e.g. an invalid decision string),
+  never a signing secret or credential — this loader has no such field
+  to leak in the first place (`PolicyConfig` carries no secret-shaped
+  data; that concern belongs to a future Alert-configuration task, not
+  this one).
 
 ### Malformed events / extreme input values
 
