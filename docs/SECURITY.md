@@ -34,6 +34,7 @@ here, not moved or rewritten.
 | Resource exhaustion | `TestAnalyzeLargeAttributesMapDoesNotPanic`, `TestObserveUnboundedFingerprintsDoesNotPanic` in [`engine_test.go`](../engine_test.go) |
 | Explainability | `TestEvaluateAlwaysProducesNonEmptyExplanationReason` in [`internal/policy/policy_test.go`](../internal/policy/policy_test.go) |
 | Alert/notification delivery integrity | `TestSendSignsPayloadCorrectly`, `TestSendTamperedPayloadFailsVerification`, `TestSendDoesNotLeakSecret`, `TestNewWebhookSinkRejectsNonHTTPS`, `TestNewWebhookSinkRejectsLoopbackDestination`, `TestSendRespectsTimeout`, `TestSendPayloadTooLargeMakesNoNetworkCall` in [`alert/webhook_test.go`](../alert/webhook_test.go) |
+| Configuration-input validation | `TestValidateRejectsUnsupportedVersion`, `TestValidateRejectsInvalidDefaultDecision`, `TestValidateRejectsInvalidRuleDecision`, `TestValidateRejectsInvalidActorType`, `TestValidateRejectsInvalidOperationCategory`, `TestValidateRejectsInvalidRiskLevel`, `TestValidateRejectsDuplicateRuleName`, `TestValidateRejectsEmptyRuleName`, `TestValidateRejectsTooManyRules`, `TestValidateRejectsOverlongName` in [`config/validate_test.go`](../config/validate_test.go) |
 
 ## Threats considered
 
@@ -223,6 +224,52 @@ verified directly by
 `TestEvaluateFailsClosedOnInvalidDefaultAction`, and
 `TestEvaluateFailsClosedOnEmptyDefaultReason` in
 [`internal/policy/policy_test.go`](../internal/policy/policy_test.go).
+
+### Configuration-input validation
+
+**Threat:** a config-time typo silently *weakens* a policy rather than
+visibly breaking it. Unlike a malformed `Event` (rejected immediately
+at the boundary) or an entirely unconfigured `Policy` (fails closed to
+`BLOCK`), a `PolicyCondition` field with a typo'd value — `actor_type:
+srevice` instead of `service` — compiles into a perfectly well-formed
+`policy.Condition` that simply never matches anything. The rule
+silently stops firing; nothing about evaluation itself looks wrong, so
+an operator who believes a rule is active has no signal it never was.
+
+**Status: implemented**
+([task 019](tasks/019-policy-config-model.md), `config` package).
+`(PolicyConfig).Validate()` — called unconditionally inside
+`CompilePolicy` too, so this protection cannot be bypassed by skipping
+an explicit validation step — rejects, with a field-path-identifying
+error: an unsupported/missing schema version, a missing or invalid
+default decision/reason, an invalid decision on any rule, an invalid
+`actor_type`/`operation_category`/`min_risk_level` on any condition
+(including inside `Unless`), an empty or duplicate rule name, an empty
+reason, an overlong name, and more than `1000` rules. This is
+deliberately *stricter* than `policy.Policy.Evaluate`'s own runtime
+fail-closed behavior for exactly this reason: a same-shaped runtime
+failure has no way to point back at the config file line that caused
+it, while a config-time validation error does. A `PolicyCondition`
+with every field left at its zero value is explicitly *not* rejected —
+that is legitimate "matches everything" catch-all semantics inherited
+from `policy.Condition` itself, not a mistake to flag.
+
+**Resource bounds are deliberately stricter than runtime bounds
+elsewhere in this codebase.** `maxRules = 1000` and
+`maxNameLength = 256` are far smaller than, e.g., the 100,000-key
+`Attributes` map this document's own resource-exhaustion tests already
+probe without panicking — a policy config file is human-authored
+operational input, not per-event telemetry volume, so a much stricter
+cap is appropriate and does not constrain any real use case.
+
+**Out of scope for this task, by construction:** `NaN`/`Inf` and
+numeric-range validation do not apply to `PolicyCondition` today,
+since it has no numeric matcher field (`MinRiskLevel` is a qualitative
+string enum, not a float) — `internal/policy.Condition` itself would
+need a numeric matching dimension before this validation surface
+grows to cover it. File-format parsing (a future task) introduces its
+own new threats (unknown-field handling, input-size bounds on the raw
+file) not addressed here, since no parser exists yet.
 
 ### Malformed events / extreme input values
 

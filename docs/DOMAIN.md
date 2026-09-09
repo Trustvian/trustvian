@@ -359,6 +359,24 @@ renders that whole record as one human-readable summary, so answering
 "why did Trustvian allow/block/challenge this" never requires
 hand-assembling the story from five separate fields.
 
+**Configuring a `Policy` from outside this module** — package
+`config` (public, alongside `event`/`alert` — see [ADR
+0008](adr/0008-policy-config-boundary.md)) defines `PolicyConfig`/
+`PolicyRule`/`PolicyCondition`, primitive-typed structs mirroring
+`Policy`/`Rule`/`Condition` exactly, plus
+`CompilePolicy(PolicyConfig) (policy.Policy, error)`. `internal/policy`
+itself is not made public and gains no new compatibility obligation
+from this: `CompilePolicy`'s returned `policy.Policy` is usable by a
+caller outside this module via type inference (received from
+`CompilePolicy`, passed straight into `trustvian.WithPolicy`) without
+that caller ever importing `internal/policy` — a real Go property,
+verified empirically, not assumed; see ADR 0008 for the experiment.
+This is the concrete fix for `processor/`'s documented "runs the
+default `Policy` only" limitation, though wiring `processor/` itself
+to use `config` is separate, later work — [task
+019](tasks/019-policy-config-model.md) only builds the model and
+compiler.
+
 ## Alert
 
 `alert.Alert` (package `alert`, a public package alongside `event` —

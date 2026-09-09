@@ -127,43 +127,72 @@ blocked just for being new — see the walkthrough in
 
 ## Package boundaries
 
-Only two packages are importable from outside this module: the root
-`trustvian` package and `event`. Everything else lives under
-`internal/`, which Go's compiler enforces.
+Four packages are importable from outside this module: the root
+`trustvian` package, `event`, `alert` (`v0.4.0`), and `config`
+(`v0.5`, [task 019](tasks/019-policy-config-model.md)). Everything
+else lives under `internal/`, which Go's compiler enforces.
 
 ```
 trustvian/
 ├── trustvian.go, engine.go, options.go, result.go   # public: Engine, Option, Result
 ├── event/                                              # public: Event, Actor, Operation, Target, Context
+├── alert/                                              # public: Alert, Severity, Condition/Rule/Evaluate, Sink, WebhookSink
+├── config/                                             # public: PolicyConfig/Rule/Condition, CompilePolicy
 ├── cmd/trustvian/                                       # CLI (in-module, can import internal/*)
+├── examples/                                           # separate module: genuinely-external-consumer demos
+├── processor/                                          # separate module: standalone OTel Collector processor
 └── internal/
     ├── features/    fingerprint/    baseline/    store/
     ├── anomaly/     trust/          policy/
     └── otel/                                            # the ONLY package that imports go.opentelemetry.io/otel*
 ```
 
-**Why `event` isn't under `internal/`, but `Decision`/`Policy`/`Config`
-are.** `Event` is the one type every caller — in-module or not — must
-*construct* just to call `Engine.Analyze` at all; leaving it internal
-would make the SDK's own entry point uncallable from outside the
-module. But Go's `internal/` restriction only blocks *importing* a
-package — it does not block reading exported fields off a value you
-already have. `result.Trust.Score` and `result.Decision == "block"`
-both work fine from external code without importing anything beyond
-the root package. So the types that would need to move out are only
-the ones an external caller must *construct*: `Policy`,
-`anomaly.Config`, `trust.Config`, `store.Store` implementations. None
-of those has an external consumer yet, so none has moved — see
-[Go SDK Guide § the public/internal boundary today](sdk-guide.md#the-publicinternal-boundary-today)
-for what this means in practice, and [Limitations](../README.md#limitations)
-for the current state.
+**Why `event`/`alert`/`config` sit outside `internal/`, while
+`Decision`/`Policy`/most `Config` types stay under it.** Go's
+`internal/` restriction only blocks *importing* a package — it does
+not block reading exported fields off a value you already have, or
+receiving and forwarding a value of that type via type inference
+without ever spelling out its type name. `result.Trust.Score` and
+`result.Decision == "block"` both work fine from external code
+without importing anything beyond the root package, and (verified
+empirically — see [ADR 0008](adr/0008-policy-config-boundary.md)) so
+does receiving a `policy.Policy` from an exported function and passing
+it straight into `trustvian.WithPolicy`. So the types that must move
+out are only the ones an external caller must *construct by name* —
+declare a variable of that type, or implement an interface using it in
+a method signature:
+
+- `event.Event` — the one type every caller must construct just to
+  call `Engine.Analyze` at all.
+- `alert.Alert`/`alert.Sink` — a third-party `Sink` implementation
+  must name `Alert` in its own method signature to implement the
+  interface at all; no amount of pass-through helps here, since
+  *implementing* an interface (not just calling a function) requires
+  naming the type (see [ADR 0007](adr/0007-alert-package-is-public.md)).
+- `config.PolicyConfig`/`PolicyRule`/`PolicyCondition` — an external
+  caller must construct one (by hand today; from a parsed file, once a
+  loader exists) to express custom policy behavior at all.
+
+`policy.Policy`/`Condition`/`Rule`/`Decision`, `anomaly.Config`,
+`trust.Config`, and `store.Store` implementations all stay
+`internal/`: no external caller needs to *construct* any of them by
+name — `config.CompilePolicy` is the one exported function that
+produces a `policy.Policy` for pass-through use, exactly the boundary
+[ADR 0008](adr/0008-policy-config-boundary.md) chose instead of
+promoting `internal/policy` itself. See [Go SDK Guide § the
+public/internal boundary today](sdk-guide.md#the-publicinternal-boundary-today)
+for what remains not yet configurable this way (`anomaly.Config`,
+`trust.Config`), and [Limitations](../README.md#limitations) for the
+current state.
 
 **Why `internal/otel` is the only package that imports OpenTelemetry.**
 The core engine (`event` through `internal/policy`, and `Engine`
-itself) has zero OpenTelemetry dependency. A future OpenTelemetry
-Collector processor is a separate, heavier deliverable (it needs the
-`otelcol-builder` toolchain) that will live outside this module
-entirely, so that dependency tree never touches the core engine's.
+itself) has zero OpenTelemetry dependency. The OTel Collector
+processor ([`processor/`](../processor/), `v0.2`) is implemented as a
+separate module — it needs the heavier `otelcol-builder`-adjacent
+toolchain — so that dependency tree never touches the core engine's;
+`go list -deps` on this module's own root confirms `processor/`'s
+existence changes nothing here.
 
 ## Dependency direction
 

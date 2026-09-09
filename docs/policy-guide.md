@@ -6,10 +6,14 @@ Go value — an ordered list of rules plus a mandatory default — not
 code, so it can eventually be built from a YAML/file loader without
 touching the evaluator.
 
-> `Policy`/`Rule`/`Condition` currently live under `internal/`, so this
-> guide's code is written the way `cmd/trustvian` itself builds its
-> policy — usable by code inside this repository today. See
-> [Go SDK Guide § the public/internal boundary today](sdk-guide.md#the-publicinternal-boundary-today).
+> `Policy`/`Rule`/`Condition` live under `internal/` and stay there —
+> so this guide's code, written as a Go literal, is the way
+> `cmd/trustvian` itself builds its policy today, usable directly only
+> by code inside this repository. A caller outside this module should
+> use the `config` package instead — see [§ Configuring a Policy from
+> outside this module](#configuring-a-policy-from-outside-this-module)
+> below — rather than needing this internal literal syntax at all. See
+> also [Go SDK Guide § the public/internal boundary today](sdk-guide.md#the-publicinternal-boundary-today).
 
 ## The types
 
@@ -211,3 +215,68 @@ natural fit. See
 for the full pattern this codebase uses (rule ordering, `Unless`
 override, all three fail-closed scenarios, and a check that every
 `Result` across several policies has a non-empty `Explanation.Reason`).
+
+## Configuring a Policy from outside this module
+
+Everything above is written the way code *inside* this module builds
+a `Policy` — a Go struct literal naming `policy.Rule`/`Condition`/
+`Decision` directly, which only works for code that can import
+`internal/policy`. A caller outside this module (the CLI conceptually
+could, but doesn't need to, since it's in-module; a standalone
+deployment or a future OTel Collector processor integration genuinely
+does) uses the public `config` package instead
+([task 019](tasks/019-policy-config-model.md),
+[ADR 0008](adr/0008-policy-config-boundary.md)):
+
+```go
+cfg := config.PolicyConfig{
+	Version:         config.SchemaVersionV1,
+	DefaultDecision: "observe_only",
+	DefaultReason:   "no policy rules configured; observing by default",
+	Rules: []config.PolicyRule{
+		{
+			Name: "block-agent-secrets",
+			When: config.PolicyCondition{
+				ActorType:  "ai_agent",
+				Attributes: map[string]string{"tool.category": "secrets"},
+			},
+			Decision: "block",
+			Reason:   "AI agent secret access is blocked by configured policy",
+		},
+	},
+}
+
+p, err := config.CompilePolicy(cfg)
+if err != nil {
+	log.Fatal(err)
+}
+
+engine := trustvian.NewEngine(trustvian.WithPolicy(p))
+```
+
+Note `p`'s static type is `policy.Policy` — the same internal type
+this guide's earlier examples construct directly — but this code never
+names that type or imports `internal/policy`: `p` is received from
+`CompilePolicy` and passed straight into `trustvian.WithPolicy` via
+Go's normal type inference. This is not a coincidence or a loophole;
+it is the deliberate design [ADR 0008](adr/0008-policy-config-boundary.md)
+records, verified empirically there.
+
+`config.PolicyCondition`'s fields mirror `policy.Condition`'s exactly —
+`ActorType`, `OperationCategory`, `TargetName`, `Environment`,
+`MinRiskLevel`, `Attributes` — as plain strings/maps, validated against
+the real enum values by `CompilePolicy` (which calls `Validate()`
+internally regardless of whether the caller already did). A typo like
+`ActorType: "srevice"` fails compilation with an actionable error
+identifying exactly which field was wrong, rather than silently
+compiling into a condition that simply never matches — see
+[SECURITY.md § Configuration-input
+validation](SECURITY.md#configuration-input-validation) for why this
+matters as a security property, not just an ergonomics one.
+
+No file format (YAML/JSON) exists yet — `PolicyConfig` values are
+constructed in Go today, exactly as shown above. A file-based loader
+that parses into this same `PolicyConfig` struct is separately scoped
+future work (see
+[ROADMAP.md § v0.5](ROADMAP.md#v05--policy--configuration)), not
+something this section is describing prematurely.
