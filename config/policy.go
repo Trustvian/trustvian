@@ -44,7 +44,7 @@ type PolicyConfig struct {
 	// silently assuming the current schema, so a config file written
 	// against a future, incompatible schema version fails loudly
 	// instead of being silently misinterpreted.
-	Version string
+	Version string `yaml:"version"`
 
 	// DefaultDecision and DefaultReason apply when no Rule matches.
 	// Both are required and validated at compile time, deliberately
@@ -56,8 +56,8 @@ type PolicyConfig struct {
 	// once Evaluate runs. DefaultDecision must be one of the six
 	// recognized Decision values (see docs/DOMAIN.md § Policy and
 	// Decision).
-	DefaultDecision string
-	DefaultReason   string
+	DefaultDecision string `yaml:"default_decision"`
+	DefaultReason   string `yaml:"default_reason"`
 
 	// Rules is evaluated first-match-wins, in slice order — the same
 	// semantics policy.Policy.Evaluate already has. CompilePolicy
@@ -67,8 +67,9 @@ type PolicyConfig struct {
 	// empty Rules slice is valid: DefaultDecision/DefaultReason alone
 	// describe a legitimate policy (this is exactly the shape
 	// trustvian.NewEngine()'s own built-in default Policy already
-	// has).
-	Rules []PolicyRule
+	// has). YAML sequence order is preserved by the decoder — proven
+	// by TestLoadPreservesRuleOrder, not just assumed of the library.
+	Rules []PolicyRule `yaml:"rules"`
 }
 
 // PolicyRule is one entry in PolicyConfig.Rules: if When matches and
@@ -82,20 +83,20 @@ type PolicyRule struct {
 	// policy.Policy.Evaluate itself would still function with an
 	// empty or duplicate name (explainability, not evaluation
 	// correctness, is what a missing/duplicate name breaks).
-	Name string
+	Name string `yaml:"name"`
 
-	When PolicyCondition
+	When PolicyCondition `yaml:"when"`
 
 	// Unless, if non-nil, suppresses this rule when it also matches —
 	// identical to policy.Rule.Unless.
-	Unless *PolicyCondition
+	Unless *PolicyCondition `yaml:"unless,omitempty"`
 
 	// Decision must be one of the six recognized Decision values.
-	Decision string
+	Decision string `yaml:"decision"`
 
 	// Reason is surfaced in Explanation.Reason when this rule fires.
 	// Required, for the same explainability reason Name is required.
-	Reason string
+	Reason string `yaml:"reason"`
 }
 
 // PolicyCondition matches the same input a policy.Condition already
@@ -113,26 +114,26 @@ type PolicyCondition struct {
 	// ActorType, if set, must be one of the recognized
 	// event.ActorType values ("service", "user", "service_account",
 	// "ai_agent", "device", "unknown").
-	ActorType string
+	ActorType string `yaml:"actor_type,omitempty"`
 
 	// OperationCategory, if set, must be one of the recognized
 	// event.OperationCategory values ("http", "db", "rpc", "tool",
 	// "external").
-	OperationCategory string
+	OperationCategory string `yaml:"operation_category,omitempty"`
 
 	// TargetName, if set, matches exactly — no wildcard, no prefix
 	// matching, identical to policy.Condition.TargetName.
-	TargetName string
+	TargetName string `yaml:"target_name,omitempty"`
 
 	// Environment, if set, matches exactly.
-	Environment string
+	Environment string `yaml:"environment,omitempty"`
 
 	// MinRiskLevel, if set, must be one of "low", "medium", "high",
 	// "critical", and requires the evaluated Trust.Risk to be at
 	// least this severe (trust.RiskLevel.AtLeast's exact semantics).
-	MinRiskLevel string
+	MinRiskLevel string `yaml:"min_risk_level,omitempty"`
 
 	// Attributes, if non-empty, requires every key to be present with
 	// a matching value — identical to policy.Condition.Attributes.
-	Attributes map[string]string
+	Attributes map[string]string `yaml:"attributes,omitempty"`
 }

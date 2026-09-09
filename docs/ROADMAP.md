@@ -8,8 +8,10 @@ in [`docs/tasks/`](tasks/); each task file is independently
 understandable and carries its own objective, scope, non-goals,
 technical requirements, tests, benchmarks, documentation, and
 acceptance criteria. Milestones without a task file yet (`v0.6`–`v0.9`
-below; `v0.5` has its first task, [019](tasks/019-policy-config-model.md),
-with more of its own scope still unscoped) are deliberately not
+below; `v0.5` has its first two tasks,
+[019](tasks/019-policy-config-model.md) and
+[020](tasks/020-policy-config-loader.md), with more of its own scope
+still unscoped) are deliberately not
 pre-scoped in detail — this roadmap's own
 "small vertical slices" principle, applied to itself.
 
@@ -130,24 +132,29 @@ HMAC-signed HTTPS webhook, the one delivery mechanism this stage ships
 — without changing `Decision` semantics or touching the core pipeline
 at all. See the milestone section below for the full writeup.
 
-**`v0.5` — Policy & Configuration is in progress: its first task,
-[019](tasks/019-policy-config-model.md), is done; the milestone as a
+**`v0.5` — Policy & Configuration is in progress: its first two
+tasks, [019](tasks/019-policy-config-model.md) and
+[020](tasks/020-policy-config-loader.md), are done; the milestone as a
 whole is not.** A new public package, `config`, lets a caller outside
 this module compile a `PolicyConfig` into a real `policy.Policy` and
 hand it to `trustvian.WithPolicy` — without `internal/policy` becoming
-public (see [ADR 0008](adr/0008-policy-config-boundary.md)). No file
-format, loader, CLI integration, `processor/` integration, or Alert
-configuration exists yet — see the milestone section below.
+public (see [ADR 0008](adr/0008-policy-config-boundary.md)) — and load
+that same `PolicyConfig` from a real YAML file
+(`config.LoadFile`/`Load`), strictly, with unknown fields and
+duplicate keys both rejected. No CLI integration, `processor/`
+integration, or Alert configuration exists yet — see the milestone
+section below.
 
 What's **not** yet true, concretely — the gaps this roadmap's remaining
 milestones exist to close:
 
 - `processor/`'s processor runs Trustvian's default `Policy` only —
-  every span it scores resolves to `observe_only`, since a genuinely
-  separate module cannot construct a custom `Policy` today (see
-  [ADR 0002](adr/0002-public-api-boundary.md), deliberately not
-  revisited by task 009 — see
-  [`processor/README.md` § Configuration](../processor/README.md#configuration)).
+  every span it scores resolves to `observe_only`. This is no longer a
+  hard architectural limitation (a genuinely separate module *can*
+  construct a custom `Policy` today, via `config.CompilePolicy` — see
+  `v0.5` below); it is simply not yet wired up — see
+  [`processor/README.md` § Configuration](../processor/README.md#configuration)
+  for the still-accurate current behavior.
 - Day-of-week seasonality — evaluated and kept out of `v0.3`'s
   hour-of-day slice; classified below as useful-after-`v1.0`, not
   required for it (see [Future research](#future-research)).
@@ -158,12 +165,12 @@ milestones exist to close:
   nothing prevents one from being a future OSS `Sink` implementation
   (same section).
 - A custom `Policy` can now be constructed from outside this module in
-  Go, via the new `config` package ([task
-  019](tasks/019-policy-config-model.md)) — but no declarative *file*
-  format exists yet, no loader, no CLI flag, and `processor/` has not
-  been updated to use it (still runs the default `Policy`). Alert
-  configuration (`config.AlertConfig`, compiling into `[]alert.Rule`)
-  does not exist at all yet. See `v0.5` below.
+  Go ([task 019](tasks/019-policy-config-model.md)) *and* loaded from
+  a real YAML file ([task 020](tasks/020-policy-config-loader.md),
+  `config.LoadFile`) — but no CLI flag consumes it yet, and
+  `processor/` has not been updated to use it (still runs the default
+  `Policy`). Alert configuration (`config.AlertConfig`, compiling into
+  `[]alert.Rule`) does not exist at all yet. See `v0.5` below.
 - Sequence-aware detection (order, not just individual-event anomaly)
   does not exist — see `v0.6` below.
 - AI-agent event types work today only through the generic `Event`
@@ -576,34 +583,48 @@ vertical slices" principle):
   builds a `PolicyConfig`, compiles it, constructs a real `Engine`, and
   confirms both a matching rule's `Decision` and the configured
   default fire correctly.
-- **Not yet done:** a stable, versioned configuration *file* format
-  (YAML/JSON) and its loader/parser; CLI integration; wiring
-  `processor/` to use `config` instead of the default `Policy`; Alert
-  configuration (an `AlertConfig` alongside `PolicyConfig`, compiling
-  into `[]alert.Rule` — see [DOMAIN.md §
-  Policy and Decision](DOMAIN.md#policy-and-decision) for why these
-  stay two independently-compiled things, never merged). Each is its
-  own future task, scoped when picked up. The conceptual file shape
-  these will eventually produce, illustrative only, not a syntax
-  commitment:
+- **020 Config file loader & schema v1 parsing — done.** `yaml:"..."`
+  struct tags added to task 019's existing `PolicyConfig`/`PolicyRule`/
+  `PolicyCondition` (purely additive; no field renamed or retyped), plus
+  `Load([]byte) (PolicyConfig, error)` and
+  `LoadFile(path string) (PolicyConfig, error)`. No new file-specific
+  model — the YAML document decodes directly into the same public
+  types task 019 defined. One new dependency,
+  `go.yaml.in/yaml/v3` — its `Decoder.KnownFields(true)` rejects any
+  unrecognized field unconditionally (a config-time typo must fail
+  loudly, never silently fall through to a different security
+  behavior), and its default `Decoder` rejects duplicate mapping keys,
+  both verified by test against the real library rather than assumed.
+  `LoadFile` bounds its read to 1 MiB. Proven end-to-end:
+  `TestEndToEndYAMLFileChangesEngineDecision` — a real file on disk,
+  loaded, compiled, and confirmed to change what a real `Engine`
+  actually decides for a `RiskCritical` event, not just that it
+  decodes into a struct. The real schema-v1 file shape (no `policy:`
+  wrapper — the document *is* a `PolicyConfig` directly, since Alert
+  configuration isn't part of this schema version):
 
   ```yaml
   version: v1
-  policy:
-    default_decision: observe_only
-    default_reason: no policy rules configured; observing by default
-    rules:
-      - name: suspicious-secret-access
-        when:
-          min_risk_level: critical
-        decision: require_approval
-
-  alerts:
-    - when:
-        risk: critical
-      notify:
-        - security-webhook
+  default_decision: observe_only
+  default_reason: no policy rules configured; observing by default
+  rules:
+    - name: suspicious-secret-access
+      when:
+        min_risk_level: critical
+      decision: require_approval
+      reason: critical risk requires manual approval
   ```
+
+- **Not yet done:** CLI integration (`--config`); wiring `processor/`
+  to use `config` instead of the default `Policy`; Alert configuration
+  (an `AlertConfig` alongside `PolicyConfig`, compiling into
+  `[]alert.Rule` — see [DOMAIN.md §
+  Policy and Decision](DOMAIN.md#policy-and-decision) for why these
+  stay two independently-compiled things, never merged; introducing it
+  may mean a schema v2 that wraps `policy:`/`alerts:` as siblings,
+  since v1's flat shape above has no room for a second top-level
+  section — a decision for that future task, not foreclosed here).
+  Each is its own future task, scoped when picked up.
 
 **Non-goals.** No general expression language, no scripting, no
 boolean-combinator DSL for `when:` blocks beyond what
@@ -611,22 +632,27 @@ boolean-combinator DSL for `when:` blocks beyond what
 config format is a serialization of the existing flat matcher shape,
 not a new, more powerful one. No numeric `anomaly_score`/`trust_score`
 matcher — `policy.Condition` has no such field today; adding one is a
-separate, future decision about `internal/policy` itself. See
-[task 019's own Non-Goals](tasks/019-policy-config-model.md#non-goals)
-for the complete, precise list.
+separate, future decision about `internal/policy` itself. No JSON
+support (YAML only), no environment-variable interpolation, no live
+config reload — see [task 019's](tasks/019-policy-config-model.md#non-goals)
+and [task 020's](tasks/020-policy-config-loader.md#non-goals) own
+Non-Goals sections for the complete, precise lists.
 
-**Dependencies.** `v0.1` (stable `Policy`/`Decision`) — satisfied. Task
-019 did not depend on `v0.4.0`/`alert.Rule` being stable, since it
-scoped Policy configuration alone; a future Alert-configuration task
-will depend on `v0.4.0`.
+**Dependencies.** `v0.1` (stable `Policy`/`Decision`) — satisfied.
+Task 020 depends on task 019 (decodes into its existing types). Neither
+depends on `v0.4.0`/`alert.Rule` being stable, since both scoped Policy
+configuration alone; a future Alert-configuration task will depend on
+`v0.4.0`.
 
 **Acceptance criteria.** See [task
-019](tasks/019-policy-config-model.md)'s own Acceptance Criteria
-section for the first slice — all met, verified by
-`go test ./... -race -count=1`, `go test -bench=. -benchmem ./config/...`,
-and `go list -deps` confirming no new dependency and no core-engine
-import of `config`. The milestone as a whole remains incomplete: it is
-not done until the remaining, not-yet-scoped items above land too.
+019](tasks/019-policy-config-model.md)'s and [task
+020](tasks/020-policy-config-loader.md)'s own Acceptance Criteria
+sections — both fully met, verified by `go test ./... -race -count=1`,
+`go test -bench=. -benchmem ./config/...`, and `go list -deps`
+confirming no core-engine import of `config` or `go.yaml.in/yaml/v3`.
+The milestone as a whole remains incomplete: it is not done until CLI
+integration, `processor/` integration, and Alert configuration — all
+still unscoped — land too.
 
 ## v0.6 — Behavioral Detection Depth
 

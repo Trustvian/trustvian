@@ -116,6 +116,30 @@ func main() {
 
 Full reference and a worked multi-event example: [Go SDK Guide](sdk-guide.md).
 
+## Configuring a custom policy from a file
+
+The default `Engine` above always resolves to `observe_only` — real
+`ALLOW`/`BLOCK`/`REQUIRE_APPROVAL` differentiation needs a configured
+`Policy`. As of `v0.5`, you can load one from a YAML file without
+writing Go:
+
+```go
+cfg, err := config.LoadFile("trustvian.yaml")
+if err != nil {
+	panic(err)
+}
+p, err := config.CompilePolicy(cfg)
+if err != nil {
+	panic(err)
+}
+engine := trustvian.NewEngine(trustvian.WithPolicy(p))
+```
+
+See [Policy Guide § Loading a Policy from a YAML
+file](policy-guide.md#loading-a-policy-from-a-yaml-file) for the file
+format and what strict decoding rejects. There is no CLI `--config`
+flag yet — this is Go SDK usage only today.
+
 ## Where to next
 
 - Writing custom rules (`BLOCK`/`ALERT`/`ALLOW` decisions): [Policy Guide](policy-guide.md)

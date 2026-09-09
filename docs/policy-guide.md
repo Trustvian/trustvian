@@ -274,9 +274,67 @@ compiling into a condition that simply never matches — see
 validation](SECURITY.md#configuration-input-validation) for why this
 matters as a security property, not just an ergonomics one.
 
-No file format (YAML/JSON) exists yet — `PolicyConfig` values are
-constructed in Go today, exactly as shown above. A file-based loader
-that parses into this same `PolicyConfig` struct is separately scoped
-future work (see
-[ROADMAP.md § v0.5](ROADMAP.md#v05--policy--configuration)), not
-something this section is describing prematurely.
+## Loading a Policy from a YAML file
+
+[Task 020](tasks/020-policy-config-loader.md) added a loader that
+decodes a YAML file directly into the same `PolicyConfig` shown above —
+there is no separate, file-specific config type:
+
+```yaml
+# trustvian.yaml
+version: v1
+default_decision: observe_only
+default_reason: no policy rules configured; observing by default
+rules:
+  - name: block-agent-secrets
+    when:
+      actor_type: ai_agent
+      attributes:
+        tool.category: secrets
+    unless:
+      attributes:
+        approval: human
+    decision: block
+    reason: AI agent secret access requires human approval
+```
+
+```go
+cfg, err := config.LoadFile("trustvian.yaml")
+if err != nil {
+	log.Fatal(err)
+}
+p, err := config.CompilePolicy(cfg)
+if err != nil {
+	log.Fatal(err)
+}
+engine := trustvian.NewEngine(trustvian.WithPolicy(p))
+```
+
+`config.Load([]byte)` is the byte-oriented equivalent, for a config
+already held in memory (fetched from a secrets store, embedded via
+`go:embed`, received over a network call) rather than read from a
+local path — `LoadFile` is a thin wrapper around it plus a bounded
+file read.
+
+**Decoding is strict.** A field name typo anywhere in the document —
+`default_decison` instead of `default_decision`, `min_risk_leve`
+instead of `min_risk_level` — fails loudly with an error naming the
+unrecognized field, rather than being silently ignored and falling
+through to some other value. Duplicate keys in the same YAML mapping
+(two `decision:` entries in one rule) are rejected too. Both are
+verified by test against the real decoder, not assumed of the
+library — see [SECURITY.md § Configuration-input
+validation](SECURITY.md#configuration-input-validation) for why a
+silently-ignored field is a security property here, not just an
+ergonomics one.
+
+`LoadFile` bounds its read to 1 MiB — far beyond what any real policy
+file needs, small enough to bound a pathological input to a fixed,
+cheap read. `path` is caller-controlled: `LoadFile` does not scan
+directories or auto-discover a config file; you name the exact file.
+
+No CLI `--config` flag and no OTel Collector processor integration
+exist yet — both are separately scoped future work (see
+[ROADMAP.md § v0.5](ROADMAP.md#v05--policy--configuration)) that will
+consume this same `Load`/`LoadFile`, not a parallel loader of their
+own.
