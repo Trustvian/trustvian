@@ -6,14 +6,24 @@ All notable changes to Trustvian are documented in this file. Prior to
 point where a tag first exists for something external users can
 actually depend on.
 
-## v0.5.0 — Policy & Configuration (partial)
+## v0.5.0 — Policy & Configuration
 
-Adds a public, versioned configuration boundary for `Policy` — the
-first two slices of the `v0.5` milestone. This tag does not close the
-milestone: CLI integration, `processor/` integration, and Alert
-configuration are not part of it (see
-[ROADMAP.md § v0.5](docs/ROADMAP.md#v05--policy--configuration) for
-what remains).
+> **Release status: prepared, not yet published.** This section
+> describes `v0.5.0`'s full intended content — implementation,
+> tests, and documentation for all five of the milestone's tasks are
+> complete on `develop` as of this writing, but the `v0.5.0` tag has
+> not been pushed to this project's remote. A locally-created `v0.5.0`
+> git tag exists pointing at an earlier commit (covering only tasks
+> 019–020); it will need to be moved (or replaced by a fresh tag) to
+> the actual release commit as part of the human-controlled release
+> process — see `docs/tasks/` and `docs/ROADMAP.md` § v0.5 for the
+> authoritative, always-current state in the meantime. Do not treat
+> this heading's presence as evidence the tag exists; check `git tag`/
+> `git ls-remote --tags origin` for that.
+
+Adds a public, versioned configuration boundary for both `Policy` and
+Alert Evaluation, and wires the former into the CLI and (in code,
+pending this same release) the OTel Collector processor.
 
 ### Added
 
@@ -38,6 +48,38 @@ what remains).
   mapping keys are both rejected unconditionally — a config-time typo
   fails loudly rather than silently falling through to a different
   security behavior. `LoadFile` bounds its read to 1 MiB.
+- **CLI configuration integration**
+  ([task 021](docs/tasks/021-cli-config-integration.md)) —
+  `trustvian analyze`/`trustvian baseline build` accept an optional
+  `--config <path>`, consuming `config.LoadFile`/`config.CompilePolicy`
+  directly. Omitting it preserves the CLI's pre-existing built-in
+  default policy exactly; an invalid or missing explicit `--config`
+  fails the whole command closed (non-zero exit, no analysis output),
+  never a silent fallback.
+- **OTel Collector policy configuration integration**
+  ([task 022](docs/tasks/022-collector-config-integration.md)) — the
+  standalone [`processor/`](processor/README.md) module accepts an
+  optional `policy:` block in its own Collector configuration, decoded
+  via `go-viper/mapstructure/v2` (pointed at `PolicyConfig`'s own
+  `yaml` tags — Collector's confmap decoder only reads `mapstructure`
+  tags) and compiled via the same `config.CompilePolicy`. An invalid
+  explicit `policy:` block fails Collector startup outright. **Known
+  limitation carried into this release:** `processor/go.mod` cannot yet
+  declare a real dependency on a Trustvian version containing `config`
+  — see Limitations in README.md and task 022's own "Release / Module
+  Compatibility" section.
+- **Declarative Alert configuration**
+  ([task 023](docs/tasks/023-declarative-alert-configuration.md)) — a
+  new, independent public model in the same `config` package:
+  `AlertConfig`/`AlertRuleConfig`/`AlertConditionConfig`,
+  `(AlertConfig).Validate() error`,
+  `CompileAlerts(AlertConfig) ([]alert.Rule, error)`, and
+  `LoadAlerts`/`LoadAlertsFile`. Deliberately a separate document and
+  compilation path from `PolicyConfig`/`CompilePolicy` — see [ADR
+  0009](docs/adr/0009-alert-config-is-a-separate-document.md) — not a
+  combined schema. Not yet wired into the CLI or the Collector
+  processor (neither has an alert-delivery flow for it to plug into
+  yet); a Go SDK caller can use it directly today.
 
 ## v0.4.0 — Alert & Notification Foundation
 
