@@ -134,19 +134,18 @@ HMAC-signed HTTPS webhook, the one delivery mechanism this stage ships
 — without changing `Decision` semantics or touching the core pipeline
 at all. See the milestone section below for the full writeup.
 
-**`v0.5` — Policy & Configuration is implementation-complete and
-release-ready; the `v0.5.0` tag itself has not been published yet.**
-All five of its tasks — [019](tasks/019-policy-config-model.md),
+**`v0.5.0` — Policy & Configuration is shipped.** All five of its
+tasks — [019](tasks/019-policy-config-model.md),
 [020](tasks/020-policy-config-loader.md),
 [021](tasks/021-cli-config-integration.md),
 [022](tasks/022-collector-config-integration.md), and
 [023](tasks/023-declarative-alert-configuration.md) — are done in code,
-tests, and documentation. A new public package, `config`, lets a
-caller outside this module compile a `PolicyConfig` into a real
-`policy.Policy` and hand it to `trustvian.WithPolicy` — without
-`internal/policy` becoming public (see [ADR
-0008](adr/0008-policy-config-boundary.md)) — and load that same
-`PolicyConfig` from a real YAML file (`config.LoadFile`/`Load`),
+tests, and documentation, and the `v0.5.0` tag itself is published on
+`origin`. A new public package, `config`, lets a caller outside this
+module compile a `PolicyConfig` into a real `policy.Policy` and hand it
+to `trustvian.WithPolicy` — without `internal/policy` becoming public
+(see [ADR 0008](adr/0008-policy-config-boundary.md)) — and load that
+same `PolicyConfig` from a real YAML file (`config.LoadFile`/`Load`),
 strictly, with unknown fields and duplicate keys both rejected.
 `trustvian analyze`/`trustvian baseline build` now accept `--config
 <path>` and consume that exact loader/compiler path, failing closed
@@ -156,46 +155,20 @@ The standalone OTel Collector processor
 ([`processor/`](../processor/README.md)) now has an equivalent
 `policy:` block in its own configuration, decoded and compiled through
 the same `config` package — see [task
-022](tasks/022-collector-config-integration.md) — **but this one piece
-is implemented and tested, not yet released**: no Trustvian core
-version newer than `v0.4.0` has been pushed to this project's remote,
-and `v0.4.0` predates the `config` package, so `processor/go.mod`
-cannot yet declare a real, resolvable dependency on it — a release-
-sequencing gap, not an architectural one (see task 022's own "Release
-/ Module Compatibility" section). Declarative Alert configuration now
-exists too — a structurally **separate** `AlertConfig`/`CompileAlerts`
-model (see [task 023](tasks/023-declarative-alert-configuration.md)
-and [ADR 0009](adr/0009-alert-config-is-a-separate-document.md)), not
-merged into `PolicyConfig` and not yet wired into the CLI or the
-Collector processor (neither has an alert-delivery flow for it to plug
-into yet — a deliberate scope boundary, not a gap).
+022](tasks/022-collector-config-integration.md) — and `processor/go.mod`
+depends on this exact `v0.5.0` release, verified with a clean
+`GOWORK=off` build/test against it (no local workspace involved).
+Declarative Alert configuration now exists too — a structurally
+**separate** `AlertConfig`/`CompileAlerts` model (see [task
+023](tasks/023-declarative-alert-configuration.md) and [ADR
+0009](adr/0009-alert-config-is-a-separate-document.md)), not merged
+into `PolicyConfig` and not yet wired into the CLI or the Collector
+processor (neither has an alert-delivery flow for it to plug into yet
+— a deliberate scope boundary, not a gap).
 
 What's **not** yet true, concretely — the gaps this roadmap's remaining
-milestones (or this one's own outstanding release step) exist to
-close:
+milestones exist to close:
 
-- **The `v0.5.0` tag has not been published.** All five tasks above
-  are done on `develop`, but no Git tag newer than `v0.4.0` has been
-  pushed to `origin` — see [`git ls-remote --tags
-  origin`](https://github.com/Trustvian/trustvian/tags) for the
-  authoritative current state. `docs/tasks/`, `CHANGELOG.md`, and
-  this document reflect the *implementation-complete* state; do not
-  read that as "shipped." See [Release
-  readiness](#release-readiness-v05) below for the exact remaining
-  human steps.
-- `processor/`'s code can now compile and use a configured `Policy`
-  ([task 022](tasks/022-collector-config-integration.md)), but only
-  against this repository's current, unreleased source (via a local
-  `go.work`) — `processor/go.mod`'s *committed* dependency is still
-  `v0.3.0`, predating `config` entirely, because no newer Trustvian
-  release has been pushed to origin. Until that release exists and
-  `processor/go.mod` is updated to depend on it, every span this
-  processor scores in a real, `go get`-built deployment still resolves
-  to `observe_only` — see
-  [`processor/README.md` § Configuration](../processor/README.md#configuration)
-  for the exact, currently-accurate behavior and task 022's own
-  "Release / Module Compatibility" section for the verification behind
-  this.
 - Day-of-week seasonality — evaluated and kept out of `v0.3`'s
   hour-of-day slice; classified below as useful-after-`v1.0`, not
   required for it (see [Future research](#future-research)).
@@ -213,9 +186,8 @@ close:
   `config.LoadFile`), consumed directly by the CLI via `--config`
   ([task 021](tasks/021-cli-config-integration.md)), and consumed by
   `processor/`'s own code ([task
-  022](tasks/022-collector-config-integration.md)) — but the last of
-  these is blocked on a real Trustvian core release existing at all
-  (see immediately above). Declarative Alert configuration
+  022](tasks/022-collector-config-integration.md), now depending on the
+  real `v0.5.0` release). Declarative Alert configuration
   (`config.AlertConfig`/`CompileAlerts`, compiling into `[]alert.Rule`
   — [task 023](tasks/023-declarative-alert-configuration.md)) now
   exists as a Go-SDK-usable capability, but is not wired into the CLI
@@ -236,10 +208,10 @@ close:
   [§ The OSS / Enterprise product boundary](#the-oss--enterprise-product-boundary)
   above).
 
-**Next up:** with `v0.1`–`v0.4.0` shipped and `v0.5` implementation-
-complete (awaiting only its own release — see [Release readiness —
-v0.5.0](#release-readiness--v050)), this roadmap's remaining work
-(`v0.6` through `v1.0` Production-Ready OSS, defined below) charts the
+**Next up:** with `v0.1`–`v0.5.0` shipped (see [Release readiness —
+v0.5.0](#release-readiness--v050) for the tag/dependency verification),
+this roadmap's remaining work (`v0.6` through `v1.0` Production-Ready
+OSS, defined below) charts the
 path to a complete, standalone, production-usable OSS product — see
 each milestone section for
 dependencies; none of `v0.6`–`v0.9` are strictly ordered relative to
@@ -692,13 +664,13 @@ the release gate, closing this milestone's full scope):
   same `ALLOW` event into `BLOCK`), and `baseline build`'s own
   acceptance by `TestRunBaselineBuildAcceptsConfigFlag`. See [task
   021](tasks/021-cli-config-integration.md).
-- **022 OTel Collector policy configuration integration — done in code,
-  blocked on a release.** `processor.Config` gains a `Policy
-  map[string]any` field (`mapstructure:"policy,omitempty"`); a new
-  `decodePolicy` function converts that generic map into a real
-  `config.PolicyConfig` using `go-viper/mapstructure/v2` pointed at
-  `PolicyConfig`'s existing `yaml:"..."` tags (task 020's), rather than
-  embedding `config.PolicyConfig` directly — verified empirically that
+- **022 OTel Collector policy configuration integration — done.**
+  `processor.Config` gains a `Policy map[string]any` field
+  (`mapstructure:"policy,omitempty"`); a new `decodePolicy` function
+  converts that generic map into a real `config.PolicyConfig` using
+  `go-viper/mapstructure/v2` pointed at `PolicyConfig`'s existing
+  `yaml:"..."` tags (task 020's), rather than embedding
+  `config.PolicyConfig` directly — verified empirically that
   Collector's own confmap decoder only reads `mapstructure` tags,
   matched case-sensitively, so it would silently fail to populate any
   of `PolicyConfig`'s snake_case fields otherwise. No
@@ -710,18 +682,16 @@ the release gate, closing this milestone's full scope):
   block — proven by `TestNewFactoryFailsOnInvalidPolicy`,
   `TestConsumeTracesConfiguredPolicyChangesDecision`,
   `TestConsumeTracesDefaultPolicyUnchangedWithoutConfig`, and
-  `TestConsumeTracesPolicyRuleOrderingFirstMatchWins`. **This is fully
-  implemented and tested against the current, unreleased root module
-  (via a local `go.work`), but `processor/go.mod`'s committed
-  dependency cannot yet be updated to use it**: verified directly
-  (`git ls-remote --tags origin` and a real `go get
-  github.com/Trustvian/trustvian@v0.5.0`, which fails with "unknown
-  revision") that no Trustvian core version newer than `v0.4.0` has
-  been pushed to this project's remote — `v0.4.0` predates the `config`
-  package entirely. See [task
+  `TestConsumeTracesPolicyRuleOrderingFirstMatchWins`. Initially
+  implemented and tested only against a local, unreleased root module
+  (via `go.work`), since `processor/go.mod` still pointed at `v0.3.0`
+  (predating `config` entirely); once `v0.5.0` was tagged and pushed to
+  `origin`, `processor/go.mod` was updated to depend on it for real —
+  verified with `GOWORK=off go build ./... && GOWORK=off go test ./...
+  -race`, no workspace involved. See [task
   022](tasks/022-collector-config-integration.md)'s own "Release /
-  Module Compatibility" section for the full verification and the
-  release this now depends on.
+  Module Compatibility" section for the original verification of the
+  gap this closed.
 - **023 Declarative Alert configuration — done.** A new, independent
   public model in the same `config` package:
   `AlertSchemaVersionV1`, `AlertConfig{Version, Rules}`,
@@ -750,16 +720,16 @@ the release gate, closing this milestone's full scope):
   — deliberately: neither has an alert-delivery flow today for a
   compiled `[]alert.Rule` to plug into (see task 023's own Non-Goals).
   See [task 023](tasks/023-declarative-alert-configuration.md).
-- **024 v0.5.0 release gate — checklist complete, tag not yet
-  published.** The `v0.1`-style release gate ([task
-  013](tasks/013-oss-v01.md)) applied to `v0.5`: every task 019–023
-  independently verified against its own acceptance criteria, the full
-  root and `processor/` quality gates re-run together (not just per
-  task), and the documentation consistency check re-run across the
-  whole `v0.5` diff. See [Release readiness — v0.5.0](#release-readiness--v050)
-  below and [task 024](tasks/024-v05-release-gate.md) for the exact
-  checklist and what remains (publishing the tag, and the
-  `processor/go.mod` follow-up that depends on it).
+- **024 v0.5.0 release gate — done.** The `v0.1`-style release gate
+  ([task 013](tasks/013-oss-v01.md)) applied to `v0.5`: every task
+  019–023 independently verified against its own acceptance criteria,
+  the full root and `processor/` quality gates re-run together (not
+  just per task), the documentation consistency check re-run across the
+  whole `v0.5` diff, the `v0.5.0` tag published on `origin`, and
+  `processor/go.mod`'s dependency bumped to it in a follow-up commit,
+  verified with a clean `GOWORK=off` build/test. See [Release readiness
+  — v0.5.0](#release-readiness--v050) below and [task
+  024](tasks/024-v05-release-gate.md) for the exact checklist.
 
 **Non-goals.** No general expression language, no scripting, no
 boolean-combinator DSL for `when:` blocks beyond what
@@ -784,12 +754,11 @@ Task 020 depends on task 019 (decodes into its existing types). Tasks
 each other. Task 023 depends on `v0.4.0`/`alert.Rule` being stable
 (it's the one task in this milestone that does) and is otherwise
 independent of 019–022 — it shares no document, type, or compilation
-path with `PolicyConfig` (see ADR 0009). Task 022 additionally depends
+path with `PolicyConfig` (see ADR 0009). Task 022 additionally depended
 on a real Trustvian core release newer than `v0.4.0` existing on this
-project's remote before its own code can be wired into
-`processor/go.mod`'s committed dependency — see task 022's own writeup
-above; task 024 (the release gate) is what actually produces that
-release and resolves this dependency.
+project's remote before its own code could be wired into
+`processor/go.mod`'s committed dependency; task 024 (the release gate)
+produced that release and resolved this dependency.
 
 **Acceptance criteria.** See [task
 019](tasks/019-policy-config-model.md)'s, [task
@@ -797,52 +766,48 @@ release and resolves this dependency.
 021](tasks/021-cli-config-integration.md)'s, [task
 022](tasks/022-collector-config-integration.md)'s, and [task
 023](tasks/023-declarative-alert-configuration.md)'s own Acceptance
-Criteria sections. 019–021 and 023 are fully met, verified by `go test
-./... -race -count=1`, `go test -bench=. -benchmem ./config/...`, and
-`go list -deps` confirming no core-engine import of `config` or
-`go.yaml.in/yaml/v3`/`alert`. Task 022's own code and test criteria are
-met the same way inside `processor/` (`go test ./... -race`, using a
-local `go.work`); its one criterion that could not be closed within
-this task's own authority — `processor/go.mod` actually depending on a
-released Trustvian version containing `config` — is task 024's own
-remaining, human-gated step. **The milestone's implementation is
-complete; it is not yet a published release** — see [Release readiness
-— v0.5.0](#release-readiness--v050) immediately below.
+Criteria sections — all fully met, verified by `go test ./... -race
+-count=1`, `go test -bench=. -benchmem ./config/...`, `go list -deps`
+confirming no core-engine import of `config` or
+`go.yaml.in/yaml/v3`/`alert`, and (for task 022 specifically)
+`processor/`'s own `GOWORK=off go build ./... && GOWORK=off go test
+./... -race` against the real, published `v0.5.0` dependency. **The
+milestone is shipped** — see [Release readiness —
+v0.5.0](#release-readiness--v050) immediately below for the exact
+verification.
 
 ### Release readiness — v0.5.0
 
 ```text
 v0.5.0 implementation release-ready: YES
-v0.5.0 shipped: NO — awaiting human tag/release
+v0.5.0 shipped: YES
 ```
 
-All code, tests, and documentation for tasks 019–023 are complete and
-verified on `develop` as of this writing. What remains is exclusively
-the human-controlled release sequence [task
-024](tasks/024-v05-release-gate.md) hands off, condensed here:
+All code, tests, and documentation for tasks 019–023 are complete, and
+the release sequence [task 024](tasks/024-v05-release-gate.md) laid out
+has run:
 
-1. **Resolve the pre-existing local-only `v0.5.0` tag.** A `v0.5.0` git
-   tag already exists in this repository, but only locally — it has
-   never been pushed to `origin`, and it points at an earlier commit
-   containing only tasks 019–020. `git ls-remote --tags origin` is the
-   authoritative check for whether this has changed since this
-   document was last updated.
-2. **Move or replace that tag** to the commit intended for the real
-   `v0.5.0` release (containing 019–023), then push it.
-3. **Update `processor/go.mod`** to require that now-real, resolvable
-   `v0.5.0`, in the same or an immediately following commit — never a
-   committed `replace ../` and never an invented pseudo-version.
-4. **Verify cleanly, outside any workspace:**
-   `GOWORK=off go mod download && go list -m github.com/Trustvian/trustvian`
-   should report `v0.5.0`; `processor/`'s full quality gate
-   (`go build`/`go vet`/`go test -race ./...`) should then pass with no
-   `go.work` involved.
-5. **Publish GitHub release notes** from the `CHANGELOG.md § v0.5.0`
-   entry, removing its "prepared, not yet published" notice once the
-   tag is live.
-
-This document and `CHANGELOG.md` will be updated to say "shipped" only
-once that sequence has actually run — not before.
+1. ~~Resolve the pre-existing local-only `v0.5.0` tag.~~ **Done.** The
+   stale local tag (pointing at an earlier commit containing only
+   tasks 019–020) was moved to `main`'s tip (containing 019–023) and
+   pushed.
+2. ~~Push the tag to `origin`.~~ **Done** —
+   `git ls-remote --tags origin` lists `v0.5.0`, and
+   `go get github.com/Trustvian/trustvian@v0.5.0` (from outside this
+   repository) succeeds.
+3. ~~Update `processor/go.mod`.~~ **Done**, in a small, separate
+   follow-up commit after the tag was live (this genuinely could not
+   happen before the tag existed: `go.sum` entries are content hashes
+   of the published module, verified empirically that nothing can
+   compute them for an unpublished version).
+4. ~~Verify that follow-up cleanly.~~ **Done** —
+   `GOWORK=off go mod download && GOWORK=off go list -m
+   github.com/Trustvian/trustvian` reports `v0.5.0`; `processor/`'s
+   full quality gate (`go build`/`go vet`/`go test -race ./...`) passes
+   with no `go.work` involved.
+5. **Remaining:** publish GitHub release notes from the
+   `CHANGELOG.md § v0.5.0` entry — a communications step, not a
+   functional one.
 
 ## v0.6 — Behavioral Detection Depth
 

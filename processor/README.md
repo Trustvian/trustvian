@@ -125,16 +125,13 @@ by decoding with `go-viper/mapstructure/v2` pointed directly at those
 existing `yaml` tags, producing a real `config.PolicyConfig` with zero
 duplicate policy model anywhere in this module.
 
-**Not yet resolvable outside a local workspace:** `processor/go.mod`
-still requires `github.com/Trustvian/trustvian v0.3.0`, a version that
-predates the `config` package. This processor's policy-configuration
-code is implemented and tested (see `go.work` at the repository root,
-git-ignored, for local development), but `processor/go.mod`'s
-committed dependency cannot yet point at a released version that
-contains `config` — no Trustvian core release newer than `v0.4.0` has
-been pushed to `origin` as of this writing. See task 022's own
-"Release / Module Compatibility" section for the exact verification and
-the release this depends on.
+`processor/go.mod` requires `github.com/Trustvian/trustvian v0.5.0` —
+the real, published release containing `config` — verified with a
+clean, workspace-free build: `GOWORK=off go build ./... && GOWORK=off
+go test ./... -race` succeeds using only that dependency, no local
+source involved. See task 022's own "Release / Module Compatibility"
+section for the history of this dependency (it briefly lagged behind
+the `config` package's own release between tasks 022 and 024).
 
 ## `trustvian.behavior.id`
 
