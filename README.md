@@ -29,13 +29,14 @@ no OpenTelemetry involvement (see
 [`examples/alert-webhook`](examples/alert-webhook/README.md)) — are all
 implemented, tested, and benchmarked.
 
-**`v0.5` — Policy & Configuration is in progress** (its first two
-tasks are done; the milestone as a whole is not): a public `config`
-package now lets a caller outside this module declare a `Policy` in a
-versioned YAML file — strictly validated, strictly parsed — and
-compile it into a real, enforced `policy.Policy`, without ever
-importing `internal/policy`. See [Configuring a Policy](#configuring-a-policy)
-below.
+**`v0.5` — Policy & Configuration is in progress** (three of its tasks
+are done; the milestone as a whole is not): a public `config` package
+lets a caller outside this module declare a `Policy` in a versioned
+YAML file — strictly validated, strictly parsed — and compile it into
+a real, enforced `policy.Policy`, without ever importing
+`internal/policy`; and the CLI's `trustvian analyze`/`trustvian
+baseline build` can now load that same file directly via `--config
+<path>`. See [Configuring a Policy](#configuring-a-policy) below.
 
 **Trustvian OSS is meant to be a complete, standalone,
 production-usable behavioral security product on its own** — detect,
@@ -43,11 +44,11 @@ score, decide, alert, integrate, and run, all without Trustvian
 Control. Not yet built, on the path there: order-aware sequence
 detection, delivery reliability (retry/deduplication/cooldown) and any
 provider-specific alert sink (Slack/Teams/PagerDuty), declarative
-*alert* configuration (`policy` configuration is now implemented — see
-above), CLI/OTel Collector integration for the new policy config, AI-agent
-session/delegation concepts, a production-grade persistent store beyond
-`FileStore`, and release/operational engineering (CI, Docker image,
-SBOM). See
+*alert* configuration (`policy` configuration is now implemented and
+CLI-integrated — see above), OTel Collector integration for the new
+policy config, AI-agent session/delegation concepts, a
+production-grade persistent store beyond `FileStore`, and
+release/operational engineering (CI, Docker image, SBOM). See
 [`docs/ROADMAP.md`](docs/ROADMAP.md#the-oss--enterprise-product-boundary)
 for the explicit OSS/Control boundary and the full milestone sequence
 through `v1.0`. ML-based detection stays optional research, never a
@@ -137,6 +138,11 @@ Reason:   risk within tolerance
 gated learning path as live traffic and prints a learned/skipped
 summary. See [Limitations](#limitations) for why its result doesn't
 persist across separate CLI invocations yet.
+
+Both subcommands accept `--config <path>` to load a real `Policy` from
+a schema-v1 YAML file instead of the CLI's built-in default policy —
+see [Configuring a Policy](#configuring-a-policy) below and the [CLI
+Guide](docs/cli-guide.md#--config-path) for the full behavior.
 
 ## Go SDK
 
@@ -246,8 +252,14 @@ silently ignored — a config typo should never silently weaken a
 policy. See [Policy Guide § Loading a Policy from a YAML
 file](docs/policy-guide.md#loading-a-policy-from-a-yaml-file) for the
 full field reference and [`docs/tasks/019`](docs/tasks/019-policy-config-model.md)/[`020`](docs/tasks/020-policy-config-loader.md)
-for how this was built. There is no CLI `--config` flag and no OTel
-Collector processor integration yet — both are separately scoped,
+for how this was built.
+
+The CLI consumes the exact same file: `trustvian analyze --config
+trustvian.yaml event.json` runs `config.LoadFile` +
+`config.CompilePolicy` internally and analyzes under that policy
+instead of the built-in default — see [`docs/tasks/021`](docs/tasks/021-cli-config-integration.md)
+and the [CLI Guide](docs/cli-guide.md#--config-path). OTel Collector
+processor integration for the same config is separately scoped,
 not-yet-started work (see [`docs/ROADMAP.md` §
 v0.5](docs/ROADMAP.md#v05--policy--configuration)). Declarative *alert*
 configuration (as opposed to policy configuration) does not exist
@@ -328,9 +340,10 @@ the general reasoning behind this boundary.
 - **Declarative *alert* configuration doesn't exist.** `alert.Rule`s
   (see the [`alert`](docs/DOMAIN.md#alert) domain model) are
   constructed in Go only; there is no YAML equivalent of
-  `config.PolicyConfig` for alert rules yet, and no CLI or OTel
-  Collector processor integration for the policy config that does
-  exist — see
+  `config.PolicyConfig` for alert rules yet, and no OTel Collector
+  processor integration for the policy config that does exist (the CLI
+  itself now has `--config` — see [Configuring a
+  Policy](#configuring-a-policy) above) — see
   [`docs/ROADMAP.md` § v0.5](docs/ROADMAP.md#v05--policy--configuration).
 - **Single-tenant.** Baseline/fingerprint keys are already scoped by
   `(ActorID, Environment)`, but there is no multi-tenant access control

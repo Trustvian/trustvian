@@ -1,0 +1,8 @@
+version: v1
+default_decision: observe_only
+default_reason: no policy rules configured; observing by default
+rules:
+  - name: block-everything
+    when: {}
+    decision: block
+    reason: test policy that blocks unconditionally, to prove --config overrides the CLI's built-in default policy

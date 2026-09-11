@@ -8,9 +8,10 @@ in [`docs/tasks/`](tasks/); each task file is independently
 understandable and carries its own objective, scope, non-goals,
 technical requirements, tests, benchmarks, documentation, and
 acceptance criteria. Milestones without a task file yet (`v0.6`–`v0.9`
-below; `v0.5` has its first two tasks,
-[019](tasks/019-policy-config-model.md) and
-[020](tasks/020-policy-config-loader.md), with more of its own scope
+below; `v0.5` has three tasks so far,
+[019](tasks/019-policy-config-model.md),
+[020](tasks/020-policy-config-loader.md), and
+[021](tasks/021-cli-config-integration.md), with more of its own scope
 still unscoped) are deliberately not
 pre-scoped in detail — this roadmap's own
 "small vertical slices" principle, applied to itself.
@@ -132,18 +133,23 @@ HMAC-signed HTTPS webhook, the one delivery mechanism this stage ships
 — without changing `Decision` semantics or touching the core pipeline
 at all. See the milestone section below for the full writeup.
 
-**`v0.5` — Policy & Configuration is in progress: its first two
-tasks, [019](tasks/019-policy-config-model.md) and
-[020](tasks/020-policy-config-loader.md), are done; the milestone as a
-whole is not.** A new public package, `config`, lets a caller outside
+**`v0.5` — Policy & Configuration is in progress: three of its
+tasks, [019](tasks/019-policy-config-model.md),
+[020](tasks/020-policy-config-loader.md), and
+[021](tasks/021-cli-config-integration.md), are done; the milestone as
+a whole is not.** A new public package, `config`, lets a caller outside
 this module compile a `PolicyConfig` into a real `policy.Policy` and
 hand it to `trustvian.WithPolicy` — without `internal/policy` becoming
 public (see [ADR 0008](adr/0008-policy-config-boundary.md)) — and load
 that same `PolicyConfig` from a real YAML file
 (`config.LoadFile`/`Load`), strictly, with unknown fields and
-duplicate keys both rejected. No CLI integration, `processor/`
-integration, or Alert configuration exists yet — see the milestone
-section below.
+duplicate keys both rejected. `trustvian analyze`/`trustvian baseline
+build` now accept `--config <path>` and consume that exact loader/compiler
+path, failing closed (non-zero exit, no analysis output) if the file
+can't be safely loaded and compiled — see [task
+021](tasks/021-cli-config-integration.md). `processor/` integration and
+Alert configuration do not exist yet — see the milestone section
+below.
 
 What's **not** yet true, concretely — the gaps this roadmap's remaining
 milestones exist to close:
@@ -165,11 +171,12 @@ milestones exist to close:
   nothing prevents one from being a future OSS `Sink` implementation
   (same section).
 - A custom `Policy` can now be constructed from outside this module in
-  Go ([task 019](tasks/019-policy-config-model.md)) *and* loaded from
+  Go ([task 019](tasks/019-policy-config-model.md)), loaded from
   a real YAML file ([task 020](tasks/020-policy-config-loader.md),
-  `config.LoadFile`) — but no CLI flag consumes it yet, and
-  `processor/` has not been updated to use it (still runs the default
-  `Policy`). Alert configuration (`config.AlertConfig`, compiling into
+  `config.LoadFile`), and consumed directly by the CLI via `--config`
+  ([task 021](tasks/021-cli-config-integration.md)) — but `processor/`
+  has not been updated to use it (still runs the default `Policy`).
+  Alert configuration (`config.AlertConfig`, compiling into
   `[]alert.Rule`) does not exist at all yet. See `v0.5` below.
 - Sequence-aware detection (order, not just individual-event anomaly)
   does not exist — see `v0.6` below.
@@ -186,8 +193,8 @@ milestones exist to close:
   [§ The OSS / Enterprise product boundary](#the-oss--enterprise-product-boundary)
   above).
 
-**Next up:** with `v0.1`–`v0.4.0` shipped and `v0.5`'s first task done,
-this roadmap's remaining work (the rest of `v0.5` through `v1.0`
+**Next up:** with `v0.1`–`v0.4.0` shipped and `v0.5`'s first three tasks
+done, this roadmap's remaining work (the rest of `v0.5` through `v1.0`
 Production-Ready OSS, defined below) charts the path to a complete,
 standalone, production-usable OSS product — see each milestone section
 for
@@ -556,9 +563,11 @@ loader. This milestone closes that gap with a narrow, stable,
 declarative configuration boundary usable identically by the Go SDK,
 the CLI, the OTel Collector processor, and a standalone deployment.
 
-**Scope** (task file [019](tasks/019-policy-config-model.md) for the
-first slice; the rest remain unscoped, per this roadmap's own "small
-vertical slices" principle):
+**Scope** (task files [019](tasks/019-policy-config-model.md),
+[020](tasks/020-policy-config-loader.md), and
+[021](tasks/021-cli-config-integration.md) for the slices done so far;
+the rest remain unscoped, per this roadmap's own "small vertical
+slices" principle):
 
 - **019 Public Policy configuration model + compiler — done.** New
   public package `config` (a sibling to `event`/`alert`, not
@@ -615,7 +624,29 @@ vertical slices" principle):
       reason: critical risk requires manual approval
   ```
 
-- **Not yet done:** CLI integration (`--config`); wiring `processor/`
+- **021 CLI configuration integration — done.** `trustvian analyze`
+  and `trustvian baseline build` both accept an optional `--config
+  <path>`, wired through the same shared engine-construction helper
+  (`newEngine`, `cmd/trustvian/policy.go`): `config.LoadFile` →
+  `config.CompilePolicy` → `trustvian.WithPolicy`, exactly the path any
+  other external caller uses — the CLI does not import
+  `internal/policy` for this path and does not reimplement any parsing
+  or validation task 020 already owns. Without `--config`, behavior is
+  unchanged: the CLI's pre-existing built-in `defaultPolicy()` (which
+  does import `internal/policy`, legitimately — `cmd/trustvian` is
+  in-module code, per [ARCHITECTURE.md](ARCHITECTURE.md)) is untouched.
+  An invalid, missing, or unparseable `--config` fails the whole
+  command closed — non-zero exit, no analysis report printed, no
+  fallback to `defaultPolicy()` — proven by
+  `TestRunAnalyzeInvalidConfigFailsClosed` and
+  `TestRunAnalyzeMissingConfigFailsClosed`. A real override of the
+  built-in default is proven by
+  `TestRunAnalyzeConfigOverridesDefaultDecision` (a `--config`d
+  catch-all-block policy turns `TestRunAnalyzeNormalEventIsAllowed`'s
+  same `ALLOW` event into `BLOCK`), and `baseline build`'s own
+  acceptance by `TestRunBaselineBuildAcceptsConfigFlag`. See [task
+  021](tasks/021-cli-config-integration.md).
+- **Not yet done:** wiring `processor/`
   to use `config` instead of the default `Policy`; Alert configuration
   (an `AlertConfig` alongside `PolicyConfig`, compiling into
   `[]alert.Rule` — see [DOMAIN.md §
@@ -639,20 +670,22 @@ and [task 020's](tasks/020-policy-config-loader.md#non-goals) own
 Non-Goals sections for the complete, precise lists.
 
 **Dependencies.** `v0.1` (stable `Policy`/`Decision`) — satisfied.
-Task 020 depends on task 019 (decodes into its existing types). Neither
-depends on `v0.4.0`/`alert.Rule` being stable, since both scoped Policy
-configuration alone; a future Alert-configuration task will depend on
-`v0.4.0`.
+Task 020 depends on task 019 (decodes into its existing types). Task
+021 depends on both (it calls `config.LoadFile`/`config.CompilePolicy`
+directly, unmodified). None depend on `v0.4.0`/`alert.Rule` being
+stable, since all three scoped Policy configuration alone; a future
+Alert-configuration task will depend on `v0.4.0`.
 
 **Acceptance criteria.** See [task
-019](tasks/019-policy-config-model.md)'s and [task
-020](tasks/020-policy-config-loader.md)'s own Acceptance Criteria
-sections — both fully met, verified by `go test ./... -race -count=1`,
+019](tasks/019-policy-config-model.md)'s, [task
+020](tasks/020-policy-config-loader.md)'s, and [task
+021](tasks/021-cli-config-integration.md)'s own Acceptance Criteria
+sections — all fully met, verified by `go test ./... -race -count=1`,
 `go test -bench=. -benchmem ./config/...`, and `go list -deps`
 confirming no core-engine import of `config` or `go.yaml.in/yaml/v3`.
-The milestone as a whole remains incomplete: it is not done until CLI
-integration, `processor/` integration, and Alert configuration — all
-still unscoped — land too.
+The milestone as a whole remains incomplete: it is not done until
+`processor/` integration and Alert configuration — both still unscoped
+— land too.
 
 ## v0.6 — Behavioral Detection Depth
 
