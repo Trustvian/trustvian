@@ -8,22 +8,9 @@ actually depend on.
 
 ## v0.5.0 — Policy & Configuration
 
-> **Release status: prepared, not yet published.** This section
-> describes `v0.5.0`'s full intended content — implementation,
-> tests, and documentation for all five of the milestone's tasks are
-> complete on `develop` as of this writing, but the `v0.5.0` tag has
-> not been pushed to this project's remote. A locally-created `v0.5.0`
-> git tag exists pointing at an earlier commit (covering only tasks
-> 019–020); it will need to be moved (or replaced by a fresh tag) to
-> the actual release commit as part of the human-controlled release
-> process — see `docs/tasks/` and `docs/ROADMAP.md` § v0.5 for the
-> authoritative, always-current state in the meantime. Do not treat
-> this heading's presence as evidence the tag exists; check `git tag`/
-> `git ls-remote --tags origin` for that.
-
 Adds a public, versioned configuration boundary for both `Policy` and
-Alert Evaluation, and wires the former into the CLI and (in code,
-pending this same release) the OTel Collector processor.
+Alert Evaluation, and wires the former into the CLI and the OTel
+Collector processor.
 
 ### Added
 
@@ -63,11 +50,10 @@ pending this same release) the OTel Collector processor.
   via `go-viper/mapstructure/v2` (pointed at `PolicyConfig`'s own
   `yaml` tags — Collector's confmap decoder only reads `mapstructure`
   tags) and compiled via the same `config.CompilePolicy`. An invalid
-  explicit `policy:` block fails Collector startup outright. **Known
-  limitation carried into this release:** `processor/go.mod` cannot yet
-  declare a real dependency on a Trustvian version containing `config`
-  — see Limitations in README.md and task 022's own "Release / Module
-  Compatibility" section.
+  explicit `policy:` block fails Collector startup outright.
+  `processor/go.mod` depends on this exact `v0.5.0` release, verified
+  with a clean `GOWORK=off go build ./... && GOWORK=off go test ./...
+  -race` — no local workspace involved.
 - **Declarative Alert configuration**
   ([task 023](docs/tasks/023-declarative-alert-configuration.md)) — a
   new, independent public model in the same `config` package:

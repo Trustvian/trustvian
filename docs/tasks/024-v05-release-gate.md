@@ -20,9 +20,19 @@ matters: a tagged release is the first point external users can depend
 on a specific, stable snapshot rather than a moving `develop` branch.
 `v0.5` carries one complication `v0.1` didn't have to consider: a
 `v0.5.0` git tag already exists **locally**, created before this gate
-ran, pointing at an earlier commit that only contains tasks 019–020.
-That tag was never pushed to `origin` — closing this gate means
-resolving that, not just running the usual checks.
+ran, pointing at an earlier commit (`b9763e3`) that only contains tasks
+019–020. That tag was never pushed to `origin` — closing this gate
+means resolving that, not just running the usual checks.
+
+**Verified, not assumed:** `main` and `develop` are currently
+byte-identical (`git diff main develop` is empty) — every prior
+release tag in this repository's history (`v0.1.0`–`v0.4.0`) points at
+a "Merge pull request #NN from Trustvian/develop" commit on `main`,
+confirming this repository's actual convention is *tag on `main`, at
+the commit where `develop`'s work lands there*, not on `develop`
+directly. `main`'s current tip already contains all of 019–023 —
+it is a real, present-day candidate for the `v0.5.0` release commit,
+not a hypothetical future one this gate has to wait for.
 
 ## Scope
 
@@ -34,12 +44,13 @@ resolving that, not just running the usual checks.
   `go vet ./...`, `go test -race ./...`, `gofmt -l .` all clean at the
   repository root; `go mod tidy` at the root produces no diff (no
   accidental new dependency snuck in across the whole milestone).
-- Verify `processor/` independently (`go build`/`go vet`/`go test
-  -race ./...`), using a local `go.work` since its committed `go.mod`
-  cannot yet resolve `config` — and explicitly confirm, rather than
-  assume, that a clean `GOWORK=off` build/test of `processor/` against
-  a real released Trustvian core is **not yet possible** until the
-  release this gate produces actually exists on `origin`.
+- Verify `processor/` independently, first with a local `go.work`
+  (since, before the tag existed, its committed `go.mod` could not yet
+  resolve `config`), then — once the tag is pushed and
+  `processor/go.mod` is bumped — with a clean, workspace-free
+  `GOWORK=off go build ./... && GOWORK=off go test ./... -race`
+  against the real, published release. Confirm each stage empirically
+  rather than assuming it.
 - Re-run a documentation consistency check across every `.md` file
   touched or referenced by 019–023 (stale "first two tasks"/"not yet
   done" phrasing, dangling anchors, task-file cross-references) — the
@@ -120,17 +131,22 @@ v0.5.0 release gate
 [x] processor race (local go.work)
 [x] processor vet (local go.work)
 [x] docs consistent                     (see this task's own Scope)
-[x] CHANGELOG final                     (prepared; "not yet published" notice present)
+[x] CHANGELOG final                     (published; "not yet published" notice removed once tag was live)
 [x] public API review                   (see task's own writeup / this task's report)
 [x] config compatibility                (schema v1 untouched; verified by full existing test suite)
 [x] security review                     (docs/SECURITY.md updated for Alert config)
-[ ] processor go.mod prepared for v0.5.0   — NOT done: no real v0.5.0
-    tag exists on origin yet to point at (see task 022's "Release /
-    Module Compatibility"); this happens in the same commit as the tag
-[ ] human creates/pushes v0.5.0 tag        — requires resolving the
-    pre-existing local-only v0.5.0 tag first (see Scope above)
-[ ] GOWORK=off processor verification after tag
-[ ] GitHub release notes
+[x] human creates/pushes v0.5.0 tag        — the stale local-only tag
+    was moved to main's tip (containing 019-023) and pushed;
+    `git ls-remote --tags origin` and a real `go get
+    github.com/Trustvian/trustvian@v0.5.0` both confirm it resolves
+[x] processor go.mod prepared for v0.5.0   — done in a separate,
+    post-tag follow-up commit (go.sum entries are content hashes of
+    the published module; nothing could compute them before the tag
+    existed — verified directly, not assumed, before this step ran)
+[x] GOWORK=off processor verification after tag — `GOWORK=off go
+    build ./... && GOWORK=off go test ./... -race` both pass against
+    the real, published v0.5.0, no workspace involved
+[ ] GitHub release notes                   — drafted, not yet published
 ```
 
 ## Acceptance Criteria
@@ -140,11 +156,13 @@ v0.5.0 release gate
 - `go build`/`go vet`/`go test -race`/`gofmt -l`/`go mod tidy` all
   clean on the exact commit intended for the tag, at the repository
   root.
-- `processor/` builds and tests clean under a local `go.work`.
+- `processor/` builds and tests clean under a local `go.work` — and,
+  once the tag exists, cleanly with `GOWORK=off` and no workspace at
+  all.
 - The full-repository documentation consistency check (per Scope)
   passes with zero findings.
 - A version tag exists on `origin`, `processor/go.mod` depends on it,
   and a `GOWORK=off` build/test of `processor/` succeeds against that
-  real, published dependency — **not yet true as of this task's own
-  authoring**; closing this criterion is the human release step this
-  gate hands off to.
+  real, published dependency — **met**: `v0.5.0` is pushed to `origin`,
+  `processor/go.mod` requires it, and `GOWORK=off go build ./... &&
+  GOWORK=off go test ./... -race` both pass with no workspace involved.

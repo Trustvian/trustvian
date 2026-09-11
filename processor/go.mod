@@ -3,7 +3,8 @@ module trustvian-processor
 go 1.27
 
 require (
-	github.com/Trustvian/trustvian v0.3.0
+	github.com/Trustvian/trustvian v0.5.0
+	github.com/go-viper/mapstructure/v2 v2.5.0
 	go.opentelemetry.io/collector/component v1.66.0
 	go.opentelemetry.io/collector/component/componenttest v0.160.0
 	go.opentelemetry.io/collector/confmap v1.66.0
@@ -36,7 +37,6 @@ require (
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
-	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
