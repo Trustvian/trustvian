@@ -137,8 +137,14 @@ engine := trustvian.NewEngine(trustvian.WithPolicy(p))
 
 See [Policy Guide § Loading a Policy from a YAML
 file](policy-guide.md#loading-a-policy-from-a-yaml-file) for the file
-format and what strict decoding rejects. There is no CLI `--config`
-flag yet — this is Go SDK usage only today.
+format and what strict decoding rejects. The CLI can load the same
+file directly, without any Go code:
+
+```bash
+trustvian analyze --config trustvian.yaml event.json
+```
+
+See [CLI Guide § --config](cli-guide.md#--config-path).
 
 ## Where to next
 

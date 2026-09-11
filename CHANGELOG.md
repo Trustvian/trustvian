@@ -6,6 +6,39 @@ All notable changes to Trustvian are documented in this file. Prior to
 point where a tag first exists for something external users can
 actually depend on.
 
+## v0.5.0 — Policy & Configuration (partial)
+
+Adds a public, versioned configuration boundary for `Policy` — the
+first two slices of the `v0.5` milestone. This tag does not close the
+milestone: CLI integration, `processor/` integration, and Alert
+configuration are not part of it (see
+[ROADMAP.md § v0.5](docs/ROADMAP.md#v05--policy--configuration) for
+what remains).
+
+### Added
+
+- **Public Policy configuration model + compiler**
+  ([task 019](docs/tasks/019-policy-config-model.md)) — a new public
+  package, `config` (a sibling to `event`/`alert`, not `internal/` —
+  see [ADR 0008](docs/adr/0008-policy-config-boundary.md)):
+  `PolicyConfig`/`PolicyRule`/`PolicyCondition` (primitive-typed
+  structs mirroring `policy.Policy`/`Rule`/`Condition` exactly),
+  `(PolicyConfig).Validate() error`, and
+  `CompilePolicy(PolicyConfig) (policy.Policy, error)`. A caller
+  outside this module can receive a `policy.Policy` from
+  `CompilePolicy` and pass it straight into `trustvian.WithPolicy` via
+  ordinary Go type inference, without ever importing `internal/policy`
+  — a Go language property verified empirically, not assumed.
+- **Config file loader & schema v1 parsing**
+  ([task 020](docs/tasks/020-policy-config-loader.md)) —
+  `Load([]byte) (PolicyConfig, error)` and
+  `LoadFile(path string) (PolicyConfig, error)`, decoding a YAML
+  document directly into task 019's existing public types via one new
+  dependency, `go.yaml.in/yaml/v3`. Unknown fields and duplicate
+  mapping keys are both rejected unconditionally — a config-time typo
+  fails loudly rather than silently falling through to a different
+  security behavior. `LoadFile` bounds its read to 1 MiB.
+
 ## v0.4.0 — Alert & Notification Foundation
 
 Adds the Foundation stage of the Alert & Notification phase: a

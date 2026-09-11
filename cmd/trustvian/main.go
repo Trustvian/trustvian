@@ -43,8 +43,12 @@ func usage(w *os.File) {
 	fmt.Fprintln(w, `Trustvian - behavioral security and trust engine
 
 Usage:
-  trustvian analyze <events.json>        Score each event and print a report
-  trustvian baseline build <events.json> Learn a baseline from a corpus of events
+  trustvian analyze [--config <path>] <events.json>        Score each event and print a report
+  trustvian baseline build [--config <path>] <events.json> Learn a baseline from a corpus of events
+
+--config <path> loads a schema-v1 YAML policy config (see config.LoadFile)
+and uses it instead of the CLI's built-in default policy. Without it,
+behavior is unchanged from before this flag existed.
 
 <events.json> is a JSON array of events, e.g.:
   [{"id":"evt-1","timestamp":"2026-01-01T12:00:00Z","actor":{"id":"svc-payment","type":"service","identity_confidence":0.95},"operation":{"category":"http","name":"POST /payment"},"target":{"name":"payment-db"},"context":{"environment":"production"}}]`)

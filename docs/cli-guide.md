@@ -6,16 +6,47 @@ go install github.com/Trustvian/trustvian/cmd/trustvian@latest
 ```
 
 ```
-trustvian analyze <events.json>        Score each event and print a report
-trustvian baseline build <events.json> Learn a baseline from a corpus of events
+trustvian analyze [--config <path>] <events.json>        Score each event and print a report
+trustvian baseline build [--config <path>] <events.json> Learn a baseline from a corpus of events
 trustvian help
 ```
 
-The CLI uses a built-in starter policy (block on high/critical risk,
-alert on medium, allow otherwise) — see
-[`cmd/trustvian/policy.go`](../cmd/trustvian/policy.go) and
-[Go SDK Guide § the public/internal boundary today](sdk-guide.md#the-publicinternal-boundary-today)
-for why this isn't yet configurable via a flag.
+By default, the CLI uses a built-in starter policy (block on
+high/critical risk, alert on medium, allow otherwise) — see
+[`cmd/trustvian/policy.go`](../cmd/trustvian/policy.go). Pass
+`--config` to use a real policy from a file instead — see below.
+
+## `--config <path>`
+
+Both `analyze` and `baseline build` accept an optional `--config
+<path>`, loading a schema-v1 YAML policy config the same way any other
+caller outside this module would — `config.LoadFile` +
+`config.CompilePolicy`, then `trustvian.WithPolicy` — and using the
+result instead of the built-in default policy for that invocation.
+
+```bash
+trustvian analyze --config trustvian.yaml event.json
+```
+
+See [Configuring a Policy](../README.md#configuring-a-policy) in the
+README for the YAML format and [Policy Guide § Loading a Policy from a
+YAML file](policy-guide.md#loading-a-policy-from-a-yaml-file) for the
+full field reference — the CLI doesn't add or change any config
+semantics of its own.
+
+Without `--config`, behavior is exactly what it was before this flag
+existed — the built-in default policy, unchanged.
+
+If the given file is missing, fails to parse, or fails validation
+(e.g. an unrecognized field, an invalid decision value, a duplicate
+YAML key), the command fails closed: non-zero exit, an error on
+stderr naming the problem, and **no analysis report is printed** — the
+CLI never falls back to the built-in default policy when an explicit
+`--config` was requested and couldn't be honored.
+
+There is no environment-variable config, no auto-discovery of a
+default config file path, and no live reload — `--config` is the only
+way to select a file, and it's read once per invocation.
 
 ## `trustvian analyze`
 

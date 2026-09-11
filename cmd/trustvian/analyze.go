@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -10,17 +11,29 @@ import (
 	trustvian "github.com/Trustvian/trustvian"
 )
 
+const analyzeUsage = "usage: trustvian analyze [--config <path>] <events.json>"
+
 func runAnalyze(args []string) error {
-	if len(args) != 1 {
-		return fmt.Errorf("usage: trustvian analyze <events.json>")
+	fs := flag.NewFlagSet("analyze", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String("config", "", "path to a Trustvian policy config file (schema v1 YAML)")
+	if err := fs.Parse(args); err != nil {
+		return fmt.Errorf("%s", analyzeUsage)
+	}
+	rest := fs.Args()
+	if len(rest) != 1 {
+		return fmt.Errorf("%s", analyzeUsage)
 	}
 
-	events, err := loadEvents(args[0])
+	events, err := loadEvents(rest[0])
 	if err != nil {
 		return err
 	}
 
-	engine := newEngine()
+	engine, err := newEngine(*configPath)
+	if err != nil {
+		return err
+	}
 	ctx := context.Background()
 
 	for i, ev := range events {

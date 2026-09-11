@@ -92,6 +92,90 @@ func TestRunAnalyzeNormalEventIsAllowed(t *testing.T) {
 	}
 }
 
+// TestRunAnalyzeConfigOverridesDefaultDecision is the central
+// acceptance test task 021 exists to satisfy: the same event that
+// TestRunAnalyzeNormalEventIsAllowed proves resolves to ALLOW under
+// the CLI's built-in default policy must resolve to BLOCK once a
+// --config file supplying a different policy is given — proving
+// --config actually changes engine behavior, not merely that it
+// parses without error.
+func TestRunAnalyzeConfigOverridesDefaultDecision(t *testing.T) {
+	stdout, stderr, code := captureOutput(t, func() int {
+		return run([]string{"analyze", "--config", "testdata/policy-block-all.yaml", "testdata/normal.json"})
+	})
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "Decision: BLOCK") {
+		t.Fatalf("stdout = %q, want Decision: BLOCK — the configured policy should have overridden the built-in default (which allows this same event)", stdout)
+	}
+}
+
+// TestRunAnalyzeInvalidConfigFailsClosed proves this task's central
+// security invariant: an explicitly supplied config that fails to
+// load/compile must produce a non-zero exit and no analysis output —
+// never a silent fallback to the default policy. The fixture's
+// "default_decison" typo also doubles as the unknown-field-rejection
+// regression check: strict decoding (task 020) must survive the CLI
+// boundary, not be silently bypassed by how the CLI calls the loader.
+func TestRunAnalyzeInvalidConfigFailsClosed(t *testing.T) {
+	stdout, stderr, code := captureOutput(t, func() int {
+		return run([]string{"analyze", "--config", "testdata/policy-invalid.yaml", "testdata/normal.json"})
+	})
+
+	if code == 0 {
+		t.Fatalf("exit code = 0, want non-zero for an invalid config file")
+	}
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty — no analysis must run when the config fails to load", stdout)
+	}
+	if !strings.Contains(stderr, "default_decison") {
+		t.Fatalf("stderr = %q, want it to identify the unrecognized field", stderr)
+	}
+}
+
+// TestRunAnalyzeMissingConfigFailsClosed proves a missing --config
+// path is treated the same way as an invalid one: non-zero exit, a
+// clear error, and no analysis performed — not a silent fallback and
+// not auto-discovery of some other file.
+func TestRunAnalyzeMissingConfigFailsClosed(t *testing.T) {
+	stdout, stderr, code := captureOutput(t, func() int {
+		return run([]string{"analyze", "--config", "testdata/does-not-exist.yaml", "testdata/normal.json"})
+	})
+
+	if code == 0 {
+		t.Fatalf("exit code = 0, want non-zero for a missing config file")
+	}
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty — no analysis must run when the config file is missing", stdout)
+	}
+	if stderr == "" {
+		t.Fatalf("stderr is empty, want an error message")
+	}
+}
+
+// TestRunBaselineBuildAcceptsConfigFlag proves --config is wired
+// through baseline build's own engine construction too, not only
+// analyze's — both share the same newEngine helper, and a regression
+// that broke one without the other would otherwise go unnoticed.
+func TestRunBaselineBuildAcceptsConfigFlag(t *testing.T) {
+	stdout, stderr, code := captureOutput(t, func() int {
+		return run([]string{"baseline", "build", "--config", "testdata/policy-block-all.yaml", "testdata/corpus.json"})
+	})
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr = %q", code, stderr)
+	}
+	// Every event in the corpus is now BLOCKed by the configured
+	// catch-all policy, and BLOCK is not eligible for learning (see
+	// Engine.Observe) — so nothing should be learned, unlike the
+	// corpus's default-policy behavior in TestRunBaselineBuildSummary.
+	if !strings.Contains(stdout, "Learned:          0") {
+		t.Fatalf("stdout = %q, want 0 learned — the configured block-all policy makes every event ineligible for learning", stdout)
+	}
+}
+
 func TestRunAnalyzeAnomalousEventIsBlocked(t *testing.T) {
 	stdout, stderr, code := captureOutput(t, func() int {
 		return run([]string{"analyze", "testdata/anomalous.json"})

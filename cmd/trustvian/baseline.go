@@ -2,15 +2,19 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"io"
 	"os"
 )
 
+const baselineUsage = "usage: trustvian baseline build [--config <path>] <events.json>"
+
 func runBaseline(args []string) error {
-	if len(args) != 2 || args[0] != "build" {
-		return fmt.Errorf("usage: trustvian baseline build <events.json>")
+	if len(args) == 0 || args[0] != "build" {
+		return fmt.Errorf("%s", baselineUsage)
 	}
-	return runBaselineBuild(args[1])
+	return runBaselineBuild(args[1:])
 }
 
 // runBaselineBuild replays a corpus of events through Analyze+Observe, in
@@ -29,13 +33,27 @@ func runBaseline(args []string) error {
 // deployment builds its baseline once, in the long-running process that
 // then serves Analyze calls, not by piping state between CLI
 // invocations.
-func runBaselineBuild(path string) error {
-	events, err := loadEvents(path)
+func runBaselineBuild(args []string) error {
+	fs := flag.NewFlagSet("baseline build", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String("config", "", "path to a Trustvian policy config file (schema v1 YAML)")
+	if err := fs.Parse(args); err != nil {
+		return fmt.Errorf("%s", baselineUsage)
+	}
+	rest := fs.Args()
+	if len(rest) != 1 {
+		return fmt.Errorf("%s", baselineUsage)
+	}
+
+	events, err := loadEvents(rest[0])
 	if err != nil {
 		return err
 	}
 
-	engine := newEngine()
+	engine, err := newEngine(*configPath)
+	if err != nil {
+		return err
+	}
 	ctx := context.Background()
 
 	var learnedCount, skippedCount int
