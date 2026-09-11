@@ -97,6 +97,19 @@ type Config struct {
 	// contribution to Score is opt-in.
 	TimePatternWeight float64
 
+	// TransitionWeight defaults to 0, for the same reason
+	// FrequencyWeight/TimePatternWeight do: a new v0.6 signal needs
+	// real traffic to build up predecessor history before "never seen
+	// this transition before" is a trustworthy judgment, not merely a
+	// reflection of not having run long enough yet — see
+	// docs/ROADMAP.md § v0.6 and docs/tasks/025-sequence-analysis-foundation.md's
+	// Non-Goals. Existing v0.5 callers that construct a Config without
+	// setting this field (or via DefaultConfig) get byte-for-byte
+	// unchanged Score behavior: transition_deviation is still computed
+	// and reported in Anomaly.Contributors, but contributes nothing to
+	// Score until an operator opts in.
+	TransitionWeight float64
+
 	// SensitiveTargetFloor maps a Target name to a minimum anomaly
 	// contribution that always applies when that target is touched,
 	// regardless of how familiar the Baseline is with it. This is what
@@ -125,6 +138,7 @@ func DefaultConfig() Config {
 		ErrorWeight:          0.8,
 		FrequencyWeight:      0,
 		TimePatternWeight:    0,
+		TransitionWeight:     0,
 		SensitiveTargetFloor: map[string]float64{},
 	}
 }
@@ -214,6 +228,21 @@ func Score(feat features.Features, fp fingerprint.Fingerprint, bl baseline.Basel
 	if known && stats.TimePatternObservations >= cfg.MinObservations {
 		hour := feat.Volatile.Timestamp.UTC().Hour()
 		if s := timePatternSignal(hour, stats, cfg); s.Value > 0 {
+			signals = append(signals, s)
+		}
+	}
+
+	// bl.LastFingerprintID is the predecessor this event's Fingerprint
+	// would transition from — "" means this actor's first-ever
+	// observation, which has no predecessor to evaluate a transition
+	// against, exactly like frequency_deviation's own
+	// IntervalObservations==0 gate. The ordering guard mirrors
+	// frequencySignal's: only a Timestamp that strictly follows
+	// bl.LastFingerprintTime is treated as validly following that
+	// predecessor — see baseline.Baseline.Observe's identical guard on
+	// the write side, and docs/SECURITY.md § Sequence state for why.
+	if bl.LastFingerprintID != "" && feat.Volatile.Timestamp.After(bl.LastFingerprintTime) {
+		if s := transitionSignal(bl.LastFingerprintID, stats, cfg); s.Value > 0 {
 			signals = append(signals, s)
 		}
 	}
@@ -331,6 +360,34 @@ func timePatternSignal(hour int, stats baseline.FingerprintStats, cfg Config) Si
 
 	detail := fmt.Sprintf("hour-of-day %02d:00 UTC has historically accounted for %.1f%% of this fingerprint's traffic (uniform baseline: %.1f%%)", hour, activity*100, uniformShare*100)
 	return Signal{Name: "time_pattern_deviation", Value: value, Weight: cfg.TimePatternWeight, Detail: detail}
+}
+
+// transitionSignal reports how novel the transition from predecessor
+// into this destination fingerprint (destStats) is: 0 if this exact
+// predecessor has led here at least once before (however few times —
+// there is no "rare" threshold yet, only "seen" vs. "never seen"), 1
+// if it never has. destStats.PredecessorCounts is read directly
+// (nil-safe: a nil map read returns the zero value), so an entirely
+// unknown destination fingerprint (destStats is FingerprintStats{})
+// correctly reports maximal novelty too — every transition into a
+// fingerprint that has never been observed at all is, by definition,
+// itself never observed.
+//
+// This deliberately does not compute a transition *probability* (a
+// Markov P(destination|predecessor)) or a frequency-based "rare"
+// threshold — establishing reliable transition observation is this
+// task's whole scope; see docs/ROADMAP.md § v0.6 for why probability
+// estimation is a separate, later task.
+func transitionSignal(predecessor string, destStats baseline.FingerprintStats, cfg Config) Signal {
+	if destStats.PredecessorCounts[predecessor] > 0 {
+		return Signal{Name: "transition_deviation", Weight: cfg.TransitionWeight}
+	}
+	return Signal{
+		Name:   "transition_deviation",
+		Value:  1,
+		Weight: cfg.TransitionWeight,
+		Detail: fmt.Sprintf("transition from fingerprint %s has never been observed leading to this one", predecessor),
+	}
 }
 
 func errorSignal(known bool, stats baseline.FingerprintStats, cfg Config) Signal {

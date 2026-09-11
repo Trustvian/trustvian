@@ -14,6 +14,7 @@ engineering conventions this codebase follows, see
 | [Go SDK Guide](sdk-guide.md) | `Event`, `Engine`, `Analyze`/`Observe`, `Result`, options, a worked baseline-maturity example |
 | [CLI Guide](cli-guide.md) | `trustvian analyze` / `trustvian baseline build`, the event JSON format |
 | [Policy Guide](policy-guide.md) | Writing `Rule`/`Condition` policies, fail-closed behavior, worked examples |
+| [Sequence Analysis](sequence-analysis.md) | Order-aware detection (`transition_deviation`), the bounded state model, cold start, activation |
 | [OpenTelemetry Adapter](OPENTELEMETRY.md) | How `internal/otel` maps a span to an `Event`, the attribute mapping table, what's not yet implemented |
 | [Security Model](SECURITY.md) | Threats considered (spoofing, baseline poisoning, policy bypass, ...), implemented vs. future |
 | [Performance](PERFORMANCE.md) | Hot paths, measured benchmark results, allocation/concurrency notes |

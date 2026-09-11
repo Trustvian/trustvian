@@ -229,3 +229,93 @@ func TestInMemoryFreezeIsPerKey(t *testing.T) {
 		t.Fatalf("Count = %d for an unrelated, unfrozen key, want 1 (freeze must not leak across keys)", b.Fingerprints[fp.ID].Count)
 	}
 }
+
+// destinationFingerprint is TestInMemoryObserveConcurrentTransitionTracking's
+// shared destination: every goroutine observes its own distinct
+// predecessor fingerprint, then this same one, so the resulting
+// PredecessorCounts map is actually exercised under real contention —
+// unlike TestInMemoryObserveConcurrentSameKey above, which always
+// observes one unchanging fingerprint and so never touches the
+// predecessor-tracking path at all.
+func destinationFingerprint() fingerprint.Fingerprint {
+	return fingerprint.Compute(features.StableFeatures{
+		ActorType:         event.ActorTypeService,
+		OperationCategory: event.OperationCategoryDB,
+		OperationName:     "DELETE customer",
+		TargetName:        "customer-db",
+		Environment:       "production",
+	})
+}
+
+// TestInMemoryObserveConcurrentTransitionTracking is the v0.6
+// foundation's own dedicated concurrency proof (see docs/tasks/025-sequence-analysis-foundation.md
+// § Concurrency): many goroutines, each with its own distinct
+// predecessor fingerprint, race to observe (predecessor, then the
+// shared destination) for the *same* Key. Baseline.Observe's
+// transition bookkeeping (LastFingerprintID/Time, PredecessorCounts)
+// must remain race-free and internally consistent under this — proven
+// by running under `go test -race`, not merely by not panicking.
+func TestInMemoryObserveConcurrentTransitionTracking(t *testing.T) {
+	s := store.NewInMemory()
+	dest := destinationFingerprint()
+	ctx := context.Background()
+
+	const goroutines = 50
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := range goroutines {
+		go func(i int) {
+			defer wg.Done()
+			pred := fingerprint.Compute(features.StableFeatures{
+				ActorType:         event.ActorTypeService,
+				OperationCategory: event.OperationCategoryDB,
+				OperationName:     fmt.Sprintf("predecessor-%d", i),
+				TargetName:        "customer-db",
+				Environment:       "production",
+			})
+			now := time.Now()
+			if _, err := s.Observe(ctx, testKey, pred, features.VolatileFeatures{}, now); err != nil {
+				t.Errorf("Observe(predecessor) error = %v", err)
+			}
+			if _, err := s.Observe(ctx, testKey, dest, features.VolatileFeatures{}, now.Add(time.Millisecond)); err != nil {
+				t.Errorf("Observe(destination) error = %v", err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	got, ok := s.Get(ctx, testKey)
+	if !ok {
+		t.Fatalf("Get() ok = false after concurrent Observe calls")
+	}
+
+	// goroutines predecessors + 1 shared destination.
+	if want := goroutines + 1; len(got.Fingerprints) != want {
+		t.Fatalf("len(Fingerprints) = %d, want %d", len(got.Fingerprints), want)
+	}
+	if got.Fingerprints[dest.ID].Count != goroutines {
+		t.Fatalf("dest Count = %d, want %d", got.Fingerprints[dest.ID].Count, goroutines)
+	}
+
+	// The bound must hold even under concurrent writers racing to add
+	// distinct predecessors — recordPredecessor's "refuse past the
+	// bound" policy must never be bypassed by a race. Real wall-clock
+	// interleaving across goroutines is inherently nondeterministic
+	// (which specific predecessor immediately preceded a given dest
+	// observation — or whether dest even had a valid predecessor at
+	// all at that instant — depends on scheduling), so this test
+	// checks the invariants that must hold regardless of interleaving,
+	// not exact per-predecessor counts.
+	predCounts := got.Fingerprints[dest.ID].PredecessorCounts
+	if len(predCounts) > 64 {
+		t.Fatalf("len(PredecessorCounts) = %d, want <= 64 (bound must hold under concurrency)", len(predCounts))
+	}
+
+	var total uint64
+	for _, count := range predCounts {
+		total += count
+	}
+	if total > got.Fingerprints[dest.ID].Count {
+		t.Fatalf("sum(PredecessorCounts) = %d, want <= dest.Count (%d) — each dest observation can contribute at most one predecessor count", total, got.Fingerprints[dest.ID].Count)
+	}
+}

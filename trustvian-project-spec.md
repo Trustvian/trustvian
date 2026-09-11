@@ -198,13 +198,23 @@ Identity/context attributes
 
 Order matters. Trustvian should support sequence-based anomaly detection.
 
-**Scoped, not yet implemented:** deterministic n-gram/Markov sequence
-detection is now a real pre-`v1.0` OSS milestone — see
-[`docs/ROADMAP.md` §
-v0.6](docs/ROADMAP.md#v06--behavioral-detection-depth). Graph-based
-analysis and ML-based sequence models remain research only, and — per
-[`docs/ROADMAP.md`](docs/ROADMAP.md)'s explicit product boundary — ML
-must never become a dependency of the core detection path.
+**Status: foundation implemented, as of the in-progress `v0.6`
+milestone** (see [`docs/ROADMAP.md` §
+v0.6](docs/ROADMAP.md#v06--behavioral-detection-depth) for the current,
+accurate state — this is not yet a release, only implementation
+progress). `internal/anomaly`'s new `transition_deviation` signal
+answers the narrowest possible version of this section's goal: has the
+immediately preceding action ever led to this one before, for this
+actor (`E(n-1) -> E(n)`, deterministic, no probability model yet) — see
+[`docs/sequence-analysis.md`](docs/sequence-analysis.md) for the full
+design and [ADR
+0010](docs/adr/0010-bounded-process-local-sequence-state.md) for why
+it needed no new public type or storage abstraction. The n-gram/Markov
+algorithms this section names below remain scoped-but-not-yet-built
+`v0.6` work; graph-based analysis and ML-based sequence models remain
+research only, and — per [`docs/ROADMAP.md`](docs/ROADMAP.md)'s
+explicit product boundary — ML must never become a dependency of the
+core detection path.
 
 Potential future algorithms:
 

@@ -47,18 +47,34 @@ Alerts](#configuring-alerts) below and [ADR
 0009](docs/adr/0009-alert-config-is-a-separate-document.md)). See
 [Configuring a Policy](#configuring-a-policy) below.
 
+**`v0.6` — Behavioral Detection Depth is in progress.** Its first
+task, [Sequence Analysis
+Foundation](docs/tasks/025-sequence-analysis-foundation.md), is done:
+a new, opt-in `transition_deviation` anomaly signal answers whether
+the immediately preceding action has ever led to this one before, for
+a given actor (e.g. an actor whose normal path is `read -> update`
+producing a signal on a never-seen `read -> delete`) — deterministic,
+no ML, no new public API, reusing the existing `Baseline`/`Store`
+infrastructure rather than a parallel one (see [Sequence
+Analysis](docs/sequence-analysis.md) and [ADR
+0010](docs/adr/0010-bounded-process-local-sequence-state.md)).
+Existing `v0.5` callers are unaffected: the signal defaults to a zero
+weight and `BenchmarkEngineAnalyze`'s allocation profile is unchanged.
+n-gram/Markov modeling remain unscoped future work — see
+[`docs/ROADMAP.md` § v0.6](docs/ROADMAP.md#v06--behavioral-detection-depth).
+
 **Trustvian OSS is meant to be a complete, standalone,
 production-usable behavioral security product on its own** — detect,
 score, decide, alert, integrate, and run, all without Trustvian
-Control. Not yet built, on the path there: order-aware sequence
-detection, delivery reliability (retry/deduplication/cooldown) and any
-provider-specific alert sink (Slack/Teams/PagerDuty) — declarative
-*alert* configuration itself is now implemented (see above); wiring it
-into the CLI or the Collector processor is deliberately deferred,
-since neither has an alert-delivery flow yet for it to plug into —
-AI-agent session/delegation concepts, a production-grade persistent
-store beyond `FileStore`, and release/operational engineering (CI,
-Docker image, SBOM). See
+Control. Not yet built, on the path there: n-gram/Markov sequence
+scoring beyond the single-step foundation above, delivery reliability
+(retry/deduplication/cooldown) and any provider-specific alert sink
+(Slack/Teams/PagerDuty) — declarative *alert* configuration itself is
+now implemented (see above); wiring it into the CLI or the Collector
+processor is deliberately deferred, since neither has an alert-delivery
+flow yet for it to plug into — AI-agent session/delegation concepts, a
+production-grade persistent store beyond `FileStore`, and
+release/operational engineering (CI, Docker image, SBOM). See
 [`docs/ROADMAP.md`](docs/ROADMAP.md#the-oss--enterprise-product-boundary)
 for the explicit OSS/Control boundary and the full milestone sequence
 through `v1.0`. ML-based detection stays optional research, never a

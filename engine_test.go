@@ -561,3 +561,112 @@ func TestObserveUnboundedFingerprintsDoesNotPanic(t *testing.T) {
 		}
 	}
 }
+
+// TestAnalyzeTransitionDeviationEndToEnd is v0.6's own foundational
+// end-to-end test — the security scenario docs/tasks/025-sequence-analysis-foundation.md
+// exists to make detectable: authenticate -> read -> update is this
+// actor's normal path; authenticate -> read -> delete has never
+// happened, even though "delete" itself is independently familiar (via
+// a different predecessor, authenticate). Built through the real,
+// gated Analyze+Observe loop — not a directly-seeded store — per
+// .claude/rules/testing.md's "end-to-end tests are load-bearing"
+// convention: every step here is ALLOW-shaped and genuinely
+// constructible through the gated loop, so it must be, not seeded
+// around it.
+func TestAnalyzeTransitionDeviationEndToEnd(t *testing.T) {
+	ctx := context.Background()
+	anomalyCfg := anomaly.DefaultConfig()
+	anomalyCfg.TransitionWeight = 0.7 // opt-in: default is 0
+
+	actorEvent := func(id, operation string, ts time.Time) event.Event {
+		return event.Event{
+			ID:        id,
+			Timestamp: ts,
+			Actor:     event.Actor{ID: "svc-crm", Type: event.ActorTypeService, IdentityConfidence: 0.98},
+			Operation: event.Operation{Category: event.OperationCategoryDB, Name: operation},
+			Target:    event.Target{Name: "customer-db"},
+			Context:   event.Context{Environment: "production"},
+			Attributes: map[string]any{
+				"duration_ms": float64(5),
+			},
+		}
+	}
+
+	engine := trustvian.NewEngine(
+		trustvian.WithPolicy(riskGatedPolicy()),
+		trustvian.WithAnomalyConfig(anomalyCfg),
+	)
+
+	analyzeAndObserve := func(t *testing.T, id, operation string, ts time.Time) trustvian.Result {
+		t.Helper()
+		result, err := engine.Analyze(ctx, actorEvent(id, operation, ts))
+		if err != nil {
+			t.Fatalf("Analyze(%s) error = %v", operation, err)
+		}
+		if _, err := engine.Observe(ctx, result); err != nil {
+			t.Fatalf("Observe(%s) error = %v", operation, err)
+		}
+		return result
+	}
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	step := func() time.Time {
+		now = now.Add(time.Second)
+		return now
+	}
+
+	// Familiarize "delete" itself via an unrelated predecessor
+	// (authenticate), so it is not novel on its own — isolating what
+	// this test actually checks: the *transition* into it, not the
+	// destination's own maturity.
+	for i := range 25 {
+		analyzeAndObserve(t, fmt.Sprintf("auth-%d", i), "authenticate", step())
+		analyzeAndObserve(t, fmt.Sprintf("delete-seed-%d", i), "DELETE customer", step())
+	}
+
+	// This actor's actual normal path: read -> update, many times over.
+	for i := range 25 {
+		analyzeAndObserve(t, fmt.Sprintf("read-%d", i), "SELECT customer", step())
+		analyzeAndObserve(t, fmt.Sprintf("update-%d", i), "UPDATE customer", step())
+	}
+
+	// One more read, observed, to become the real predecessor for the
+	// event actually under test.
+	analyzeAndObserve(t, "read-final", "SELECT customer", step())
+
+	// read -> delete: never observed for this actor, even though
+	// "delete" is independently familiar.
+	deleteResult, err := engine.Analyze(ctx, actorEvent("delete-final", "DELETE customer", step()))
+	if err != nil {
+		t.Fatalf("Analyze(delete) error = %v", err)
+	}
+
+	var gotTransition, gotNovelty bool
+	for _, c := range deleteResult.Anomaly.Contributors {
+		switch c.Name {
+		case "transition_deviation":
+			gotTransition = true
+		case "categorical_novelty":
+			gotNovelty = true
+		}
+	}
+	if !gotTransition {
+		t.Fatalf("Anomaly.Contributors = %+v, want transition_deviation for the never-observed read->delete transition", deleteResult.Anomaly.Contributors)
+	}
+	if gotNovelty {
+		t.Fatalf("Anomaly.Contributors = %+v, want no categorical_novelty — \"delete\" itself is independently familiar via authenticate->delete", deleteResult.Anomaly.Contributors)
+	}
+
+	// The actor's actual normal path, analyzed the same way, must not
+	// carry transition_deviation.
+	analyzeAndObserve(t, "read-final-2", "SELECT customer", step())
+	familiarResult, err := engine.Analyze(ctx, actorEvent("update-familiar", "UPDATE customer", step()))
+	if err != nil {
+		t.Fatalf("Analyze(familiar update) error = %v", err)
+	}
+	for _, c := range familiarResult.Anomaly.Contributors {
+		if c.Name == "transition_deviation" {
+			t.Fatalf("Anomaly.Contributors = %+v, want no transition_deviation for the familiar read->update transition", familiarResult.Anomaly.Contributors)
+		}
+	}
+}
