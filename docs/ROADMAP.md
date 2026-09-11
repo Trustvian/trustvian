@@ -8,11 +8,12 @@ in [`docs/tasks/`](tasks/); each task file is independently
 understandable and carries its own objective, scope, non-goals,
 technical requirements, tests, benchmarks, documentation, and
 acceptance criteria. Milestones without a task file yet (`v0.6`–`v0.9`
-below; `v0.5` has three tasks so far,
+below; `v0.5` has four tasks so far,
 [019](tasks/019-policy-config-model.md),
-[020](tasks/020-policy-config-loader.md), and
-[021](tasks/021-cli-config-integration.md), with more of its own scope
-still unscoped) are deliberately not
+[020](tasks/020-policy-config-loader.md),
+[021](tasks/021-cli-config-integration.md), and
+[022](tasks/022-collector-config-integration.md), with more of its own
+scope still unscoped) are deliberately not
 pre-scoped in detail — this roadmap's own
 "small vertical slices" principle, applied to itself.
 
@@ -133,34 +134,49 @@ HMAC-signed HTTPS webhook, the one delivery mechanism this stage ships
 — without changing `Decision` semantics or touching the core pipeline
 at all. See the milestone section below for the full writeup.
 
-**`v0.5` — Policy & Configuration is in progress: three of its
+**`v0.5` — Policy & Configuration is in progress: four of its
 tasks, [019](tasks/019-policy-config-model.md),
-[020](tasks/020-policy-config-loader.md), and
-[021](tasks/021-cli-config-integration.md), are done; the milestone as
-a whole is not.** A new public package, `config`, lets a caller outside
-this module compile a `PolicyConfig` into a real `policy.Policy` and
-hand it to `trustvian.WithPolicy` — without `internal/policy` becoming
-public (see [ADR 0008](adr/0008-policy-config-boundary.md)) — and load
-that same `PolicyConfig` from a real YAML file
-(`config.LoadFile`/`Load`), strictly, with unknown fields and
-duplicate keys both rejected. `trustvian analyze`/`trustvian baseline
-build` now accept `--config <path>` and consume that exact loader/compiler
-path, failing closed (non-zero exit, no analysis output) if the file
-can't be safely loaded and compiled — see [task
-021](tasks/021-cli-config-integration.md). `processor/` integration and
-Alert configuration do not exist yet — see the milestone section
-below.
+[020](tasks/020-policy-config-loader.md),
+[021](tasks/021-cli-config-integration.md), and
+[022](tasks/022-collector-config-integration.md), are done; the
+milestone as a whole is not.** A new public package, `config`, lets a
+caller outside this module compile a `PolicyConfig` into a real
+`policy.Policy` and hand it to `trustvian.WithPolicy` — without
+`internal/policy` becoming public (see [ADR
+0008](adr/0008-policy-config-boundary.md)) — and load that same
+`PolicyConfig` from a real YAML file (`config.LoadFile`/`Load`),
+strictly, with unknown fields and duplicate keys both rejected.
+`trustvian analyze`/`trustvian baseline build` now accept `--config
+<path>` and consume that exact loader/compiler path, failing closed
+(non-zero exit, no analysis output) if the file can't be safely loaded
+and compiled — see [task 021](tasks/021-cli-config-integration.md).
+The standalone OTel Collector processor
+([`processor/`](../processor/README.md)) now has an equivalent
+`policy:` block in its own configuration, decoded and compiled through
+the same `config` package — see [task
+022](tasks/022-collector-config-integration.md) — **but this piece is
+implemented and tested, not yet released**: no Trustvian core version
+newer than `v0.4.0` has been pushed to this project's remote, and
+`v0.4.0` predates the `config` package, so `processor/go.mod` cannot
+yet declare a real, resolvable dependency on it. Alert configuration
+does not exist yet — see the milestone section below.
 
 What's **not** yet true, concretely — the gaps this roadmap's remaining
 milestones exist to close:
 
-- `processor/`'s processor runs Trustvian's default `Policy` only —
-  every span it scores resolves to `observe_only`. This is no longer a
-  hard architectural limitation (a genuinely separate module *can*
-  construct a custom `Policy` today, via `config.CompilePolicy` — see
-  `v0.5` below); it is simply not yet wired up — see
+- `processor/`'s code can now compile and use a configured `Policy`
+  ([task 022](tasks/022-collector-config-integration.md)), but only
+  against this repository's current, unreleased source (via a local
+  `go.work`) — `processor/go.mod`'s *committed* dependency is still
+  `v0.3.0`, predating `config` entirely, because no newer Trustvian
+  release has been pushed to origin. Until that release exists and
+  `processor/go.mod` is updated to depend on it, every span this
+  processor scores in a real, `go get`-built deployment still resolves
+  to `observe_only` — see
   [`processor/README.md` § Configuration](../processor/README.md#configuration)
-  for the still-accurate current behavior.
+  for the exact, currently-accurate behavior and task 022's own
+  "Release / Module Compatibility" section for the verification behind
+  this.
 - Day-of-week seasonality — evaluated and kept out of `v0.3`'s
   hour-of-day slice; classified below as useful-after-`v1.0`, not
   required for it (see [Future research](#future-research)).
@@ -173,11 +189,14 @@ milestones exist to close:
 - A custom `Policy` can now be constructed from outside this module in
   Go ([task 019](tasks/019-policy-config-model.md)), loaded from
   a real YAML file ([task 020](tasks/020-policy-config-loader.md),
-  `config.LoadFile`), and consumed directly by the CLI via `--config`
-  ([task 021](tasks/021-cli-config-integration.md)) — but `processor/`
-  has not been updated to use it (still runs the default `Policy`).
-  Alert configuration (`config.AlertConfig`, compiling into
-  `[]alert.Rule`) does not exist at all yet. See `v0.5` below.
+  `config.LoadFile`), consumed directly by the CLI via `--config`
+  ([task 021](tasks/021-cli-config-integration.md)), and consumed by
+  `processor/`'s own code ([task
+  022](tasks/022-collector-config-integration.md)) — but the last of
+  these is blocked on a real Trustvian core release existing at all
+  (see immediately above). Alert configuration (`config.AlertConfig`,
+  compiling into `[]alert.Rule`) does not exist at all yet. See `v0.5`
+  below.
 - Sequence-aware detection (order, not just individual-event anomaly)
   does not exist — see `v0.6` below.
 - AI-agent event types work today only through the generic `Event`
@@ -193,7 +212,7 @@ milestones exist to close:
   [§ The OSS / Enterprise product boundary](#the-oss--enterprise-product-boundary)
   above).
 
-**Next up:** with `v0.1`–`v0.4.0` shipped and `v0.5`'s first three tasks
+**Next up:** with `v0.1`–`v0.4.0` shipped and `v0.5`'s first four tasks
 done, this roadmap's remaining work (the rest of `v0.5` through `v1.0`
 Production-Ready OSS, defined below) charts the path to a complete,
 standalone, production-usable OSS product — see each milestone section
@@ -564,9 +583,10 @@ declarative configuration boundary usable identically by the Go SDK,
 the CLI, the OTel Collector processor, and a standalone deployment.
 
 **Scope** (task files [019](tasks/019-policy-config-model.md),
-[020](tasks/020-policy-config-loader.md), and
-[021](tasks/021-cli-config-integration.md) for the slices done so far;
-the rest remain unscoped, per this roadmap's own "small vertical
+[020](tasks/020-policy-config-loader.md),
+[021](tasks/021-cli-config-integration.md), and
+[022](tasks/022-collector-config-integration.md) for the slices done so
+far; the rest remain unscoped, per this roadmap's own "small vertical
 slices" principle):
 
 - **019 Public Policy configuration model + compiler — done.** New
@@ -646,8 +666,37 @@ slices" principle):
   same `ALLOW` event into `BLOCK`), and `baseline build`'s own
   acceptance by `TestRunBaselineBuildAcceptsConfigFlag`. See [task
   021](tasks/021-cli-config-integration.md).
-- **Not yet done:** wiring `processor/`
-  to use `config` instead of the default `Policy`; Alert configuration
+- **022 OTel Collector policy configuration integration — done in code,
+  blocked on a release.** `processor.Config` gains a `Policy
+  map[string]any` field (`mapstructure:"policy,omitempty"`); a new
+  `decodePolicy` function converts that generic map into a real
+  `config.PolicyConfig` using `go-viper/mapstructure/v2` pointed at
+  `PolicyConfig`'s existing `yaml:"..."` tags (task 020's), rather than
+  embedding `config.PolicyConfig` directly — verified empirically that
+  Collector's own confmap decoder only reads `mapstructure` tags,
+  matched case-sensitively, so it would silently fail to populate any
+  of `PolicyConfig`'s snake_case fields otherwise. No
+  `processor.PolicyConfig`/`PolicyRule`/`PolicyCondition` type exists;
+  `config.CompilePolicy` remains the sole validation/compilation
+  authority. `newTrustvianProcessor`/`createTracesProcessor` now
+  compile the configured Policy once, at processor-creation time, and
+  fail the whole Collector's startup on an invalid explicit `policy:`
+  block — proven by `TestNewFactoryFailsOnInvalidPolicy`,
+  `TestConsumeTracesConfiguredPolicyChangesDecision`,
+  `TestConsumeTracesDefaultPolicyUnchangedWithoutConfig`, and
+  `TestConsumeTracesPolicyRuleOrderingFirstMatchWins`. **This is fully
+  implemented and tested against the current, unreleased root module
+  (via a local `go.work`), but `processor/go.mod`'s committed
+  dependency cannot yet be updated to use it**: verified directly
+  (`git ls-remote --tags origin` and a real `go get
+  github.com/Trustvian/trustvian@v0.5.0`, which fails with "unknown
+  revision") that no Trustvian core version newer than `v0.4.0` has
+  been pushed to this project's remote — `v0.4.0` predates the `config`
+  package entirely. See [task
+  022](tasks/022-collector-config-integration.md)'s own "Release /
+  Module Compatibility" section for the full verification and the
+  release this now depends on.
+- **Not yet done:** Alert configuration
   (an `AlertConfig` alongside `PolicyConfig`, compiling into
   `[]alert.Rule` — see [DOMAIN.md §
   Policy and Decision](DOMAIN.md#policy-and-decision) for why these
@@ -655,7 +704,6 @@ slices" principle):
   may mean a schema v2 that wraps `policy:`/`alerts:` as siblings,
   since v1's flat shape above has no room for a second top-level
   section — a decision for that future task, not foreclosed here).
-  Each is its own future task, scoped when picked up.
 
 **Non-goals.** No general expression language, no scripting, no
 boolean-combinator DSL for `when:` blocks beyond what
@@ -670,22 +718,31 @@ and [task 020's](tasks/020-policy-config-loader.md#non-goals) own
 Non-Goals sections for the complete, precise lists.
 
 **Dependencies.** `v0.1` (stable `Policy`/`Decision`) — satisfied.
-Task 020 depends on task 019 (decodes into its existing types). Task
-021 depends on both (it calls `config.LoadFile`/`config.CompilePolicy`
-directly, unmodified). None depend on `v0.4.0`/`alert.Rule` being
-stable, since all three scoped Policy configuration alone; a future
-Alert-configuration task will depend on `v0.4.0`.
+Task 020 depends on task 019 (decodes into its existing types). Tasks
+021 and 022 each depend on both 019 and 020 directly (they call
+`config.LoadFile`/`CompilePolicy`/`PolicyConfig` unmodified) and not on
+each other. None depend on `v0.4.0`/`alert.Rule` being stable, since
+all four scoped Policy configuration alone; a future Alert-configuration
+task will depend on `v0.4.0`. Task 022 additionally depends on a real
+Trustvian core release newer than `v0.4.0` existing on this project's
+remote before its own code can be wired into `processor/go.mod`'s
+committed dependency — see task 022's own writeup above.
 
 **Acceptance criteria.** See [task
 019](tasks/019-policy-config-model.md)'s, [task
-020](tasks/020-policy-config-loader.md)'s, and [task
-021](tasks/021-cli-config-integration.md)'s own Acceptance Criteria
-sections — all fully met, verified by `go test ./... -race -count=1`,
-`go test -bench=. -benchmem ./config/...`, and `go list -deps`
-confirming no core-engine import of `config` or `go.yaml.in/yaml/v3`.
-The milestone as a whole remains incomplete: it is not done until
-`processor/` integration and Alert configuration — both still unscoped
-— land too.
+020](tasks/020-policy-config-loader.md)'s, [task
+021](tasks/021-cli-config-integration.md)'s, and [task
+022](tasks/022-collector-config-integration.md)'s own Acceptance
+Criteria sections. 019–021 are fully met, verified by `go test ./...
+-race -count=1`, `go test -bench=. -benchmem ./config/...`, and `go
+list -deps` confirming no core-engine import of `config` or
+`go.yaml.in/yaml/v3`. Task 022's own code and test criteria are met the
+same way inside `processor/` (`go test ./... -race`, using a local
+`go.work`); its one criterion that could not be closed within this
+task's own authority — `processor/go.mod` actually depending on a
+released Trustvian version containing `config` — remains open. The
+milestone as a whole remains incomplete: it is not done until that
+release lands and Alert configuration — still unscoped — is built too.
 
 ## v0.6 — Behavioral Detection Depth
 

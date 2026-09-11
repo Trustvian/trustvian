@@ -29,14 +29,19 @@ no OpenTelemetry involvement (see
 [`examples/alert-webhook`](examples/alert-webhook/README.md)) — are all
 implemented, tested, and benchmarked.
 
-**`v0.5` — Policy & Configuration is in progress** (three of its tasks
+**`v0.5` — Policy & Configuration is in progress** (four of its tasks
 are done; the milestone as a whole is not): a public `config` package
 lets a caller outside this module declare a `Policy` in a versioned
 YAML file — strictly validated, strictly parsed — and compile it into
 a real, enforced `policy.Policy`, without ever importing
-`internal/policy`; and the CLI's `trustvian analyze`/`trustvian
-baseline build` can now load that same file directly via `--config
-<path>`. See [Configuring a Policy](#configuring-a-policy) below.
+`internal/policy`; the CLI's `trustvian analyze`/`trustvian baseline
+build` can now load that same file directly via `--config <path>`;
+and the standalone [OTel Collector processor](processor/README.md)
+can now declare a real Policy from a `policy:` block in Collector
+configuration, using the exact same schema. That last piece is
+implemented and tested, but not yet consumable by an actual `go get`
+of this module — see [Limitations](#limitations) for why. See
+[Configuring a Policy](#configuring-a-policy) below.
 
 **Trustvian OSS is meant to be a complete, standalone,
 production-usable behavioral security product on its own** — detect,
@@ -44,11 +49,11 @@ score, decide, alert, integrate, and run, all without Trustvian
 Control. Not yet built, on the path there: order-aware sequence
 detection, delivery reliability (retry/deduplication/cooldown) and any
 provider-specific alert sink (Slack/Teams/PagerDuty), declarative
-*alert* configuration (`policy` configuration is now implemented and
-CLI-integrated — see above), OTel Collector integration for the new
-policy config, AI-agent session/delegation concepts, a
-production-grade persistent store beyond `FileStore`, and
-release/operational engineering (CI, Docker image, SBOM). See
+*alert* configuration (`policy` configuration is now implemented,
+CLI-integrated, and Collector-integrated — see above), AI-agent
+session/delegation concepts, a production-grade persistent store
+beyond `FileStore`, and release/operational engineering (CI, Docker
+image, SBOM). See
 [`docs/ROADMAP.md`](docs/ROADMAP.md#the-oss--enterprise-product-boundary)
 for the explicit OSS/Control boundary and the full milestone sequence
 through `v1.0`. ML-based detection stays optional research, never a
@@ -258,12 +263,22 @@ The CLI consumes the exact same file: `trustvian analyze --config
 trustvian.yaml event.json` runs `config.LoadFile` +
 `config.CompilePolicy` internally and analyzes under that policy
 instead of the built-in default — see [`docs/tasks/021`](docs/tasks/021-cli-config-integration.md)
-and the [CLI Guide](docs/cli-guide.md#--config-path). OTel Collector
-processor integration for the same config is separately scoped,
-not-yet-started work (see [`docs/ROADMAP.md` §
-v0.5](docs/ROADMAP.md#v05--policy--configuration)). Declarative *alert*
-configuration (as opposed to policy configuration) does not exist
-either — `alert.Rule`s are still constructed in Go only.
+and the [CLI Guide](docs/cli-guide.md#--config-path).
+
+The standalone [OTel Collector processor](processor/README.md) now has
+an equivalent `policy:` block in its own Collector configuration,
+using the identical schema (see
+[`docs/tasks/022`](docs/tasks/022-collector-config-integration.md)) —
+but, unlike the config package and the CLI, this piece is **not yet
+usable outside this repository's own local development workspace**:
+`processor/go.mod` still depends on `v0.3.0`, a Trustvian version that
+predates the `config` package, because no Trustvian release newer than
+`v0.4.0` has actually been pushed to this project's remote yet. See
+[Limitations](#limitations) below.
+
+Declarative *alert* configuration (as opposed to policy configuration)
+does not exist yet either — `alert.Rule`s are still constructed in Go
+only.
 
 ## OpenTelemetry
 
@@ -278,7 +293,9 @@ to attach to a span. A standalone OTel Collector processor
 ([`processor/`](processor/README.md), a separate Go module using the
 heavier collector-builder toolchain deliberately kept out of this
 module's dependency graph) consumes this SDK's public API to score
-every span passing through a Collector pipeline. See
+every span passing through a Collector pipeline, optionally under a
+real configured `Policy` (see [Configuring a
+Policy](#configuring-a-policy) above). See
 [`docs/OPENTELEMETRY.md`](docs/OPENTELEMETRY.md) for the full mapping.
 
 ## Project layout
@@ -340,11 +357,22 @@ the general reasoning behind this boundary.
 - **Declarative *alert* configuration doesn't exist.** `alert.Rule`s
   (see the [`alert`](docs/DOMAIN.md#alert) domain model) are
   constructed in Go only; there is no YAML equivalent of
-  `config.PolicyConfig` for alert rules yet, and no OTel Collector
-  processor integration for the policy config that does exist (the CLI
-  itself now has `--config` — see [Configuring a
-  Policy](#configuring-a-policy) above) — see
+  `config.PolicyConfig` for alert rules yet — see
   [`docs/ROADMAP.md` § v0.5](docs/ROADMAP.md#v05--policy--configuration).
+- **The OTel Collector processor's policy configuration is implemented
+  and tested, but not yet released.** `processor/go.mod` still requires
+  `github.com/Trustvian/trustvian v0.3.0` — a version that predates the
+  `config` package entirely — because no Trustvian core release newer
+  than `v0.4.0` has been pushed to this project's remote yet. The
+  processor code that decodes a `policy:` Collector-config block into a
+  real `Policy` (see [Configuring a Policy](#configuring-a-policy)
+  above and [`docs/tasks/022`](docs/tasks/022-collector-config-integration.md))
+  exists and is fully tested against the current, unreleased source
+  (via a local, git-ignored `go.work`), but anyone building this
+  processor from a normal `go get`/`go mod download` today gets
+  `v0.3.0`'s processor without it. Publishing a Trustvian core release
+  containing `config` closes this gap; `processor/go.mod` should then
+  be updated to depend on it in a small, dedicated follow-up.
 - **Single-tenant.** Baseline/fingerprint keys are already scoped by
   `(ActorID, Environment)`, but there is no multi-tenant access control
   — that's explicitly a Trustvian Control/Cloud concern, not core-engine

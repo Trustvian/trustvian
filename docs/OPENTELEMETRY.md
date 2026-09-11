@@ -178,16 +178,27 @@ reusing the same semantic-convention key constants
 sync even though the traversal code necessarily differs.
 
 **[ADR 0002](adr/0002-public-api-boundary.md)'s public API boundary was
-considered and deliberately NOT revisited** as part of building this
-processor — an explicit decision, not a silent gap. Building this
-processor is not, by itself, the "real external consumer" trigger ADR
-0002 named for promoting `Policy`/`Config` to a public package: it is
-built and maintained alongside the core module, not by an independent
-third party with an unmet need. Concretely, this means the processor
-runs Trustvian's zero-configuration default `Policy` — every span it
-scores today resolves to `trustvian.decision = "observe_only"`. See
+considered and deliberately NOT revisited** as part of *originally*
+building this processor (task 009) — `Policy` stayed unconfigurable
+from Collector config, since building this processor was not, by
+itself, the "real external consumer" trigger ADR 0002 named for
+promoting it to a public package. [Task 019](tasks/019-policy-config-model.md)'s
+`config` package later became that public surface for a different
+consumer (the Go SDK and, per [task 021](tasks/021-cli-config-integration.md),
+the CLI), without ADR 0002 needing to be revisited at all — and [task
+022](tasks/022-collector-config-integration.md) is this processor's
+own update to consume that same surface: an explicit `policy:` block
+in Collector configuration now compiles into a real `Policy` via
+`config.PolicyConfig`/`config.CompilePolicy`, identically to the Go
+SDK and CLI. Omitting `policy:` still preserves the original
+zero-configuration default (`trustvian.decision = "observe_only"` for
+every span). See
 [`processor/README.md` § Configuration](../processor/README.md#configuration)
-for the full reasoning.
+for the full reasoning, including why `Config.Policy` is decoded as a
+generic map rather than embedding `config.PolicyConfig` directly, and
+task 022's own "Release / Module Compatibility" section for why this
+is implemented and tested but not yet resolvable through
+`processor/go.mod`'s committed dependency.
 
 See [ADR 0003](adr/0003-opentelemetry-adapter-single-module.md) for why
 this lives in a separate module at all, and

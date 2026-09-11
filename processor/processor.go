@@ -2,6 +2,7 @@ package trustvianprocessor
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -12,24 +13,8 @@ import (
 	"go.uber.org/zap"
 
 	trustvian "github.com/Trustvian/trustvian"
+	"github.com/Trustvian/trustvian/config"
 )
-
-// Config is this processor's configuration. It is currently empty: the
-// processor always runs Trustvian's default Engine configuration
-// (default Policy, default anomaly/trust Config, in-memory Store).
-//
-// This is a deliberate, documented ADR 0002 decision, not an
-// oversight: every Trustvian Option function (WithPolicy,
-// WithAnomalyConfig, WithTrustConfig, WithStore, WithContextRisk)
-// takes a type from the core module's internal/ packages, which this
-// processor — a genuinely separate Go module — structurally cannot
-// construct or import. Building this processor is not, by itself, the
-// "real external consumer" trigger ADR 0002 named for promoting those
-// types to a public package (it's built and maintained alongside the
-// core module, not by an independent third party with an unmet need);
-// that promotion remains a decision for when one actually appears. See
-// README.md for the full rationale.
-type Config struct{}
 
 // Stats is a snapshot of this processor's observable counters: how
 // many spans it has processed, how many didn't map to a valid Event or
@@ -59,13 +44,42 @@ type trustvianProcessor struct {
 	decisions map[string]uint64
 }
 
-func newTrustvianProcessor(set component.TelemetrySettings, next consumer.Traces) *trustvianProcessor {
+// newTrustvianProcessor constructs the processor's Engine from cfg.
+//
+// cfg.Policy == nil (the field's zero value, meaning the Collector
+// config had no `policy:` block at all) preserves this processor's
+// original behavior exactly: trustvian.NewEngine() with no options,
+// i.e. its own default Policy (no rules, ObserveOnly fallback).
+//
+// cfg.Policy != nil — including an explicitly empty `policy: {}` block
+// — is treated as an explicit request for a configured Policy: it is
+// decoded, validated, and compiled via decodePolicy/config.CompilePolicy,
+// the exact same path the Go SDK and CLI use. Any failure in that path
+// (a decode error, an invalid schema version, a missing default, an
+// invalid decision/condition value) is returned here rather than
+// falling back to the default Policy — this is what lets
+// createTracesProcessor fail Collector startup outright on a bad
+// explicit config instead of silently weakening it.
+func newTrustvianProcessor(set component.TelemetrySettings, next consumer.Traces, cfg *Config) (*trustvianProcessor, error) {
+	var opts []trustvian.Option
+	if cfg.Policy != nil {
+		pc, err := decodePolicy(cfg.Policy)
+		if err != nil {
+			return nil, err
+		}
+		p, err := config.CompilePolicy(pc)
+		if err != nil {
+			return nil, fmt.Errorf("trustvianprocessor: policy: %w", err)
+		}
+		opts = append(opts, trustvian.WithPolicy(p))
+	}
+
 	return &trustvianProcessor{
-		engine:    trustvian.NewEngine(),
+		engine:    trustvian.NewEngine(opts...),
 		next:      next,
 		logger:    set.Logger,
 		decisions: make(map[string]uint64),
-	}
+	}, nil
 }
 
 // Capabilities reports that this processor mutates its input in place

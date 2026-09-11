@@ -2,6 +2,7 @@ package trustvianprocessor
 
 import (
 	"context"
+	"fmt"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
@@ -27,6 +28,28 @@ func createDefaultConfig() component.Config {
 	return &Config{}
 }
 
-func createTracesProcessor(_ context.Context, set processor.Settings, _ component.Config, next consumer.Traces) (processor.Traces, error) {
-	return newTrustvianProcessor(set.TelemetrySettings, next), nil
+// createTracesProcessor constructs this processor's Engine, including
+// compiling any configured Policy, before returning — a compile
+// failure here fails the whole Collector's startup (this is called
+// during pipeline graph construction, before Start), never a fallback
+// to the default Policy at the first span. See newTrustvianProcessor.
+//
+// The error case returns a bare nil, not newTrustvianProcessor's own
+// (*trustvianProcessor)(nil) forwarded directly: converting a nil
+// pointer of a concrete type into the processor.Traces interface
+// return value produces a *non-nil* interface (it carries type
+// information, only the underlying value is nil) — Go's classic
+// typed-nil-in-interface trap. A caller's `proc != nil` check would
+// wrongly see a "processor" on a failed construction if this returned
+// p directly on the error path.
+func createTracesProcessor(_ context.Context, set processor.Settings, cfg component.Config, next consumer.Traces) (processor.Traces, error) {
+	c, ok := cfg.(*Config)
+	if !ok {
+		return nil, fmt.Errorf("trustvianprocessor: unexpected config type %T", cfg)
+	}
+	p, err := newTrustvianProcessor(set.TelemetrySettings, next, c)
+	if err != nil {
+		return nil, err
+	}
+	return p, nil
 }

@@ -223,7 +223,8 @@ a `Policy` — a Go struct literal naming `policy.Rule`/`Condition`/
 `Decision` directly, which only works for code that can import
 `internal/policy`. A caller outside this module (the CLI conceptually
 could, but doesn't need to, since it's in-module; a standalone
-deployment or a future OTel Collector processor integration genuinely
+deployment or the OTel Collector processor integration
+([task 022](tasks/022-collector-config-integration.md)) genuinely
 does) uses the public `config` package instead
 ([task 019](tasks/019-policy-config-model.md),
 [ADR 0008](adr/0008-policy-config-boundary.md)):
@@ -333,8 +334,15 @@ file needs, small enough to bound a pathological input to a fixed,
 cheap read. `path` is caller-controlled: `LoadFile` does not scan
 directories or auto-discover a config file; you name the exact file.
 
-No CLI `--config` flag and no OTel Collector processor integration
-exist yet — both are separately scoped future work (see
-[ROADMAP.md § v0.5](ROADMAP.md#v05--policy--configuration)) that will
-consume this same `Load`/`LoadFile`, not a parallel loader of their
-own.
+The CLI's `trustvian analyze --config <path>`/`trustvian baseline
+build --config <path>` (see [CLI Guide § --config](cli-guide.md#--config-path))
+call this exact `LoadFile` — no parallel loader of their own. The OTel
+Collector processor ([`processor/`](../processor/README.md#configuration))
+also consumes this same schema (a `policy:` block matching
+`PolicyConfig`'s fields exactly), but not through `LoadFile` — Collector
+already parses its own YAML before the processor ever sees it, so the
+processor decodes that already-parsed structure directly into a
+`PolicyConfig` value (see [task
+022](tasks/022-collector-config-integration.md) for why, and its
+caveat on what's not yet resolvable through `processor/go.mod`'s
+committed dependency).
