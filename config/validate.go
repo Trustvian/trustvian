@@ -3,7 +3,9 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
 
+	"github.com/Trustvian/trustvian/alert"
 	"github.com/Trustvian/trustvian/internal/policy"
 )
 
@@ -12,17 +14,21 @@ import (
 // a distinct validation failure category; Validate wraps the specific
 // one that applies with the exact field path that triggered it.
 var (
-	ErrUnsupportedVersion = errors.New("config: unsupported policy config version")
-	ErrMissingDefault     = errors.New("config: default_decision and default_reason must both be set")
-	ErrInvalidDecision    = errors.New("config: invalid decision")
-	ErrInvalidActorType   = errors.New("config: invalid actor_type")
-	ErrInvalidCategory    = errors.New("config: invalid operation_category")
-	ErrInvalidRiskLevel   = errors.New("config: invalid min_risk_level")
-	ErrEmptyRuleName      = errors.New("config: rule name must not be empty")
-	ErrDuplicateRuleName  = errors.New("config: duplicate rule name")
-	ErrMissingReason      = errors.New("config: rule reason must not be empty")
-	ErrTooManyRules       = errors.New("config: too many rules")
-	ErrNameTooLong        = errors.New("config: name exceeds maximum length")
+	ErrUnsupportedVersion      = errors.New("config: unsupported policy config version")
+	ErrMissingDefault          = errors.New("config: default_decision and default_reason must both be set")
+	ErrInvalidDecision         = errors.New("config: invalid decision")
+	ErrInvalidActorType        = errors.New("config: invalid actor_type")
+	ErrInvalidCategory         = errors.New("config: invalid operation_category")
+	ErrInvalidRiskLevel        = errors.New("config: invalid min_risk_level")
+	ErrEmptyRuleName           = errors.New("config: rule name must not be empty")
+	ErrDuplicateRuleName       = errors.New("config: duplicate rule name")
+	ErrMissingReason           = errors.New("config: rule reason must not be empty")
+	ErrTooManyRules            = errors.New("config: too many rules")
+	ErrNameTooLong             = errors.New("config: name exceeds maximum length")
+	ErrInvalidSeverity         = errors.New("config: invalid severity")
+	ErrInvalidTargetCategory   = errors.New("config: invalid target_category")
+	ErrInvalidThreshold        = errors.New("config: threshold must be a finite number in [0, 1]")
+	ErrUnsupportedAlertVersion = errors.New("config: unsupported alert config version")
 )
 
 // Bounds on config-authored input. Configuration is operator-authored
@@ -169,4 +175,99 @@ func (c PolicyCondition) validate(path string) error {
 		return fmt.Errorf("%s.min_risk_level: %w: %q", path, ErrInvalidRiskLevel, c.MinRiskLevel)
 	}
 	return nil
+}
+
+// validTargetCategories mirrors event.TargetCategory's own unexported
+// valid() method's three non-empty values — same reason
+// validActorTypes/validOperationCategories mirror their event.* enums:
+// this package can import the public event package but not reach its
+// unexported methods.
+var validTargetCategories = map[string]bool{
+	"internal": true,
+	"external": true,
+	"database": true,
+}
+
+// Validate reports whether cfg is a well-formed AlertConfig: a
+// recognized schema version and a Rules list where every rule has a
+// unique, non-empty, bounded-length name, a valid Severity, and a
+// well-formed AlertConditionConfig. Validate returns the first problem
+// it finds, mirroring PolicyConfig.Validate's own "first error wins"
+// convention.
+//
+// Unlike PolicyConfig, there is no default/reason to require: an empty
+// Rules list is a valid (if inert) AlertConfig, matching
+// alert.Evaluate's own "no match means no alert, not a fail-closed
+// error" asymmetry with policy.Policy.Evaluate.
+//
+// Validate is called internally by CompileAlerts, but is also exposed
+// standalone for the same reason PolicyConfig.Validate is: a caller
+// can validate a config without compiling it.
+func (cfg AlertConfig) Validate() error {
+	if cfg.Version != AlertSchemaVersionV1 {
+		return fmt.Errorf("%w: %q (supported: %q)", ErrUnsupportedAlertVersion, cfg.Version, AlertSchemaVersionV1)
+	}
+
+	if len(cfg.Rules) > maxRules {
+		return fmt.Errorf("rules: %w: %d (max %d)", ErrTooManyRules, len(cfg.Rules), maxRules)
+	}
+
+	seenNames := make(map[string]bool, len(cfg.Rules))
+	for i, r := range cfg.Rules {
+		if err := r.validate(i); err != nil {
+			return err
+		}
+		if seenNames[r.Name] {
+			return fmt.Errorf("rules[%d].name: %w: %q", i, ErrDuplicateRuleName, r.Name)
+		}
+		seenNames[r.Name] = true
+	}
+
+	return nil
+}
+
+func (r AlertRuleConfig) validate(i int) error {
+	if r.Name == "" {
+		return fmt.Errorf("rules[%d].name: %w", i, ErrEmptyRuleName)
+	}
+	if len(r.Name) > maxNameLength {
+		return fmt.Errorf("rules[%d].name: %w: %d chars (max %d)", i, ErrNameTooLong, len(r.Name), maxNameLength)
+	}
+	if !alert.Severity(r.Severity).Valid() {
+		return fmt.Errorf("rules[%d].severity: %w: %q", i, ErrInvalidSeverity, r.Severity)
+	}
+	return r.When.validate(fmt.Sprintf("rules[%d].when", i))
+}
+
+func (c AlertConditionConfig) validate(path string) error {
+	if c.Decision != "" && !policy.Decision(c.Decision).Valid() {
+		return fmt.Errorf("%s.decision: %w: %q", path, ErrInvalidDecision, c.Decision)
+	}
+	if c.MinRiskLevel != "" && !validRiskLevels[c.MinRiskLevel] {
+		return fmt.Errorf("%s.min_risk_level: %w: %q", path, ErrInvalidRiskLevel, c.MinRiskLevel)
+	}
+	if c.ActorType != "" && !validActorTypes[c.ActorType] {
+		return fmt.Errorf("%s.actor_type: %w: %q", path, ErrInvalidActorType, c.ActorType)
+	}
+	if c.TargetCategory != "" && !validTargetCategories[c.TargetCategory] {
+		return fmt.Errorf("%s.target_category: %w: %q", path, ErrInvalidTargetCategory, c.TargetCategory)
+	}
+	if !validThreshold(c.MinAnomalyScore) {
+		return fmt.Errorf("%s.min_anomaly_score: %w: %v", path, ErrInvalidThreshold, c.MinAnomalyScore)
+	}
+	if c.MaxTrustScore != nil && !validThreshold(*c.MaxTrustScore) {
+		return fmt.Errorf("%s.max_trust_score: %w: %v", path, ErrInvalidThreshold, *c.MaxTrustScore)
+	}
+	return nil
+}
+
+// validThreshold reports whether v is finite (never NaN or ±Inf) and
+// within [0, 1] — the documented range both Anomaly.Score and
+// Trust.Score are always bounded to (see docs/DOMAIN.md), so a
+// threshold outside that range could never match anything meaningful
+// and is rejected as a config mistake rather than silently accepted as
+// a threshold that can never fire (MinAnomalyScore) or always fires
+// (MaxTrustScore).
+func validThreshold(v float64) bool {
+	return !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0 && v <= 1
 }

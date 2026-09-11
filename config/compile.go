@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/Trustvian/trustvian/alert"
 	"github.com/Trustvian/trustvian/event"
 	"github.com/Trustvian/trustvian/internal/policy"
 	"github.com/Trustvian/trustvian/internal/trust"
@@ -70,6 +71,55 @@ func compileCondition(c PolicyCondition) policy.Condition {
 	}
 	if len(c.Attributes) > 0 {
 		compiled.Attributes = c.Attributes
+	}
+	return compiled
+}
+
+// CompileAlerts validates cfg and translates it into a []alert.Rule —
+// the exact type alert.Evaluate accepts. Like CompilePolicy, it always
+// validates cfg itself first, and is pure: no I/O, no global state, no
+// wall-clock dependency, no mutation of cfg, and no coupling to Policy
+// at all — a genuinely separate compilation from CompilePolicy's,
+// matching the Policy/Alert separation config/alert.go's package
+// comment and ADR 0009 document. CompileAlerts contains no matching
+// logic of its own; alert.Condition.Matches remains the sole place
+// Alert matching is evaluated, exactly as CompilePolicy leaves
+// policy.Condition.Matches as Policy's sole evaluator.
+func CompileAlerts(cfg AlertConfig) ([]alert.Rule, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
+	rules := make([]alert.Rule, len(cfg.Rules))
+	for i, r := range cfg.Rules {
+		rules[i] = alert.Rule{
+			Name:     r.Name,
+			When:     compileAlertCondition(r.When),
+			Severity: alert.Severity(r.Severity),
+		}
+	}
+	return rules, nil
+}
+
+// compileAlertCondition is a direct field-for-field translation, the
+// AlertCondition analogue of compileCondition above — it contains no
+// matching logic of its own.
+func compileAlertCondition(c AlertConditionConfig) alert.Condition {
+	compiled := alert.Condition{
+		MinAnomalyScore: c.MinAnomalyScore,
+		MaxTrustScore:   c.MaxTrustScore,
+	}
+	if c.Decision != "" {
+		compiled.Decision = policy.Decision(c.Decision)
+	}
+	if c.MinRiskLevel != "" {
+		compiled.MinRiskLevel = trust.RiskLevel(c.MinRiskLevel)
+	}
+	if c.ActorType != "" {
+		compiled.ActorType = event.ActorType(c.ActorType)
+	}
+	if c.TargetCategory != "" {
+		compiled.TargetCategory = event.TargetCategory(c.TargetCategory)
 	}
 	return compiled
 }

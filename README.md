@@ -29,18 +29,24 @@ no OpenTelemetry involvement (see
 [`examples/alert-webhook`](examples/alert-webhook/README.md)) — are all
 implemented, tested, and benchmarked.
 
-**`v0.5` — Policy & Configuration is in progress** (four of its tasks
-are done; the milestone as a whole is not): a public `config` package
-lets a caller outside this module declare a `Policy` in a versioned
-YAML file — strictly validated, strictly parsed — and compile it into
-a real, enforced `policy.Policy`, without ever importing
-`internal/policy`; the CLI's `trustvian analyze`/`trustvian baseline
-build` can now load that same file directly via `--config <path>`;
-and the standalone [OTel Collector processor](processor/README.md)
-can now declare a real Policy from a `policy:` block in Collector
-configuration, using the exact same schema. That last piece is
-implemented and tested, but not yet consumable by an actual `go get`
-of this module — see [Limitations](#limitations) for why. See
+**`v0.5` — Policy & Configuration is implementation-complete and
+release-ready; the `v0.5.0` tag itself has not been published yet.**
+A public `config` package lets a caller outside this module declare a
+`Policy` in a versioned YAML file — strictly validated, strictly
+parsed — and compile it into a real, enforced `policy.Policy`, without
+ever importing `internal/policy`; the CLI's `trustvian analyze`/
+`trustvian baseline build` can now load that same file directly via
+`--config <path>`; the standalone [OTel Collector
+processor](processor/README.md) can now declare a real Policy from a
+`policy:` block in Collector configuration, using the exact same
+schema (implemented and tested, but not yet consumable by an actual
+`go get` of this module until a real release exists — see
+[Limitations](#limitations)); and a structurally independent `config`
+model — `AlertConfig`/`CompileAlerts` — now lets a caller declare
+declarative Alert Evaluation rules (`[]alert.Rule`) the same way,
+deliberately kept separate from Policy configuration (see
+[Configuring Alerts](#configuring-alerts) below and [ADR
+0009](docs/adr/0009-alert-config-is-a-separate-document.md)). See
 [Configuring a Policy](#configuring-a-policy) below.
 
 **Trustvian OSS is meant to be a complete, standalone,
@@ -48,12 +54,13 @@ production-usable behavioral security product on its own** — detect,
 score, decide, alert, integrate, and run, all without Trustvian
 Control. Not yet built, on the path there: order-aware sequence
 detection, delivery reliability (retry/deduplication/cooldown) and any
-provider-specific alert sink (Slack/Teams/PagerDuty), declarative
-*alert* configuration (`policy` configuration is now implemented,
-CLI-integrated, and Collector-integrated — see above), AI-agent
-session/delegation concepts, a production-grade persistent store
-beyond `FileStore`, and release/operational engineering (CI, Docker
-image, SBOM). See
+provider-specific alert sink (Slack/Teams/PagerDuty) — declarative
+*alert* configuration itself is now implemented (see above); wiring it
+into the CLI or the Collector processor is deliberately deferred,
+since neither has an alert-delivery flow yet for it to plug into —
+AI-agent session/delegation concepts, a production-grade persistent
+store beyond `FileStore`, and release/operational engineering (CI,
+Docker image, SBOM). See
 [`docs/ROADMAP.md`](docs/ROADMAP.md#the-oss--enterprise-product-boundary)
 for the explicit OSS/Control boundary and the full milestone sequence
 through `v1.0`. ML-based detection stays optional research, never a
@@ -276,9 +283,52 @@ predates the `config` package, because no Trustvian release newer than
 `v0.4.0` has actually been pushed to this project's remote yet. See
 [Limitations](#limitations) below.
 
-Declarative *alert* configuration (as opposed to policy configuration)
-does not exist yet either — `alert.Rule`s are still constructed in Go
-only.
+## Configuring Alerts
+
+Declarative Alert Evaluation rules (`[]alert.Rule`) can be declared the
+same way, using a **separate, independent** config document and
+compiler — `config.AlertConfig`/`config.CompileAlerts`, not a field on
+`PolicyConfig`. Policy configuration answers "what decision should
+Trustvian make"; Alert configuration answers "which Results/Decisions
+should produce an Alert" — the two stay independently compiled, exactly
+as `alert.Evaluate`'s own structural independence from `internal/policy`
+already keeps them apart at runtime. See [ADR
+0009](docs/adr/0009-alert-config-is-a-separate-document.md) for why
+this isn't a `policy:`/`alerts:` combined schema.
+
+```yaml
+# alerts.yaml
+version: v1
+rules:
+  - name: critical-risk
+    when:
+      min_risk_level: critical
+    severity: critical
+```
+
+```go
+cfg, err := config.LoadAlertsFile("alerts.yaml")
+if err != nil {
+	log.Fatal(err)
+}
+rules, err := config.CompileAlerts(cfg)
+if err != nil {
+	log.Fatal(err)
+}
+
+result, _ := engine.Analyze(ctx, ev)
+if a, matched := alert.Evaluate(result, rules); matched {
+	sink.Send(ctx, a)
+}
+```
+
+Unlike `PolicyConfig`, an `AlertConfig` has no mandatory default: an
+empty `Rules` list is valid, matching `alert.Evaluate`'s own "no match
+means no alert" design — the absence of an alert is a safe, inert
+outcome, not a security regression. See [`docs/tasks/023`](docs/tasks/023-declarative-alert-configuration.md)
+for how this was built. There is no CLI `--alert-config` flag and no
+Collector `alerts:` block yet — deliberately: neither has an
+alert-delivery flow today for a compiled `[]alert.Rule` to plug into.
 
 ## OpenTelemetry
 
@@ -305,7 +355,7 @@ trustvian/
 ├── trustvian.go, engine.go, options.go, result.go   # public SDK (root package)
 ├── event/               # public domain vocabulary: Event, Actor, Operation, Target, Context
 ├── alert/                # public: Result/Decision -> Alert, Evaluate, Sink, WebhookSink
-├── config/               # public: versioned YAML policy config -> Validate -> CompilePolicy
+├── config/               # public: versioned YAML policy/alert config -> Validate -> CompilePolicy/CompileAlerts
 ├── cmd/trustvian/        # CLI
 ├── internal/
 │   ├── features/          # Event -> stable/volatile Features
@@ -354,11 +404,15 @@ the general reasoning behind this boundary.
   above and [ADR 0008](docs/adr/0008-policy-config-boundary.md).
   Promoting `anomaly.Config`/`trust.Config`/`Store` the same way is a
   reasonable next step once a concrete external consumer needs it.
-- **Declarative *alert* configuration doesn't exist.** `alert.Rule`s
-  (see the [`alert`](docs/DOMAIN.md#alert) domain model) are
-  constructed in Go only; there is no YAML equivalent of
-  `config.PolicyConfig` for alert rules yet — see
-  [`docs/ROADMAP.md` § v0.5](docs/ROADMAP.md#v05--policy--configuration).
+- **Declarative *alert* configuration exists, but isn't wired into the
+  CLI or Collector processor.** `config.AlertConfig`/`CompileAlerts`
+  (see [Configuring Alerts](#configuring-alerts) above) let a Go SDK
+  caller declare `[]alert.Rule` in YAML, but there is no CLI
+  `--alert-config` flag and no Collector `alerts:` block — deliberately
+  deferred, since neither consumer has an alert-delivery flow today for
+  a compiled rule set to plug into. See
+  [`docs/tasks/023`](docs/tasks/023-declarative-alert-configuration.md)'s
+  own Non-Goals.
 - **The OTel Collector processor's policy configuration is implemented
   and tested, but not yet released.** `processor/go.mod` still requires
   `github.com/Trustvian/trustvian v0.3.0` — a version that predates the

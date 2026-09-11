@@ -35,6 +35,7 @@ here, not moved or rewritten.
 | Explainability | `TestEvaluateAlwaysProducesNonEmptyExplanationReason` in [`internal/policy/policy_test.go`](../internal/policy/policy_test.go) |
 | Alert/notification delivery integrity | `TestSendSignsPayloadCorrectly`, `TestSendTamperedPayloadFailsVerification`, `TestSendDoesNotLeakSecret`, `TestNewWebhookSinkRejectsNonHTTPS`, `TestNewWebhookSinkRejectsLoopbackDestination`, `TestSendRespectsTimeout`, `TestSendPayloadTooLargeMakesNoNetworkCall` in [`alert/webhook_test.go`](../alert/webhook_test.go) |
 | Configuration-input validation | `TestValidateRejectsUnsupportedVersion`, `TestValidateRejectsInvalidDefaultDecision`, `TestValidateRejectsInvalidRuleDecision`, `TestValidateRejectsInvalidActorType`, `TestValidateRejectsInvalidOperationCategory`, `TestValidateRejectsInvalidRiskLevel`, `TestValidateRejectsDuplicateRuleName`, `TestValidateRejectsEmptyRuleName`, `TestValidateRejectsTooManyRules`, `TestValidateRejectsOverlongName` in [`config/validate_test.go`](../config/validate_test.go); `TestLoadRejectsUnknownTopLevelField`, `TestLoadRejectsUnknownNestedField`, `TestLoadRejectsDuplicateYAMLKeys`, `TestLoadFileRejectsOversizedFile`, `TestLoadRejectsEmptyInput`, `TestLoadDoesNotPanicOnArbitraryInput`, `FuzzLoad` in [`config/load_test.go`](../config/load_test.go)/[`config/fuzz_test.go`](../config/fuzz_test.go) |
+| Alert configuration-input validation | `TestValidateAlertConfigRejectsUnsupportedVersion`, `TestValidateAlertConfigRejectsInvalidSeverity`, `TestValidateAlertConfigRejectsInvalidDecision`, `TestValidateAlertConfigRejectsInvalidRiskLevel`, `TestValidateAlertConfigRejectsInvalidActorType`, `TestValidateAlertConfigRejectsInvalidTargetCategory`, `TestValidateAlertConfigRejectsInvalidMinAnomalyScore`, `TestValidateAlertConfigRejectsInvalidMaxTrustScore`, `TestValidateAlertConfigRejectsDuplicateRuleName`, `TestValidateAlertConfigRejectsEmptyRuleName`, `TestValidateAlertConfigRejectsTooManyRules` in [`config/alert_test.go`](../config/alert_test.go); `TestLoadAlertsRejectsUnknownField`, `TestLoadAlertsRejectsDuplicateYAMLKeys`, `TestLoadAlertsFileRejectsOversizedFile`, `TestLoadAlertsRejectsEmptyInput`, `FuzzLoadAlerts` in [`config/alert_load_test.go`](../config/alert_load_test.go) |
 
 ## Threats considered
 
@@ -303,8 +304,58 @@ adds beyond `Validate()`'s own checks, all implemented, not deferred:
   field paths and offending values (e.g. an invalid decision string),
   never a signing secret or credential — this loader has no such field
   to leak in the first place (`PolicyConfig` carries no secret-shaped
-  data; that concern belongs to a future Alert-configuration task, not
-  this one).
+  data; `AlertConfig`, introduced by task 023 below, doesn't either —
+  it has no delivery/credential fields at all, since delivery
+  configuration is explicitly out of that task's scope).
+
+### Alert configuration-input validation
+
+**Threat:** the identical config-time-typo threat the section above
+addresses for `PolicyCondition`, applied to `AlertConditionConfig`: a
+typo'd `severity: crital` or `actor_type: srevice` would otherwise
+compile into a well-formed `alert.Condition` that simply never
+matches, silently disabling a rule an operator believes is active.
+Alert Evaluation's own "no match means no alert" design (see
+[Policy bypass](#policy-bypass) above and
+`alert.Evaluate`'s doc comment) makes this threat *more* dangerous
+here than for Policy, not less — there is no fail-closed floor at
+runtime to fall back on if a rule silently stops matching; the
+observable failure mode is simply the total *absence* of an alert that
+should have fired.
+
+**Status: implemented** ([task
+023](tasks/023-declarative-alert-configuration.md), `config` package —
+`AlertConfig`/`CompileAlerts`/`LoadAlerts`/`LoadAlertsFile`, a
+deliberately **separate** document and compilation path from
+`PolicyConfig`/`CompilePolicy`, not a shared one — see [ADR
+0009](adr/0009-alert-config-is-a-separate-document.md)).
+`(AlertConfig).Validate()` — called unconditionally inside
+`CompileAlerts`, same non-bypassable guarantee `PolicyConfig.Validate`
+already has — rejects: an unsupported schema version, an invalid
+`severity` on any rule, an invalid `decision`/`min_risk_level`/
+`actor_type`/`target_category` on any condition, an empty or duplicate
+rule name, an overlong name, more than `1000` rules (the same bound
+`PolicyConfig` uses), and — the one validation surface `PolicyCondition`
+explicitly does *not* need (it has no numeric matcher) —
+`min_anomaly_score`/`max_trust_score` values that are `NaN`, `±Inf`,
+negative, or greater than `1`: `alert.Condition.MinAnomalyScore`/
+`MaxTrustScore` are always meant to be compared against
+`Anomaly.Score`/`Trust.Score`, both of which are documented to stay
+within `[0, 1]`, so a threshold outside that range could never match
+anything meaningful and is rejected as a config mistake rather than
+silently accepted as a threshold that can never fire or always fires.
+Same file-parsing threats as `PolicyConfig` (unknown-field rejection,
+duplicate-key rejection, bounded read, `FuzzLoadAlerts`) are covered
+identically, reusing the exact same `go.yaml.in/yaml/v3` decoding path
+— not a second, parallel parser.
+
+Unlike `PolicyConfig`, `AlertConfig` has no `default_decision`/
+`default_reason` to validate — an empty `Rules` list is a legitimate,
+if inert, `AlertConfig`, matching `alert.Evaluate`'s own documented
+asymmetry with `policy.Policy.Evaluate` (see [Policy
+bypass](#policy-bypass)): the *absence* of any alert
+rule is a safe, observable no-op, not a security regression the way an
+unconfigured `Policy` silently falling open would be.
 
 ### Malformed events / extreme input values
 

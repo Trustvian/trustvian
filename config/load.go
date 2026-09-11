@@ -106,3 +106,57 @@ func LoadFile(path string) (PolicyConfig, error) {
 	}
 	return cfg, nil
 }
+
+// LoadAlerts decodes data as a schema-v1 YAML document directly into
+// an AlertConfig, and validates the result before returning it — the
+// AlertConfig analogue of Load, deliberately a separate document and
+// a separate function rather than a second field on PolicyConfig's own
+// document (see config/alert.go's package comment and ADR 0009). Same
+// strictness as Load: unrecognized fields and duplicate mapping keys
+// are both rejected.
+func LoadAlerts(data []byte) (AlertConfig, error) {
+	if len(bytes.TrimSpace(data)) == 0 {
+		return AlertConfig{}, ErrEmptyInput
+	}
+
+	var cfg AlertConfig
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err != nil {
+		if errors.Is(err, io.EOF) {
+			return AlertConfig{}, ErrEmptyInput
+		}
+		return AlertConfig{}, fmt.Errorf("config: decode: %w", err)
+	}
+
+	if err := cfg.Validate(); err != nil {
+		return AlertConfig{}, err
+	}
+	return cfg, nil
+}
+
+// LoadAlertsFile reads the file at path (bounded to maxConfigFileSize,
+// the same bound Load/LoadFile use) and calls LoadAlerts on its
+// contents. Same caller-controlled-path discipline as LoadFile: no
+// directory scanning, no auto-discovery.
+func LoadAlertsFile(path string) (AlertConfig, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return AlertConfig{}, fmt.Errorf("config: open %s: %w", path, err)
+	}
+	defer f.Close()
+
+	data, err := io.ReadAll(io.LimitReader(f, maxConfigFileSize+1))
+	if err != nil {
+		return AlertConfig{}, fmt.Errorf("config: read %s: %w", path, err)
+	}
+	if len(data) > maxConfigFileSize {
+		return AlertConfig{}, fmt.Errorf("%w: %s (max %d bytes)", ErrFileTooLarge, path, maxConfigFileSize)
+	}
+
+	cfg, err := LoadAlerts(data)
+	if err != nil {
+		return AlertConfig{}, fmt.Errorf("config: %s: %w", path, err)
+	}
+	return cfg, nil
+}

@@ -559,6 +559,21 @@ v1.0](#product-evolution-toward-v10) below.
 
 ## 17. Policy Engine
 
+**Status: implemented, as of `v0.5.0` (not yet released — see
+[`docs/ROADMAP.md`](docs/ROADMAP.md) § v0.5 for the current, accurate
+state)** — a public `config` package (`PolicyConfig`/`PolicyRule`/
+`PolicyCondition`, `Validate`, `CompilePolicy`, `Load`/`LoadFile`),
+consumed identically by the Go SDK, the CLI (`--config`), and (in
+code, pending that same release) the OTel Collector processor. §17.4's
+"the same loader and file format may express both" illustrative
+sketch was evaluated against the real, released schema v1 and
+deliberately **not** taken: Alert configuration ended up as its own
+separate document and type (`AlertConfig`/`CompileAlerts`), not a
+`policies:`/`alerts:` combined schema — see [ADR
+0009](docs/adr/0009-alert-config-is-a-separate-document.md) for why.
+See [Current Implementation Status](#current-implementation-status)
+above for the caveat this whole document carries.
+
 `internal/policy.Policy.Evaluate` already exists and works today: an
 ordered `[]Rule`, first-match-wins, fail-closed to `BLOCK` on
 misconfiguration (see [`docs/policy-guide.md`](docs/policy-guide.md)).
@@ -889,10 +904,24 @@ ships, matching the implementation exactly.
 
 **The Go-level matching mechanism is implemented as of `v0.4.0`**
 (`alert.Condition`/`alert.Rule`/`alert.Evaluate` — first-match-wins,
-flat AND-of-optional-fields); **the declarative YAML surface below is
-not** — that is [§ 17](#17-policy-engine)/[`v0.5`](docs/ROADMAP.md#v05--policy--configuration)'s
-job, not `v0.4`'s. A caller today builds `[]alert.Rule` directly in Go;
-no config-file loader exists yet.
+flat AND-of-optional-fields), **and the declarative YAML surface is
+now implemented too, as of `v0.5.0`** (not yet released — see
+[`docs/ROADMAP.md`](docs/ROADMAP.md) § v0.5): `config.AlertConfig`/
+`AlertRuleConfig`/`AlertConditionConfig`, `CompileAlerts`,
+`LoadAlerts`/`LoadAlertsFile`. It matches on the exact six concepts
+listed just below, no more — `severity` is not matchable, exactly as
+this section already specified, since it's the rule's *output*, not an
+input. It does not use this section's illustrative `alerts:`
+list-of-`when:` shape or its `">0.90"` comparison-operator-in-string
+syntax verbatim (see the real, current shape in [ADR
+0009](docs/adr/0009-alert-config-is-a-separate-document.md) and
+[`docs/tasks/023`](docs/tasks/023-declarative-alert-configuration.md)):
+numeric thresholds are typed `float64` fields
+(`min_anomaly_score`/`max_trust_score`), not an embedded operator
+string, matching `PolicyCondition`'s own established convention of
+typed, validated fields over a mini-expression-language. Not yet wired
+into the CLI or the Collector processor — a Go SDK caller can use it
+directly today.
 
 Alert Evaluation is driven by rules an operator configures, matching on
 concepts Trustvian already exposes — implemented today as

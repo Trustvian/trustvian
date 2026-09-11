@@ -436,6 +436,28 @@ full architecture; in domain terms:
   convenience — the same "no silent reinterpretation" discipline
   `internal/fingerprint`'s versioned hash already established.
 
+**Configuring Alerts from outside this module** — the same `config`
+package `PolicyConfig` lives in also defines `AlertConfig`/
+`AlertRuleConfig`/`AlertConditionConfig`, primitive-typed structs
+mirroring `[]alert.Rule`/`alert.Rule`/`alert.Condition` exactly, plus
+`CompileAlerts(AlertConfig) ([]alert.Rule, error)` — the `alert.Rule`
+analogue of `CompilePolicy`. This is a deliberately **separate**
+document, type, and compilation path from `PolicyConfig`/
+`CompilePolicy`, not a second field bolted onto the existing schema:
+Policy configuration answers "what decision should Trustvian make,"
+Alert configuration answers "which Results/Decisions should produce an
+Alert," and `v0.5` preserves that separation at the configuration layer
+exactly as `alert.Evaluate`'s own structural independence from
+`internal/policy` already preserves it at runtime — see [ADR
+0009](adr/0009-alert-config-is-a-separate-document.md) for the full
+reasoning and the alternative (a combined `policy:`/`alerts:` schema
+v2) it weighs against. [Task
+023](tasks/023-declarative-alert-configuration.md) builds this model
+and compiler; wiring it into the CLI or the Collector processor is
+explicitly out of that task's scope (there is no alert-delivery flow
+in either today for a compiled `[]alert.Rule` to plug into) and remains
+separate, later work.
+
 This document describes the domain model as it exists today. Planned
 extensions to it (AI-agent session/delegation fields, and others) are
 scoped in [ROADMAP.md](ROADMAP.md) and [`tasks/`](tasks/) — each will
