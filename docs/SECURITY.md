@@ -36,6 +36,7 @@ here, not moved or rewritten.
 | Alert/notification delivery integrity | `TestSendSignsPayloadCorrectly`, `TestSendTamperedPayloadFailsVerification`, `TestSendDoesNotLeakSecret`, `TestNewWebhookSinkRejectsNonHTTPS`, `TestNewWebhookSinkRejectsLoopbackDestination`, `TestSendRespectsTimeout`, `TestSendPayloadTooLargeMakesNoNetworkCall` in [`alert/webhook_test.go`](../alert/webhook_test.go) |
 | Configuration-input validation | `TestValidateRejectsUnsupportedVersion`, `TestValidateRejectsInvalidDefaultDecision`, `TestValidateRejectsInvalidRuleDecision`, `TestValidateRejectsInvalidActorType`, `TestValidateRejectsInvalidOperationCategory`, `TestValidateRejectsInvalidRiskLevel`, `TestValidateRejectsDuplicateRuleName`, `TestValidateRejectsEmptyRuleName`, `TestValidateRejectsTooManyRules`, `TestValidateRejectsOverlongName` in [`config/validate_test.go`](../config/validate_test.go); `TestLoadRejectsUnknownTopLevelField`, `TestLoadRejectsUnknownNestedField`, `TestLoadRejectsDuplicateYAMLKeys`, `TestLoadFileRejectsOversizedFile`, `TestLoadRejectsEmptyInput`, `TestLoadDoesNotPanicOnArbitraryInput`, `FuzzLoad` in [`config/load_test.go`](../config/load_test.go)/[`config/fuzz_test.go`](../config/fuzz_test.go) |
 | Alert configuration-input validation | `TestValidateAlertConfigRejectsUnsupportedVersion`, `TestValidateAlertConfigRejectsInvalidSeverity`, `TestValidateAlertConfigRejectsInvalidDecision`, `TestValidateAlertConfigRejectsInvalidRiskLevel`, `TestValidateAlertConfigRejectsInvalidActorType`, `TestValidateAlertConfigRejectsInvalidTargetCategory`, `TestValidateAlertConfigRejectsInvalidMinAnomalyScore`, `TestValidateAlertConfigRejectsInvalidMaxTrustScore`, `TestValidateAlertConfigRejectsDuplicateRuleName`, `TestValidateAlertConfigRejectsEmptyRuleName`, `TestValidateAlertConfigRejectsTooManyRules` in [`config/alert_test.go`](../config/alert_test.go); `TestLoadAlertsRejectsUnknownField`, `TestLoadAlertsRejectsDuplicateYAMLKeys`, `TestLoadAlertsFileRejectsOversizedFile`, `TestLoadAlertsRejectsEmptyInput`, `FuzzLoadAlerts` in [`config/alert_load_test.go`](../config/alert_load_test.go) |
+| Sequence state (memory bounds, ordering, cross-actor isolation) | `TestBaselineObservePredecessorCountsIsBounded`, `TestBaselineObserveOutOfOrderEventDoesNotRecordOrCorruptTransition`, `TestBaselineObservePredecessorCountsIsImmutable` in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestInMemoryObserveConcurrentTransitionTracking` in [`internal/store/store_test.go`](../internal/store/store_test.go); `TestDefaultConfigTransitionWeightIsOptIn`, `TestScoreTransitionDeviation` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeTransitionDeviationEndToEnd` in [`engine_test.go`](../engine_test.go) |
 
 ## Threats considered
 
@@ -191,6 +192,79 @@ restart, rather than the empty one `InMemory` would present — this is
 the intended fix for the "every restart quietly forgets an attacker's
 prior flagged behavior" gap an in-memory-only store would otherwise
 leave.
+
+### Sequence state
+
+**Threat:** `v0.6`'s [transition-deviation
+signal](tasks/025-sequence-analysis-foundation.md) introduces the
+first runtime state whose size is driven not just by an actor's
+*current* fingerprint but by pairs of them — a new resource-exhaustion
+surface, and a new place cross-actor or ordering mistakes could leak
+information between unrelated identities.
+
+**Status: implemented, with specific, tested mitigations** — see [ADR
+0010](adr/0010-bounded-process-local-sequence-state.md) for the design
+these follow from:
+
+- **Memory exhaustion.** `FingerprintStats.PredecessorCounts` is capped
+  at 64 distinct predecessor entries per destination fingerprint
+  (`maxPredecessors`) — an attacker who varies the *previous* action on
+  every call (trivial, since `Fingerprint.ID` derives from
+  caller-controlled `Event` fields) cannot grow one entry's map without
+  bound. Once at the bound, a genuinely new predecessor is not added;
+  tracked entries keep accumulating normally — proven under real
+  concurrent contention by
+  `TestInMemoryObserveConcurrentTransitionTracking` in
+  [`internal/store/store_test.go`](../internal/store/store_test.go),
+  and directly by `TestBaselineObservePredecessorCountsIsBounded` in
+  [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go).
+  `Baseline.Fingerprints` itself remains unbounded, as it already was
+  before this task (see [Resource exhaustion](#resource-exhaustion)
+  below) — this task does not newly introduce that characteristic, only
+  bounds the one genuinely new structure it does add.
+- **High-cardinality identities.** Unaffected beyond the existing
+  `Baseline.Fingerprints` characteristic: sequence state adds two
+  scalar fields (`LastFingerprintID`, `LastFingerprintTime`) per
+  `baseline.Key`, not per identity value observed — no new
+  cardinality-sensitive structure.
+- **Cross-actor contamination.** Structurally impossible by
+  construction, not merely policy: every new field lives inside
+  `Baseline`, which is already scoped to exactly one
+  `baseline.Key{ActorID, Environment}` and stored behind
+  `internal/store`'s existing per-`Key` sharded lock. There is no
+  code path where one actor's `LastFingerprintID` or
+  `PredecessorCounts` could be read or written while processing a
+  different actor's event.
+- **Out-of-order events.** `Baseline.Observe` only records a transition
+  — and only advances `LastFingerprintID`/`Time` — when the incoming
+  timestamp strictly follows the previous one, the identical guard
+  `FingerprintStats.observe`'s interval statistics already use for the
+  identical reason (see Baseline poisoning above): a backdated or
+  replayed event must not (a) be scored as following a predecessor it
+  didn't actually follow in real time, or (b) silently rewrite what the
+  *next* legitimate event's transition is measured against. Proven by
+  `TestBaselineObserveOutOfOrderEventDoesNotRecordOrCorruptTransition`
+  and the `out-of-order event does not fire` case in
+  `TestScoreTransitionDeviation`.
+- **Sensitive history retention.** `PredecessorCounts` stores only
+  `Fingerprint.ID` strings (already-hashed, stable-feature identifiers
+  — see [DOMAIN.md § Fingerprint](DOMAIN.md)) and integer counts —
+  never raw event payloads, attributes, or any sensitive field value.
+  No new sensitive data is retained beyond what `Baseline.Fingerprints`
+  already holds.
+- **Process-local scope, no distributed guarantee claimed.** This state
+  does not survive across instances any differently than the rest of
+  `Baseline` does: `InMemory` does not survive a restart, `FileStore`
+  does (see the Persistence-adjacent note above) — no new claim about
+  cross-instance consistency is made or implied. See ADR 0010 § "Why
+  process-local."
+- **Cold-start safety.** A never-before-seen transition scores as
+  maximally novel, matching `categorical_novelty`'s own philosophy for
+  a never-before-seen fingerprint — and is equally not, by itself,
+  treated as a critical attack: `anomaly.Config.TransitionWeight`
+  defaults to `0` (proven by `TestDefaultConfigTransitionWeightIsOptIn`),
+  the identical "ships opt-in" mechanism `FrequencyWeight`/
+  `TimePatternWeight` already established.
 
 ### Malicious agents / privilege escalation
 
@@ -493,6 +567,14 @@ task 003 shipped is the natural input to one) remains a decision to
 make when a concrete deployment shows it's needed, not preemptively.
 The distinction matters for prioritization: this is a capacity-planning
 question, not a per-request denial-of-service one.
+
+`v0.6`'s new `FingerprintStats.PredecessorCounts` (see [Sequence
+state](#sequence-state) above) is a deliberate exception to "unbounded
+by design" above: unlike `Baseline.Fingerprints` itself, it *is*
+capped (64 distinct entries), specifically because it compounds the
+existing unbounded-map characteristic with a second, per-entry
+dimension an attacker could otherwise inflate independently by varying
+the *previous* action on every call.
 
 ### Future multi-tenant isolation
 

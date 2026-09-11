@@ -721,6 +721,141 @@ func TestDefaultConfigTimePatternWeightIsOptIn(t *testing.T) {
 	}
 }
 
+func TestDefaultConfigTransitionWeightIsOptIn(t *testing.T) {
+	cfg := anomaly.DefaultConfig()
+	if cfg.TransitionWeight != 0 {
+		t.Errorf("DefaultConfig().TransitionWeight = %v, want 0 (opt-in, like FrequencyWeight/TimePatternWeight)", cfg.TransitionWeight)
+	}
+}
+
+// TestScoreTransitionDeviation is the v0.6 foundation's own signal
+// test, mirroring TestScoreFrequencyDeviation/TestScoreTimePatternDeviation's
+// table shape.
+func TestScoreTransitionDeviation(t *testing.T) {
+	fpRead := fingerprint.Compute(stable("customer-db"))
+	fpUpdate := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "UPDATE accounts", TargetName: "customer-db", Environment: "production",
+	})
+	fpDelete := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "DELETE accounts", TargetName: "customer-db", Environment: "production",
+	})
+
+	cfg := anomaly.DefaultConfig()
+	cfg.TransitionWeight = 0.7 // opt-in: default is 0, see TestDefaultConfigTransitionWeightIsOptIn
+
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	t.Run("familiar transition does not fire", func(t *testing.T) {
+		// read -> update, observed many times.
+		b := baseline.New(testKey)
+		now := base
+		for range 20 {
+			b = b.Observe(fpRead, features.VolatileFeatures{}, now)
+			now = now.Add(time.Second)
+			b = b.Observe(fpUpdate, features.VolatileFeatures{}, now)
+			now = now.Add(time.Second)
+		}
+		// One more read, then score the next update as the event under test.
+		b = b.Observe(fpRead, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+
+		feat := features.Features{Stable: fpUpdate.Stable, Volatile: features.VolatileFeatures{Timestamp: now}}
+		got := anomaly.Score(feat, fpUpdate, b, cfg)
+
+		if hasSignal(got.Contributors, "transition_deviation") {
+			t.Fatalf("Contributors = %+v, want no transition_deviation for a transition observed 20+ times", got.Contributors)
+		}
+	})
+
+	t.Run("unseen transition fires strongly", func(t *testing.T) {
+		// The actor's history only ever shows read -> update; a
+		// read -> delete transition has never been observed.
+		b := baseline.New(testKey)
+		now := base
+		for range 20 {
+			b = b.Observe(fpRead, features.VolatileFeatures{}, now)
+			now = now.Add(time.Second)
+			b = b.Observe(fpUpdate, features.VolatileFeatures{}, now)
+			now = now.Add(time.Second)
+		}
+		b = b.Observe(fpRead, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+
+		feat := features.Features{Stable: fpDelete.Stable, Volatile: features.VolatileFeatures{Timestamp: now}}
+		got := anomaly.Score(feat, fpDelete, b, cfg)
+
+		if !hasSignal(got.Contributors, "transition_deviation") {
+			t.Fatalf("Contributors = %+v, want transition_deviation for a never-observed read->delete transition", got.Contributors)
+		}
+	})
+
+	t.Run("first-ever event has no predecessor, does not fire", func(t *testing.T) {
+		b := baseline.New(testKey)
+		feat := features.Features{Stable: fpRead.Stable, Volatile: features.VolatileFeatures{Timestamp: base}}
+		got := anomaly.Score(feat, fpRead, b, cfg)
+
+		if hasSignal(got.Contributors, "transition_deviation") {
+			t.Fatalf("Contributors = %+v, want no transition_deviation on an actor's first-ever event (no predecessor)", got.Contributors)
+		}
+	})
+
+	t.Run("out-of-order event does not fire", func(t *testing.T) {
+		b := baseline.New(testKey)
+		b = b.Observe(fpRead, features.VolatileFeatures{}, base.Add(2*time.Second))
+
+		// A backdated event, timestamped before fpRead's own arrival,
+		// does not validly follow it — see baseline.Baseline.Observe's
+		// identical guard.
+		feat := features.Features{Stable: fpDelete.Stable, Volatile: features.VolatileFeatures{Timestamp: base.Add(time.Second)}}
+		got := anomaly.Score(feat, fpDelete, b, cfg)
+
+		if hasSignal(got.Contributors, "transition_deviation") {
+			t.Fatalf("Contributors = %+v, want no transition_deviation for an out-of-order event", got.Contributors)
+		}
+	})
+}
+
+// TestScoreMatchesDocumentedNoisyOrFormulaWithTransitionSignal mirrors
+// TestScoreMatchesDocumentedNoisyOrFormulaWithTimePatternSignal's exact
+// bar: reproduce combine()'s noisy-OR arithmetic with a firing
+// transition_deviation signal, not just spot-check its direction.
+func TestScoreMatchesDocumentedNoisyOrFormulaWithTransitionSignal(t *testing.T) {
+	fpRead := fingerprint.Compute(stable("customer-db"))
+	fpDelete := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "DELETE accounts", TargetName: "customer-db", Environment: "production",
+	})
+
+	cfg := anomaly.DefaultConfig()
+	cfg.TransitionWeight = 0.7
+
+	// A mature fpDelete (so categorical_novelty does not also fire),
+	// but with a predecessor (fpRead) it has never transitioned from.
+	b := matureBaseline(fpDelete, int(cfg.MinObservations)+10, 10)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	// Overwrite the predecessor with fpRead just before the event under
+	// test, at a time strictly after the baseline's own last write.
+	last := now.Add(time.Duration(int(cfg.MinObservations)+10) * matureBaselineInterval)
+	b = b.Observe(fpRead, features.VolatileFeatures{}, last)
+
+	eventTime := last.Add(matureBaselineInterval)
+	feat := features.Features{Stable: fpDelete.Stable, Volatile: features.VolatileFeatures{Timestamp: eventTime}}
+	got := anomaly.Score(feat, fpDelete, b, cfg)
+
+	if !hasSignal(got.Contributors, "transition_deviation") {
+		t.Fatalf("Contributors = %+v, want transition_deviation", got.Contributors)
+	}
+
+	transitionContribution := 1.0 * cfg.TransitionWeight // never-seen transition -> Value 1
+	want := 1 - (1 - transitionContribution)
+
+	if diff := got.Score - want; diff > 1e-9 || diff < -1e-9 {
+		t.Fatalf("Score = %v, want %v (documented noisy-OR formula, including transition_deviation)", got.Score, want)
+	}
+}
+
 func hasSignal(signals []anomaly.Signal, name string) bool {
 	for _, s := range signals {
 		if s.Name == name {

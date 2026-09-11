@@ -1,6 +1,7 @@
 package baseline_test
 
 import (
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -462,5 +463,151 @@ func TestFingerprintStatsHourActivityUniformTraffic(t *testing.T) {
 		if got := stats.HourActivity[h]; math.Abs(got-uniformShare) > 0.02 {
 			t.Errorf("HourActivity[%d] = %v, want ~%v (uniform traffic across all hours)", h, got, uniformShare)
 		}
+	}
+}
+
+func readFingerprint() fingerprint.Fingerprint {
+	return fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryHTTP,
+		OperationName: "GET /customer", TargetName: "customer-db", Environment: "production",
+	})
+}
+
+func updateFingerprint() fingerprint.Fingerprint {
+	return fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryHTTP,
+		OperationName: "PATCH /customer", TargetName: "customer-db", Environment: "production",
+	})
+}
+
+func deleteFingerprint() fingerprint.Fingerprint {
+	return fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryHTTP,
+		OperationName: "DELETE /customer", TargetName: "customer-db", Environment: "production",
+	})
+}
+
+func TestBaselineObserveFirstEventHasNoPredecessor(t *testing.T) {
+	fpRead := readFingerprint()
+	b := baseline.New(testKey)
+
+	b = b.Observe(fpRead, features.VolatileFeatures{}, time.Now())
+
+	if b.LastFingerprintID != fpRead.ID {
+		t.Fatalf("LastFingerprintID = %q, want %q", b.LastFingerprintID, fpRead.ID)
+	}
+	if counts := b.Fingerprints[fpRead.ID].PredecessorCounts; counts != nil {
+		t.Fatalf("PredecessorCounts = %v, want nil — the first-ever event has no predecessor to record", counts)
+	}
+}
+
+func TestBaselineObserveRecordsTransitionBetweenDistinctFingerprints(t *testing.T) {
+	fpRead, fpUpdate := readFingerprint(), updateFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	b = b.Observe(fpRead, features.VolatileFeatures{}, now)
+	b = b.Observe(fpUpdate, features.VolatileFeatures{}, now.Add(time.Second))
+
+	if b.LastFingerprintID != fpUpdate.ID {
+		t.Fatalf("LastFingerprintID = %q, want %q", b.LastFingerprintID, fpUpdate.ID)
+	}
+	if got := b.Fingerprints[fpUpdate.ID].PredecessorCounts[fpRead.ID]; got != 1 {
+		t.Fatalf("PredecessorCounts[read] for update = %d, want 1", got)
+	}
+}
+
+func TestBaselineObserveRecordsRepeatedSelfTransition(t *testing.T) {
+	fpRead := readFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	// read -> read -> read: a fingerprint can validly be its own
+	// predecessor (a repeated action), and each transition into it
+	// should count.
+	for i := range 3 {
+		b = b.Observe(fpRead, features.VolatileFeatures{}, now.Add(time.Duration(i)*time.Second))
+	}
+
+	if got := b.Fingerprints[fpRead.ID].PredecessorCounts[fpRead.ID]; got != 2 {
+		t.Fatalf("PredecessorCounts[read] for read = %d, want 2 (the 2nd and 3rd observations each follow a read)", got)
+	}
+}
+
+func TestBaselineObserveOutOfOrderEventDoesNotRecordOrCorruptTransition(t *testing.T) {
+	fpRead, fpUpdate, fpDelete := readFingerprint(), updateFingerprint(), deleteFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	b = b.Observe(fpRead, features.VolatileFeatures{}, now)
+	b = b.Observe(fpUpdate, features.VolatileFeatures{}, now.Add(2*time.Second))
+
+	// A backdated event, timestamped before fpUpdate's own arrival,
+	// must not be treated as following fpUpdate (it doesn't, in real
+	// time), and must not overwrite LastFingerprintID/Time with its
+	// own, earlier timestamp — that would corrupt the ordering for
+	// whatever legitimately follows next.
+	b = b.Observe(fpDelete, features.VolatileFeatures{}, now.Add(1*time.Second))
+
+	if got := b.Fingerprints[fpDelete.ID].PredecessorCounts; got != nil {
+		t.Fatalf("out-of-order delete recorded a predecessor: %v, want nil", got)
+	}
+	if b.LastFingerprintID != fpUpdate.ID {
+		t.Fatalf("LastFingerprintID = %q, want %q (out-of-order event must not overwrite it)", b.LastFingerprintID, fpUpdate.ID)
+	}
+
+	// The next legitimate, forward-timestamped event must still form
+	// its transition from fpUpdate (the real predecessor), not fpDelete.
+	fpRead2 := readFingerprint()
+	b = b.Observe(fpRead2, features.VolatileFeatures{}, now.Add(3*time.Second))
+	if got := b.Fingerprints[fpRead2.ID].PredecessorCounts[fpUpdate.ID]; got != 1 {
+		t.Fatalf("PredecessorCounts[update] for read = %d, want 1 (must follow the real predecessor, not the out-of-order delete)", got)
+	}
+}
+
+// TestBaselineObservePredecessorCountsIsImmutable proves the copy-on-write
+// discipline PredecessorCounts must uphold, the same way
+// TestBaselineObserveIsImmutable already proves it for Fingerprints
+// itself: a later Observe call must never retroactively change what an
+// earlier Baseline snapshot (e.g. one a concurrent Store.Get caller
+// still holds) reports.
+func TestBaselineObservePredecessorCountsIsImmutable(t *testing.T) {
+	fpRead, fpUpdate := readFingerprint(), updateFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	b = b.Observe(fpRead, features.VolatileFeatures{}, now)
+	snapshot := b.Observe(fpUpdate, features.VolatileFeatures{}, now.Add(time.Second))
+
+	if got := snapshot.Fingerprints[fpUpdate.ID].PredecessorCounts[fpRead.ID]; got != 1 {
+		t.Fatalf("snapshot PredecessorCounts[read] = %d, want 1", got)
+	}
+
+	// A further Observe on top of snapshot must not reach back and
+	// mutate snapshot's own PredecessorCounts map.
+	_ = snapshot.Observe(fpUpdate, features.VolatileFeatures{}, now.Add(2*time.Second))
+	if got := snapshot.Fingerprints[fpUpdate.ID].PredecessorCounts[fpRead.ID]; got != 1 {
+		t.Fatalf("a later Observe mutated an earlier snapshot's PredecessorCounts: got %d, want 1", got)
+	}
+}
+
+func TestBaselineObservePredecessorCountsIsBounded(t *testing.T) {
+	fpDest := deleteFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	// One more distinct predecessor than the bound allows.
+	const overBound = 65
+	for i := range overBound {
+		pred := fingerprint.Compute(features.StableFeatures{
+			ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryHTTP,
+			OperationName: fmt.Sprintf("predecessor-%d", i), TargetName: "customer-db", Environment: "production",
+		})
+		b = b.Observe(pred, features.VolatileFeatures{}, now.Add(time.Duration(i)*time.Second))
+		b = b.Observe(fpDest, features.VolatileFeatures{}, now.Add(time.Duration(i)*time.Second+time.Millisecond))
+	}
+
+	if got := len(b.Fingerprints[fpDest.ID].PredecessorCounts); got != 64 {
+		t.Fatalf("len(PredecessorCounts) = %d, want 64 (bounded, one predecessor never tracked)", got)
 	}
 }

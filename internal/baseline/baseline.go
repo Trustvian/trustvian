@@ -59,6 +59,25 @@ const emaAlpha = 0.2
 // phenomenon, not something that should shift on the last 5-10 calls.
 const hourActivityAlpha = 0.02
 
+// maxPredecessors bounds FingerprintStats.PredecessorCounts: the number
+// of distinct predecessor Fingerprint.IDs tracked for one destination
+// fingerprint. This is a resource-exhaustion bound, not a statistical
+// one — Fingerprints itself (the map this bounds a per-entry map
+// within) is already unbounded by design (see
+// TestObserveUnboundedFingerprintsDoesNotPanic in engine_test.go and
+// docs/SECURITY.md § Resource exhaustion), but a per-destination
+// predecessor map compounds that: an attacker who can vary the
+// *previous* fingerprint on every call (trivial — Fingerprint.ID is
+// derived from Event fields the caller controls) could otherwise grow
+// one FingerprintStats entry's PredecessorCounts without bound. 64 is
+// generous for real traffic — a real actor's distinct predecessor
+// actions are typically a handful to a few dozen (an actor's own
+// behavioral repertoire, not per-event entropy) — while keeping the
+// worst case (64 entries × a small fixed key/value size) trivial
+// memory, matching the "bounded, not unlimited" mandate for any new
+// sequence-aware state (see docs/adr/0010-bounded-process-local-sequence-state.md).
+const maxPredecessors = 64
+
 // Key scopes a Baseline to a single actor within a single deployment
 // environment. Scoping by environment from the start — even though the
 // OSS engine is single-tenant — keeps the data model tenant-shaped, so a
@@ -128,6 +147,52 @@ type FingerprintStats struct {
 	// Stable is the shape this Fingerprint represents, retained for
 	// explainability so a consumer never has to recompute it.
 	Stable features.StableFeatures
+
+	// PredecessorCounts records, for this destination Fingerprint, how
+	// many times each distinct predecessor Fingerprint.ID has
+	// immediately preceded it in this actor's observed event order —
+	// the minimum state a transition-deviation signal needs (see
+	// internal/anomaly's transition_deviation) without yet computing a
+	// Markov transition probability (deliberately deferred; see
+	// docs/ROADMAP.md § v0.6). A nil map (the zero value, exactly like
+	// a persisted file written before this field existed) means "no
+	// transition into this fingerprint observed yet" — the correct,
+	// safe cold-start default, not a distinguishable error state.
+	//
+	// Bounded at maxPredecessors distinct entries: once at that bound,
+	// a genuinely new predecessor is not added (see recordPredecessor)
+	// — existing entries keep accumulating normally. This is a
+	// deliberately simple "first N distinct predecessors win" policy,
+	// not LRU: the failure mode at the bound is that a not-yet-tracked
+	// predecessor always reads as "unseen" (maximally novel), which is
+	// the conservative, safe direction to fail in — it never causes an
+	// already-legitimate, tracked transition to be silently forgotten.
+	PredecessorCounts map[string]uint64
+}
+
+// recordPredecessor increments counts[predecessor], creating counts if
+// nil, but never grows counts past maxPredecessors distinct keys — see
+// PredecessorCounts's own doc comment for why this bound exists and why
+// this specific eviction policy (deterministic refusal to add a new key
+// past the bound, not LRU) was chosen.
+//
+// Like Baseline.Observe/FingerprintStats.observe, this never mutates
+// counts in place: a map, unlike HourActivity's fixed-size array, is a
+// reference type, and a shallow maps.Copy of a Fingerprints map (as
+// Baseline.Observe performs) only copies the FingerprintStats struct
+// values, not the maps a value like PredecessorCounts points into — an
+// in-place counts[predecessor]++ here would silently corrupt whatever
+// earlier Baseline snapshot (e.g. one a concurrent Store.Get caller is
+// still holding) shares that same underlying map.
+func recordPredecessor(counts map[string]uint64, predecessor string) map[string]uint64 {
+	if _, tracked := counts[predecessor]; !tracked && len(counts) >= maxPredecessors {
+		return counts
+	}
+
+	next := make(map[string]uint64, len(counts)+1)
+	maps.Copy(next, counts)
+	next[predecessor]++
+	return next
 }
 
 // LatencyMeanDuration returns LatencyMean as a time.Duration.
@@ -163,7 +228,14 @@ func (s FingerprintStats) IsStale(now time.Time, maxAge time.Duration) bool {
 	return now.Sub(s.LastObserved) > maxAge
 }
 
-func (s FingerprintStats) observe(stable features.StableFeatures, vol features.VolatileFeatures, now time.Time) FingerprintStats {
+// predecessor is the caller-supplied Fingerprint.ID that immediately
+// preceded this observation for the same actor, or "" if there was
+// none (the actor's first-ever observation) or the ordering guard in
+// Baseline.Observe determined this observation does not validly follow
+// one (see there for why). observe itself performs no ordering check
+// of its own — by the time predecessor reaches here, that decision has
+// already been made once, by the one caller (Baseline.Observe).
+func (s FingerprintStats) observe(stable features.StableFeatures, vol features.VolatileFeatures, now time.Time, predecessor string) FingerprintStats {
 	if s.Count == 0 {
 		s.FirstObserved = now
 	} else if now.After(s.LastObserved) {
@@ -252,6 +324,10 @@ func (s FingerprintStats) observe(stable features.StableFeatures, vol features.V
 		s.ErrorRate += emaAlpha * (errSample - s.ErrorRate)
 	}
 
+	if predecessor != "" {
+		s.PredecessorCounts = recordPredecessor(s.PredecessorCounts, predecessor)
+	}
+
 	return s
 }
 
@@ -269,6 +345,28 @@ type Baseline struct {
 	// Nothing measures anything from this field; it records write
 	// recency for the whole Baseline.
 	LastObserved time.Time
+
+	// LastFingerprintID is the Fingerprint.ID of this actor's most
+	// recently observed event — the "previous action" a transition
+	// (LastFingerprintID -> the next Fingerprint.ID observed) is formed
+	// from. "" means no prior observation exists yet to form a
+	// transition from (this actor's first-ever event, or a freshly
+	// constructed Baseline) — the correct, safe default, not an error
+	// state.
+	//
+	// Unlike LastObserved above, this *does* follow an ordering guard
+	// (paired with LastFingerprintTime below), for the identical reason
+	// FingerprintStats.LastObserved's own guard exists: an out-of-order
+	// or backdated event must not be allowed to silently rewrite "what
+	// the previous action was" for the *next* legitimate event's
+	// transition to be measured against — see Observe.
+	LastFingerprintID string
+
+	// LastFingerprintTime is the timestamp associated with
+	// LastFingerprintID — never regresses; see Observe for the guard
+	// that enforces this. Zero (time.Time{}) exactly when
+	// LastFingerprintID is "".
+	LastFingerprintTime time.Time
 }
 
 // New returns an empty Baseline for key, ready to be passed to Observe.
@@ -281,14 +379,41 @@ func New(key Key) Baseline {
 // returned value has its own Fingerprints map, so any Baseline value a
 // caller already holds (e.g. from a prior Store.Get) remains a valid,
 // unaffected snapshot.
+//
+// This is also where LastFingerprintID/LastFingerprintTime advance,
+// under the same ordering guard FingerprintStats.observe already
+// applies to interval statistics: now must strictly follow
+// LastFingerprintTime for this observation to (a) be treated as a
+// valid transition *from* b.LastFingerprintID at all, and (b) become
+// the new predecessor for whatever observation follows it. An
+// out-of-order or backdated now is folded into fp's own
+// FingerprintStats (Count, etc.) as usual, but contributes no
+// transition information in either direction — exactly the same
+// "absence of information, not a misleading data point" stance
+// FingerprintStats.observe's own interval guard takes.
 func (b Baseline) Observe(fp fingerprint.Fingerprint, vol features.VolatileFeatures, now time.Time) Baseline {
+	validTransition := b.LastFingerprintID != "" && now.After(b.LastFingerprintTime)
+	predecessor := ""
+	if validTransition {
+		predecessor = b.LastFingerprintID
+	}
+
 	next := make(map[string]FingerprintStats, len(b.Fingerprints)+1)
 	maps.Copy(next, b.Fingerprints)
-	next[fp.ID] = next[fp.ID].observe(fp.Stable, vol, now)
+	next[fp.ID] = next[fp.ID].observe(fp.Stable, vol, now, predecessor)
+
+	lastFingerprintID := b.LastFingerprintID
+	lastFingerprintTime := b.LastFingerprintTime
+	if b.LastFingerprintID == "" || now.After(b.LastFingerprintTime) {
+		lastFingerprintID = fp.ID
+		lastFingerprintTime = now
+	}
 
 	return Baseline{
-		Key:          b.Key,
-		Fingerprints: next,
-		LastObserved: now,
+		Key:                 b.Key,
+		Fingerprints:        next,
+		LastObserved:        now,
+		LastFingerprintID:   lastFingerprintID,
+		LastFingerprintTime: lastFingerprintTime,
 	}
 }

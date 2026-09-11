@@ -458,7 +458,49 @@ explicitly out of that task's scope (there is no alert-delivery flow
 in either today for a compiled `[]alert.Rule` to plug into) and remains
 separate, later work.
 
+## Sequence-aware detection
+
+Every signal above scores one event against its own fingerprint's
+history — none of them see what happened *immediately before* it.
+`v0.6` ([task 025](tasks/025-sequence-analysis-foundation.md), [ADR
+0010](adr/0010-bounded-process-local-sequence-state.md)) adds exactly
+one new signal, `transition_deviation`, integrated identically to
+every existing one: another `anomaly.Signal`, folded into the same
+noisy-OR `Anomaly.Score`, opt-in via a zero-default
+`anomaly.Config.TransitionWeight` — no new `Result` field, no second
+scoring path, no new pipeline stage.
+
+- **What it answers.** Has this exact predecessor `Fingerprint.ID` ever
+  led to this destination `Fingerprint.ID` before, for this actor? Not
+  "how often" and not "how probable" — seen vs. never seen, the
+  smallest useful unit of order. See
+  [Sequence Analysis](sequence-analysis.md) for the full design.
+- **Where the state lives.** No new `SequenceStore`. Two small,
+  bounded additions to the existing `internal/baseline.Baseline`
+  (`LastFingerprintID`, `LastFingerprintTime`) and `FingerprintStats`
+  (`PredecessorCounts`, capped at 64 distinct entries) — the same
+  `baseline.Key{ActorID, Environment}` scope, the same
+  `internal/store` concurrency/persistence boundary, the same
+  copy-on-write immutability discipline every other `Baseline` field
+  already has. See ADR 0010 for why a parallel abstraction was
+  considered and rejected.
+- **Ordering.** A transition is only recorded, and only advances the
+  actor's "last fingerprint" pointer, when an event's timestamp
+  strictly follows the previous one — the identical guard
+  `FingerprintStats`'s own interval statistics already use, for the
+  identical out-of-order/backdating-resistance reason.
+- **Cold start.** No predecessor at all (first-ever observation): the
+  signal doesn't fire — there is no transition to evaluate. A
+  predecessor exists but this transition has never been seen: the
+  signal fires at maximal value, exactly like `categorical_novelty`
+  does for a brand-new fingerprint — and is equally *not* automatically
+  treated as dangerous, since `TransitionWeight` defaults to `0`.
+- **Sequence length.** One step (`E(n-1) -> E(n)`) — a deliberately
+  narrow foundation. n-gram/Markov generalization is explicitly future,
+  unscoped work (see [ROADMAP.md § v0.6](ROADMAP.md#v06--behavioral-detection-depth)).
+
 This document describes the domain model as it exists today. Planned
-extensions to it (AI-agent session/delegation fields, and others) are
-scoped in [ROADMAP.md](ROADMAP.md) and [`tasks/`](tasks/) — each will
-update this document when it actually ships, not before.
+extensions to it (AI-agent session/delegation fields, further v0.6
+sequence detectors, and others) are scoped in [ROADMAP.md](ROADMAP.md)
+and [`tasks/`](tasks/) — each will update this document when it
+actually ships, not before.

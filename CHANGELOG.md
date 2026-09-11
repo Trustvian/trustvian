@@ -6,6 +6,37 @@ All notable changes to Trustvian are documented in this file. Prior to
 point where a tag first exists for something external users can
 actually depend on.
 
+## Unreleased
+
+> This repository's convention through `v0.5.0` was one heading per
+> actual, published tag, with no interim `Unreleased` section — a
+> milestone's full entry was written once, when it shipped. `v0.6` is
+> the first milestone expected to span more real development time
+> across multiple slices before it tags, so entries accumulate here as
+> each slice lands, rather than being reconstructed retroactively at
+> release time. This section is renamed to `## v0.6.0 — Behavioral
+> Detection Depth` (or whatever version the milestone actually ships
+> as) only once a real tag exists — never before.
+
+### Added
+
+- **Sequence Analysis Foundation**
+  ([task 025](docs/tasks/025-sequence-analysis-foundation.md)) — a new,
+  opt-in anomaly signal, `transition_deviation`: has the immediately
+  preceding action ever led to this one before, for this actor?
+  `internal/anomaly.Config` gains `TransitionWeight` (defaults to `0`,
+  the same "ships opt-in" precedent `FrequencyWeight`/
+  `TimePatternWeight` already set); `internal/baseline.Baseline` gains
+  `LastFingerprintID`/`LastFingerprintTime`, and `FingerprintStats`
+  gains a bounded (64-entry) `PredecessorCounts` map — no new
+  `SequenceStore`, `SequenceKey`, or public API of any kind (see [ADR
+  0010](docs/adr/0010-bounded-process-local-sequence-state.md)).
+  Existing `v0.5` callers see byte-for-byte unchanged `Score`
+  output and allocation profile (`BenchmarkEngineAnalyze`: 456 B/op, 17
+  allocs/op, unchanged). See
+  [docs/sequence-analysis.md](docs/sequence-analysis.md) for the full
+  design.
+
 ## v0.5.0 — Policy & Configuration
 
 Adds a public, versioned configuration boundary for both `Policy` and

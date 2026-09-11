@@ -7,13 +7,16 @@ vision document. Each milestone maps to one or more detailed task files
 in [`docs/tasks/`](tasks/); each task file is independently
 understandable and carries its own objective, scope, non-goals,
 technical requirements, tests, benchmarks, documentation, and
-acceptance criteria. Milestones without a task file yet (`v0.6`–`v0.9`
-below; `v0.5` has all five of its tasks now scoped and done —
+acceptance criteria. Milestones without a fully-scoped task sequence
+yet (`v0.7`–`v0.9` below, and the remainder of `v0.6` beyond its first
+task; `v0.5` has all five of its tasks scoped and done —
 [019](tasks/019-policy-config-model.md),
 [020](tasks/020-policy-config-loader.md),
 [021](tasks/021-cli-config-integration.md),
 [022](tasks/022-collector-config-integration.md), and
-[023](tasks/023-declarative-alert-configuration.md)) are deliberately
+[023](tasks/023-declarative-alert-configuration.md); `v0.6` has its
+first task done —
+[025](tasks/025-sequence-analysis-foundation.md)) are deliberately
 not pre-scoped in detail — this roadmap's own
 "small vertical slices" principle, applied to itself.
 
@@ -210,8 +213,11 @@ milestones exist to close:
 
 **Next up:** with `v0.1`–`v0.5.0` shipped (see [Release readiness —
 v0.5.0](#release-readiness--v050) for the tag/dependency verification),
-this roadmap's remaining work (`v0.6` through `v1.0` Production-Ready
-OSS, defined below) charts the
+`v0.6` — Behavioral Detection Depth is now in progress: its first task,
+[025 Sequence Analysis Foundation](tasks/025-sequence-analysis-foundation.md),
+is done (see the milestone section below); the rest of this roadmap's
+remaining work (the rest of `v0.6` through `v1.0` Production-Ready OSS,
+defined below) charts the
 path to a complete, standalone, production-usable OSS product — see
 each milestone section for
 dependencies; none of `v0.6`–`v0.9` are strictly ordered relative to
@@ -811,6 +817,11 @@ has run:
 
 ## v0.6 — Behavioral Detection Depth
 
+**Status: in progress.** [Task 025](tasks/025-sequence-analysis-foundation.md)
+(Sequence Analysis Foundation) is done; the rest of the milestone below
+remains unscoped, per this roadmap's own "small vertical slices"
+principle.
+
 **Objective.** OSS detection should not stop at individual-event
 anomaly signals. Promote sequence-aware detection from
 [Future research](#future-research) into an intentional, deterministic
@@ -818,22 +829,37 @@ OSS capability — the one item this document's prior "Future research"
 section named that a production-usable OSS product genuinely needs
 before `v1.0`, per this roadmap's now-explicit product boundary.
 
-**Scope** (no task file yet):
+**Scope** (task file [025](tasks/025-sequence-analysis-foundation.md)
+for the slice done so far; the rest remain unscoped and unnumbered
+until each is actually picked up — illustrative names only below):
 
-- **Sequence deviation** — the genuinely new capability here. Today's
-  signals (`categorical_novelty`, `latency_deviation`,
-  `frequency_deviation`, `error_deviation`, `sensitive_target`,
-  `time_pattern_deviation`) all score one event in isolation against a
-  fingerprint's own history; none of them see *order*. A deterministic,
-  statistical sequence model — n-gram frequency over recent operation
-  sequences, or a Markov transition model over `Fingerprint.ID`
-  transitions per actor — closes that gap, following the exact
-  "ships opt-in, weight defaults to 0" precedent `frequency_deviation`
-  and `time_pattern_deviation` already established, and the same
-  "needs a concrete design before it earns a package" bar
-  [ADR 0001](adr/0001-hexagonal-core-and-pipeline-shape.md) sets.
-- Already covered by existing signals, named here only to close the
-  gap between this document's language and the original spec's
+- **025 Sequence Analysis Foundation — done.** `internal/baseline.Baseline`
+  gains `LastFingerprintID`/`LastFingerprintTime` (an actor's most
+  recent Fingerprint and its ordering-guarded timestamp);
+  `FingerprintStats` gains `PredecessorCounts` (bounded at 64 distinct
+  entries — see [ADR 0010](adr/0010-bounded-process-local-sequence-state.md)).
+  `internal/anomaly` gains one new signal, `transition_deviation`
+  (opt-in via `Config.TransitionWeight`, defaulting to `0` — the exact
+  precedent `FrequencyWeight`/`TimePatternWeight` already set):
+  has this exact predecessor `Fingerprint.ID` ever led to this
+  destination before, for this actor? No `SequenceStore`, no
+  `SequenceKey`, no `SequenceAnalyzer` — the existing
+  `Baseline`/`Store` infrastructure carries the new state, under the
+  same per-`Key` concurrency/persistence guarantees, with zero changes
+  to `engine.go`, `internal/store`, `internal/policy`, `internal/trust`,
+  `alert`, `config`, the CLI, or `processor/`. Proven end-to-end
+  through the real, gated `Analyze`+`Observe` loop:
+  `TestAnalyzeTransitionDeviationEndToEnd` (see
+  [engine_test.go](../engine_test.go)) shows a never-observed
+  `read -> delete` transition firing `transition_deviation` without
+  `categorical_novelty` also firing (destination independently
+  familiar via a different predecessor), and the actor's actual normal
+  path (`read -> update`) carrying no such signal. See [Sequence
+  Analysis](../sequence-analysis.md) for the full design and [task
+  025](tasks/025-sequence-analysis-foundation.md) for benchmarks and
+  the complete test list.
+- **Already covered by existing signals**, named here only to close
+  the gap between this document's language and the original spec's
   ([`trustvian-project-spec.md` §
   6](../trustvian-project-spec.md#6-sequence-analysis)) — no new work
   needed: "target deviation" and "destination deviation"
@@ -844,6 +870,23 @@ before `v1.0`, per this roadmap's now-explicit product boundary.
   "operation deviation" (`categorical_novelty` on `Operation`), and
   "frequency"/"time-of-day deviation" (`frequency_deviation`,
   `time_pattern_deviation`, both already shipped).
+- **Not yet done — illustrative future slices, unscoped, no task
+  numbers reserved:**
+  - *Transition rarity/deviation scoring* — task 025's
+    `transition_deviation` is binary (seen vs. never seen); a future
+    slice could add a frequency-based "rare, not merely unseen"
+    threshold, still without a probability model.
+  - *n-gram behavioral detection* — generalizing
+    `LastFingerprintID` (one step) into a small, still explicitly
+    bounded ring buffer of the last N fingerprints (see [ADR
+    0010](adr/0010-bounded-process-local-sequence-state.md)'s
+    "Alternatives considered" for what this would need to change).
+  - *Markov transition scoring* — an actual `P(destination|predecessor)`
+    probability model over `PredecessorCounts`, once real traffic
+    justifies the added complexity task 025 deliberately deferred.
+  - *v0.6 stabilization / release gate* — mirroring [task
+    024](tasks/024-v05-release-gate.md)'s shape for `v0.5`, once the
+    milestone's feature slices are complete.
 
 **Preferred architecture** (explicit, to close off scope creep before
 it starts):
@@ -858,22 +901,29 @@ Optional ML plugins/research        (never a core dependency — see Non-goals)
 
 **Non-goals.** ML is not required anywhere in this milestone or the
 core detection path generally — n-gram/Markov transition modeling are
-deterministic/statistical, not ML, and are the entire scope here.
-Graph-based behavioral deviation and ML-based sequence models remain
-[Future research](#future-research), revisited only if a concrete
-design and consumer need emerge — this milestone does not build them
-speculatively. Day-of-week seasonality is a separate, independent
-EWMA dimension ([task 017](tasks/017-baseline-time-patterns.md)'s own
-Non-Goals already established this) and stays in
+deterministic/statistical, not ML. Graph-based behavioral deviation and
+ML-based sequence models remain [Future research](#future-research),
+revisited only if a concrete design and consumer need emerge — this
+milestone does not build them speculatively. Day-of-week seasonality is
+a separate, independent EWMA dimension
+([task 017](tasks/017-baseline-time-patterns.md)'s own Non-Goals
+already established this) and stays in
 [Future research](#future-research) rather than being folded in here.
+No CLI/Collector/config-schema integration for `transition_deviation`
+yet — see [task 025's own Non-Goals](tasks/025-sequence-analysis-foundation.md#non-goals).
 
 **Dependencies.** `v0.1` (stable `Baseline`/`Anomaly` — a sequence
 signal reads a fingerprint's recent history the same way
 `frequency_deviation` reads its interval history). Independent of
 `v0.5`/`v0.7`.
 
-**Acceptance criteria.** Defined when this milestone's own task file is
-written — not before.
+**Acceptance criteria.** See [task
+025](tasks/025-sequence-analysis-foundation.md)'s own Acceptance
+Criteria section for the slice done so far — fully met, verified by
+`go test ./... -race -count=1` and `go test -bench=. -benchmem
+./...` showing `BenchmarkEngineAnalyze`'s allocation profile unchanged.
+The milestone as a whole remains incomplete: it is not done until the
+remaining, still-unscoped slices above are picked up.
 
 ## v0.7 — AI Agent Behavioral Security
 

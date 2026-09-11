@@ -206,6 +206,74 @@ allocation — both proportional to "how much there is to explain," the
 same explainability-costs-proportionally-not-unconditionally property
 `anomaly.Score`'s worst-case benchmark already established.
 
+### v0.6 task 025 (Sequence Analysis Foundation)
+
+Measured same environment (Go 1.27, darwin/arm64, Apple M3 Pro),
+`go test -bench=. -benchmem -run=^$ ./internal/baseline/...
+./internal/anomaly/... ./internal/store/... .`:
+
+| Benchmark | Before | After |
+|---|---:|---:|
+| `BenchmarkObserve` (no transition recorded) | 231.6 ns/op, 672 B/op, 3 allocs | 222.7 ns/op, 672 B/op, 3 allocs — unchanged |
+| `BenchmarkObserveTransition` (new) | — | 377.1 ns/op, 1,344 B/op, 6 allocs |
+| `BenchmarkInMemoryObserveSameKey` | 412.7 ns/op, 672 B/op, 3 allocs | 573.6 ns/op, 910 B/op, 4 allocs |
+| `BenchmarkInMemoryObserveDistinctKeys` | 173.2 ns/op, 672 B/op, 3 allocs | 241.4 ns/op, 928 B/op, 5 allocs |
+| `BenchmarkScoreKnownFamiliar` | 80.18 ns/op, 0 B/op, 0 allocs | 97.74 ns/op, 0 B/op, 0 allocs |
+| `BenchmarkScoreTransitionDeviation` (new) | — | 163.0 ns/op, 160 B/op, 3 allocs |
+| `BenchmarkEngineAnalyze` (end-to-end, default config) | 462.3 ns/op, 456 B/op, 17 allocs | 481.0 ns/op, 456 B/op, 17 allocs |
+
+**`Engine.Analyze`'s (read-only) allocation profile is unchanged** —
+`BenchmarkEngineAnalyze`'s `B/op`/`allocs/op` are byte-for-byte
+identical to before this task. This is genuinely representative of the
+read path, not an artifact: `anomaly.Score`'s "already-familiar
+transition" case (`BenchmarkScoreKnownFamiliar`) is a map read and an
+early-return zero-value `Signal`, never appended to `Contributors` —
+0 B/0 allocs either way, confirmed directly, not merely because the
+benchmark's fixed clock happens to avoid the code path (see below,
+where that *is* the case for a different benchmark).
+
+**`Engine.Observe`'s (write) allocation profile genuinely increased —
++1 alloc / ~+240 B per call, once a real transition is being
+recorded**, and this shows up in the pre-existing
+`internal/store` benchmarks (which use a real, advancing
+`time.Now()`, unlike `BenchmarkObserve`'s fixed clock — see below):
+`recordPredecessor`'s copy-on-write (a fresh `map[string]uint64`
+allocated on every call that updates an existing entry, for the
+identical immutability reason `Baseline.Fingerprints` itself is
+already copied on every `Observe`) is a real, structural cost, not
+noise — reproduced identically across three independent full test
+runs. It was deliberately not optimized away: the numbers remain
+sub-microsecond and sub-kilobyte at every measured point, and avoiding
+it would require either mutating a shared map in place (unsafe — see
+[ADR 0010](adr/0010-bounded-process-local-sequence-state.md)) or a
+materially more complex copy-on-write map structure not justified by
+these numbers. This is the same "don't optimize blindly" discipline
+CLAUDE.md asks for, applied honestly in both directions — reported as
+found, not minimized or omitted.
+
+**`BenchmarkObserve` (the pre-existing benchmark) does *not* exercise
+this cost**, and that gap is itself a documented finding, not an
+oversight: its loop uses a fixed clock and the same fingerprint every
+iteration, so `Baseline.Observe`'s ordering guard
+(`now.After(LastFingerprintTime)`) is only satisfied on the very first
+iteration — every steady-state call takes the cheap "no valid
+transition" path, identical to before this task.
+`BenchmarkObserveTransition` (new) uses a strictly-advancing clock and
+an alternating fingerprint pair specifically so every call *does*
+exercise `recordPredecessor`'s copy-on-write, giving an honest
+worst-case number the unchanged benchmark alone would have hidden —
+this is the exact kind of gap [`.claude/rules/testing.md`](../.claude/rules/testing.md)'s
+"benchmark every stage individually" discipline exists to catch (see
+its own `fingerprint.Compute` precedent).
+
+**`BenchmarkScoreTransitionDeviation`'s 160 B / 3 allocs is
+`transitionSignal`'s cost** on a `PredecessorCounts` map sized near
+`maxPredecessors` (64 entries) — a single map lookup plus one `Signal`
+struct and its `Detail` string formatting, paid only when the signal
+actually fires (a genuinely unseen transition), the identical
+"only pay for what fires" discipline every other `anomaly` signal
+function already follows.
+
 ## Reading the numbers
 
 **Session-to-session `ns/op` moved broadly; allocation counts didn't —
