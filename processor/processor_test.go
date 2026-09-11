@@ -53,8 +53,22 @@ var _ consumer.Traces = (*capturingConsumer)(nil)
 // drive.
 func newTestProcessor(t testing.TB, next consumer.Traces) processor.Traces {
 	t.Helper()
+	proc, err := newTestProcessorWithConfig(t, next, &trustvianprocessor.Config{})
+	if err != nil {
+		t.Fatalf("CreateTraces() error = %v", err)
+	}
+	return proc
+}
+
+// newTestProcessorWithConfig is newTestProcessor's more general form:
+// it drives the same real factory.CreateTraces/Start lifecycle with a
+// caller-supplied Config, and returns any CreateTraces error to the
+// caller instead of failing the test — needed by the invalid-policy
+// startup-failure test, where a non-nil error is the expected,
+// correct outcome.
+func newTestProcessorWithConfig(t testing.TB, next consumer.Traces, cfg component.Config) (processor.Traces, error) {
+	t.Helper()
 	factory := trustvianprocessor.NewFactory()
-	cfg := factory.CreateDefaultConfig()
 	set := processor.Settings{
 		ID:                component.NewID(component.MustNewType("trustvian")),
 		TelemetrySettings: componenttest.NewNopTelemetrySettings(),
@@ -62,7 +76,7 @@ func newTestProcessor(t testing.TB, next consumer.Traces) processor.Traces {
 	}
 	proc, err := factory.CreateTraces(context.Background(), set, cfg, next)
 	if err != nil {
-		t.Fatalf("CreateTraces() error = %v", err)
+		return nil, err
 	}
 	if err := proc.Start(context.Background(), componenttest.NewNopHost()); err != nil {
 		t.Fatalf("Start() error = %v", err)
@@ -72,7 +86,7 @@ func newTestProcessor(t testing.TB, next consumer.Traces) processor.Traces {
 			t.Errorf("Shutdown() error = %v", err)
 		}
 	})
-	return proc
+	return proc, nil
 }
 
 // buildTraces constructs a single-span ptrace.Traces for a given
@@ -214,5 +228,141 @@ func TestConsumeTracesConcurrent(t *testing.T) {
 	}
 	if got := next.len(); got != int(want) {
 		t.Errorf("next consumer received %d batches, want %d", got, want)
+	}
+}
+
+// blockRPCInProductionPolicy is a policy config matching every span
+// buildTraces produces (environment "production", operation_category
+// "rpc" — buildTraces sets no http.request.method/db.system.name
+// attributes, so mapping.go's inferCategory always falls through to
+// "rpc" for it), with a single unconditional rule that decides BLOCK.
+// It deliberately does not depend on Trust.Risk/Anomaly at all, so the
+// test asserting on it can't be flaky against cold-start scoring
+// details — the whole point is proving the *configured* Decision
+// reaches the span, not re-testing anomaly/trust math already covered
+// elsewhere.
+func blockRPCInProductionPolicy() map[string]any {
+	return map[string]any{
+		"version":          "v1",
+		"default_decision": "observe_only",
+		"default_reason":   "no policy rules configured; observing by default",
+		"rules": []any{
+			map[string]any{
+				"name": "block-production-rpc",
+				"when": map[string]any{
+					"environment":        "production",
+					"operation_category": "rpc",
+				},
+				"decision": "block",
+				"reason":   "production rpc calls are blocked by configured policy",
+			},
+		},
+	}
+}
+
+// TestConsumeTracesConfiguredPolicyChangesDecision is task 022's
+// central acceptance test: a real Collector processor configuration
+// (Config.Policy, decoded via decodePolicy/config.CompilePolicy — the
+// exact path createTracesProcessor drives) changes the actual
+// enriched span's trustvian.decision, proving the configured Policy
+// reaches real span processing end to end (Collector config -> Config
+// -> PolicyConfig -> CompilePolicy -> Engine -> span -> Decision), not
+// just that CreateTraces accepts the config without error.
+func TestConsumeTracesConfiguredPolicyChangesDecision(t *testing.T) {
+	next := &capturingConsumer{}
+	cfg := &trustvianprocessor.Config{Policy: blockRPCInProductionPolicy()}
+	proc, err := newTestProcessorWithConfig(t, next, cfg)
+	if err != nil {
+		t.Fatalf("CreateTraces() error = %v", err)
+	}
+
+	td := buildTraces("svc-configured", 1.0)
+	if err := proc.ConsumeTraces(context.Background(), td); err != nil {
+		t.Fatalf("ConsumeTraces() error = %v", err)
+	}
+
+	span := firstSpan(next.traces[0])
+	got, ok := span.Attributes().Get("trustvian.decision")
+	if !ok {
+		t.Fatal("enriched span missing trustvian.decision")
+	}
+	if got.Str() != "block" {
+		t.Errorf("trustvian.decision = %q, want %q (the configured policy should override the default)", got.Str(), "block")
+	}
+}
+
+// TestConsumeTracesDefaultPolicyUnchangedWithoutConfig is the
+// regression counterpart: a Config with no Policy block at all must
+// still resolve to the processor's pre-task-022 default behavior —
+// trustvian.NewEngine()'s own zero-rules Policy, which resolves every
+// span to observe_only (see processor/README.md § Configuration,
+// unchanged by this task for the omitted-config case).
+func TestConsumeTracesDefaultPolicyUnchangedWithoutConfig(t *testing.T) {
+	next := &capturingConsumer{}
+	proc := newTestProcessor(t, next) // &Config{} — no Policy set
+
+	td := buildTraces("svc-default", 1.0)
+	if err := proc.ConsumeTraces(context.Background(), td); err != nil {
+		t.Fatalf("ConsumeTraces() error = %v", err)
+	}
+
+	span := firstSpan(next.traces[0])
+	got, ok := span.Attributes().Get("trustvian.decision")
+	if !ok {
+		t.Fatal("enriched span missing trustvian.decision")
+	}
+	if got.Str() != "observe_only" {
+		t.Errorf("trustvian.decision = %q, want %q (omitting policy: must preserve the pre-existing default)", got.Str(), "observe_only")
+	}
+}
+
+// TestConsumeTracesPolicyRuleOrderingFirstMatchWins proves rule order
+// from the Collector config's `rules:` sequence survives decoding and
+// compilation unchanged: the first rule (narrower, matches) must win
+// over a second, broader rule that would also match — the same
+// first-match-wins contract policy.Policy.Evaluate already guarantees
+// for the Go SDK and CLI. If Collector's decoder or decodePolicy ever
+// reordered Rules (e.g. via a map instead of a slice), this test
+// would see the second rule's ALERT decision fire instead.
+func TestConsumeTracesPolicyRuleOrderingFirstMatchWins(t *testing.T) {
+	next := &capturingConsumer{}
+	cfg := &trustvianprocessor.Config{Policy: map[string]any{
+		"version":          "v1",
+		"default_decision": "observe_only",
+		"default_reason":   "no policy rules configured; observing by default",
+		"rules": []any{
+			map[string]any{
+				"name": "block-production-rpc",
+				"when": map[string]any{
+					"environment":        "production",
+					"operation_category": "rpc",
+				},
+				"decision": "block",
+				"reason":   "narrower rule; must fire first",
+			},
+			map[string]any{
+				"name": "alert-production",
+				"when": map[string]any{
+					"environment": "production",
+				},
+				"decision": "alert",
+				"reason":   "broader rule; must never fire while the rule above also matches",
+			},
+		},
+	}}
+	proc, err := newTestProcessorWithConfig(t, next, cfg)
+	if err != nil {
+		t.Fatalf("CreateTraces() error = %v", err)
+	}
+
+	td := buildTraces("svc-ordering", 1.0)
+	if err := proc.ConsumeTraces(context.Background(), td); err != nil {
+		t.Fatalf("ConsumeTraces() error = %v", err)
+	}
+
+	span := firstSpan(next.traces[0])
+	got, _ := span.Attributes().Get("trustvian.decision")
+	if got.Str() != "block" {
+		t.Errorf("trustvian.decision = %q, want %q (first-match-wins: the narrower rule must fire, not the broader one after it)", got.Str(), "block")
 	}
 }

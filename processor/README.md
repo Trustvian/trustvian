@@ -75,29 +75,66 @@ duplicated.
 
 ## Configuration
 
-`Config` is currently empty. This processor always runs Trustvian's
-**default** `Engine` configuration: the default `Policy` (which
-resolves every event to `observe_only` unless you've read this far —
-see below), default anomaly/trust thresholds, and an in-memory `Store`.
+`Config` has one field, `policy`, declaring a real Trustvian `Policy`
+in exactly the same schema the Go SDK
+(`config.LoadFile`/`config.CompilePolicy`) and the CLI
+(`trustvian analyze --config`) already consume — see the core
+repository's [Policy Guide](../docs/policy-guide.md) for the field
+reference. `WithAnomalyConfig`, `WithTrustConfig`, `WithStore`, and
+`WithContextRisk` remain unconfigurable from here for the same reason
+they always were (see below): every other Trustvian `Option` still
+takes a type from the core module's `internal/` packages that this
+module — a genuinely separate one — structurally cannot construct.
 
-This is a deliberate, explicit [ADR 0002](../docs/adr/0002-public-api-boundary.md)
-decision, not an oversight. Every Trustvian `Option` function
-(`WithPolicy`, `WithAnomalyConfig`, `WithTrustConfig`, `WithStore`,
-`WithContextRisk`) takes a type from the core module's `internal/`
-packages, which this module — a genuinely separate one — structurally
-cannot construct. Building this processor is not, by itself, the "real
-external consumer" trigger ADR 0002 named for promoting those types to
-a public package: it's built and maintained alongside the core module,
-not by an independent third party with an unmet need. That promotion
-remains a decision for if/when one actually appears — see the core
-repository's `docs/ROADMAP.md`.
+```yaml
+processors:
+  trustvian:
+    policy:
+      version: v1
+      default_decision: observe_only
+      default_reason: no policy rules configured; observing by default
+      rules:
+        - name: block-critical-risk
+          when:
+            min_risk_level: critical
+          decision: block
+          reason: critical risk is blocked by configured policy
+```
 
-Practically, this means: **every span this processor scores gets
-`trustvian.decision = "observe_only"` today**, since that's
-`NewEngine()`'s zero-configuration default policy. The `trustvian.*`
-score/risk/fingerprint attributes are still genuinely computed and
-meaningful — only the final policy verdict is fixed until a public
-configuration surface exists.
+**Omitting `policy:` entirely** preserves this processor's original
+behavior exactly: every span still resolves to
+`trustvian.decision = "observe_only"`, `NewEngine()`'s
+zero-configuration default. The `trustvian.*` score/risk/fingerprint
+attributes are always genuinely computed and meaningful regardless.
+
+**An invalid or incomplete explicit `policy:` block** (an unrecognized
+schema version, a missing `default_decision`/`default_reason`, an
+invalid decision or condition value, or a duplicate rule name) fails
+the whole Collector's startup — `CreateTraces` returns an error before
+any pipeline runs, never a fallback to the default policy at the first
+span.
+
+Why `Config.Policy` is typed as a generic map (`map[string]any`)
+rather than `config.PolicyConfig` directly: see the core repository's
+[task 022](../docs/tasks/022-collector-config-integration.md) for the
+full reasoning — in short, Collector's own confmap decoder only reads
+`mapstructure` struct tags, matched case-sensitively, and
+`config.PolicyConfig` only carries the `yaml:"..."` tags its own file
+loader (task 020) added; `decodePolicy` (`config.go`) bridges that gap
+by decoding with `go-viper/mapstructure/v2` pointed directly at those
+existing `yaml` tags, producing a real `config.PolicyConfig` with zero
+duplicate policy model anywhere in this module.
+
+**Not yet resolvable outside a local workspace:** `processor/go.mod`
+still requires `github.com/Trustvian/trustvian v0.3.0`, a version that
+predates the `config` package. This processor's policy-configuration
+code is implemented and tested (see `go.work` at the repository root,
+git-ignored, for local development), but `processor/go.mod`'s
+committed dependency cannot yet point at a released version that
+contains `config` — no Trustvian core release newer than `v0.4.0` has
+been pushed to `origin` as of this writing. See task 022's own
+"Release / Module Compatibility" section for the exact verification and
+the release this depends on.
 
 ## `trustvian.behavior.id`
 
@@ -160,16 +197,24 @@ is future work, not required for this minimal version.
 (mirroring the core module's own semantic-convention test cases),
 `Result` → attribute writing, the factory's component lifecycle, a
 full `ConsumeTraces` unit test (span in, enriched span out, forwarded),
-a malformed-span-doesn't-fail-the-batch test, and a concurrency test
-(many goroutines calling `ConsumeTraces` on one processor instance) —
-verifying the core `Engine`'s documented thread-safety actually holds
-under this new caller shape, not assuming it does.
+a malformed-span-doesn't-fail-the-batch test, a concurrency test (many
+goroutines calling `ConsumeTraces` on one processor instance), and —
+since task 022 — the `policy:` configuration path: decoding a real
+`policy:` block through Collector's own `confmap` decoder, an invalid
+policy failing `CreateTraces` outright, a configured Policy actually
+changing a real span's `trustvian.decision`, an omitted `policy:`
+preserving the pre-task default, and first-match-wins rule ordering
+surviving decode + compile.
 
 ## Non-goals (this version)
 
 No distributed/multi-instance Trustvian server. No Kubernetes/Helm
-packaging. No new policy language or dynamic policy reload. No
-exported Collector-convention metrics for the observability counters
-above. No public configuration surface (see § Configuration). These
-match the scope boundaries in the core repository's
-[`docs/tasks/009-otel-collector.md`](../docs/tasks/009-otel-collector.md).
+packaging. No new policy language, matchable condition, or dynamic
+policy reload (the configured Policy compiles once, at processor
+creation, and is fixed for the processor's lifetime). No exported
+Collector-convention metrics for the observability counters above. No
+Alert configuration (`alerts:`/`sinks:`/`webhook:` in Collector
+config) — a separate, future task. These match the scope boundaries in
+the core repository's
+[`docs/tasks/009-otel-collector.md`](../docs/tasks/009-otel-collector.md)
+and [`docs/tasks/022-collector-config-integration.md`](../docs/tasks/022-collector-config-integration.md).

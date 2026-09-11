@@ -41,6 +41,43 @@ func TestNewFactoryCreatesTracesProcessor(t *testing.T) {
 	}
 }
 
+// TestNewFactoryFailsOnInvalidPolicy proves this task's central
+// security invariant: an explicitly configured `policy:` block that
+// fails to decode/validate/compile must fail CreateTraces outright —
+// non-zero error, no processor instance returned — never a silent
+// fallback to the default Policy. This is what makes an invalid
+// policy a whole-Collector startup failure (CreateTraces runs during
+// pipeline graph construction, before Start), not something that
+// surfaces only once the first span arrives.
+func TestNewFactoryFailsOnInvalidPolicy(t *testing.T) {
+	factory := trustvianprocessor.NewFactory()
+	cfg := &trustvianprocessor.Config{
+		Policy: map[string]any{
+			"version": "v1",
+			// default_decison (typo) instead of default_decision: an
+			// explicit policy block missing its required default is
+			// exactly the "invalid" case — decodePolicy will decode
+			// it fine (it's a well-formed map), but
+			// config.CompilePolicy's Validate call must reject it.
+			"default_decison": "block",
+			"default_reason":  "typo above must be rejected, not silently ignored",
+		},
+	}
+	set := processor.Settings{
+		ID:                component.NewID(component.MustNewType("trustvian")),
+		TelemetrySettings: componenttest.NewNopTelemetrySettings(),
+		BuildInfo:         component.NewDefaultBuildInfo(),
+	}
+
+	proc, err := factory.CreateTraces(context.Background(), set, cfg, &capturingConsumer{})
+	if err == nil {
+		t.Fatal("CreateTraces() error = nil, want a non-nil error for an invalid policy config")
+	}
+	if proc != nil {
+		t.Errorf("CreateTraces() processor = %v, want nil alongside the error", proc)
+	}
+}
+
 // TestNewFactoryDoesNotSupportLogsOrMetrics confirms this is a
 // traces-only processor, matching task 009's scope (traces in, traces
 // enriched, traces out — no logs/metrics pipeline support was ever
