@@ -47,7 +47,7 @@ Alerts](#configuring-alerts) below and [ADR
 0009](docs/adr/0009-alert-config-is-a-separate-document.md)). See
 [Configuring a Policy](#configuring-a-policy) below.
 
-**`v0.6` — Behavioral Detection Depth is in progress.** Its first three
+**`v0.6` — Behavioral Detection Depth is in progress.** Its first four
 tasks are done: [Sequence Analysis
 Foundation](docs/tasks/025-sequence-analysis-foundation.md) added a
 new, opt-in `transition_deviation` anomaly signal that answers whether
@@ -70,14 +70,26 @@ sequences where both individual pairwise hops (`A -> B` and `B -> C`)
 are independently familiar yet the complete sequence
 `A -> B -> C` has never occurred, information the pairwise signals
 above structurally cannot see (see [ADR
-0012](docs/adr/0012-bounded-trigram-behavioral-context.md)). All four
-signals are deterministic, no ML, no new public API, reusing the
-existing `Baseline`/`Store` infrastructure rather than a parallel one
-(see [Sequence Analysis](docs/sequence-analysis.md) and [ADR
+0012](docs/adr/0012-bounded-trigram-behavioral-context.md)); [Markov
+Transition Scoring](docs/tasks/028-markov-transition-scoring.md) then
+asked, and answered honestly, a mandatory question before writing any
+code — what would Markov scoring add beyond `transition_rarity`? The
+answer: no new evidence (both are proven strictly monotonic functions
+of the identical frequency statistic), only an alternative severity
+curve, `markov_surprisal`, that preserves more resolution across the
+rare tail than the linear `transition_rarity` mapping does — so the two
+are mutually exclusive in scoring by construction, never
+double-counted, even if an operator enables both weights at once (see
+[ADR 0013](docs/adr/0013-first-order-markov-surprisal-without-duplicate-evidence.md)).
+All five signals are deterministic, no ML, no new public API, reusing
+the existing `Baseline`/`Store` infrastructure rather than a parallel
+one (see [Sequence Analysis](docs/sequence-analysis.md) and [ADR
 0010](docs/adr/0010-bounded-process-local-sequence-state.md)).
 Existing `v0.5` callers are unaffected: every new signal defaults to a
 zero weight and `BenchmarkEngineAnalyze`'s allocation profile is
-unchanged. Markov modeling remains unscoped future work — see
+unchanged. Higher-order/full Markov modeling (a transition matrix,
+smoothing, or a Markov treatment merged with the 3-gram context above)
+remains unscoped future work — see
 [`docs/ROADMAP.md` § v0.6](docs/ROADMAP.md#v06--behavioral-detection-depth).
 
 **Trustvian OSS is meant to be a complete, standalone,

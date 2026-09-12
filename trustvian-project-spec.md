@@ -235,20 +235,32 @@ A fixed 3-gram only — no configurable sequence length, no Markov model
 for the design and for why a 3-gram's statistical denominator needed
 its own new bounded state, not a reuse of the pairwise case's.
 
-The n-gram/Markov algorithms this section names below remain
-scoped-but-not-yet-built `v0.6` work beyond the fixed 3-gram above
-(Markov transition scoring specifically; arbitrary-length n-grams are
-not planned as a distinct future slice — see ADR 0012's own "Future
-extension" section for why a further generalization, if ever needed,
-would extend the same design rather than replace it); graph-based
-analysis and ML-based sequence models remain research only, and — per
-[`docs/ROADMAP.md`](docs/ROADMAP.md)'s explicit product boundary — ML
-must never become a dependency of the core detection path.
+A first-order Markov signal, `markov_surprisal`, also now exists — but
+not as new evidence: before building it, `v0.6`'s own Markov task
+answered a mandatory question (would this duplicate `transition_rarity`
+above?) and found that the textbook Markov "surprisal" statistic,
+`-log(P(B|A))`, is a strictly monotonic function of the identical
+frequency `transition_rarity` already reads. `markov_surprisal` is
+therefore an alternative, bounded severity curve over that same
+evidence — not independently weighted alongside it — see [ADR
+0013](docs/adr/0013-first-order-markov-surprisal-without-duplicate-evidence.md)
+for the full analysis.
+
+Beyond the fixed 3-gram and first-order surprisal above, arbitrary-length
+n-grams, a full Markov treatment (a transition matrix, smoothing, a
+higher-order model, or Markov merged with the 3-gram context) remain
+unscoped future work — see ADR 0012's own "Future extension" section
+and ADR 0011's "Why Markov still waits" (revisited, not superseded, by
+the first-order surprisal signal above) for what specifically remains
+missing; graph-based analysis and ML-based sequence models remain
+research only, and — per [`docs/ROADMAP.md`](docs/ROADMAP.md)'s
+explicit product boundary — ML must never become a dependency of the
+core detection path.
 
 Potential future algorithms:
 
-- N-gram behavioral models
-- Markov models
+- N-gram behavioral models beyond the fixed 3-gram implemented
+- Full/higher-order Markov models (transition matrix, smoothing)
 - Graph-based analysis
 - Sequence similarity
 - Statistical deviation

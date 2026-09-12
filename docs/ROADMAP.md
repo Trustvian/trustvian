@@ -213,13 +213,14 @@ milestones exist to close:
 
 **Next up:** with `v0.1`–`v0.5.0` shipped (see [Release readiness —
 v0.5.0](#release-readiness--v050) for the tag/dependency verification),
-`v0.6` — Behavioral Detection Depth is now in progress: its first
-three tasks, [025 Sequence Analysis
+`v0.6` — Behavioral Detection Depth is now in progress: its first four
+tasks, [025 Sequence Analysis
 Foundation](tasks/025-sequence-analysis-foundation.md), [026
-Transition Rarity](tasks/026-transition-rarity.md), and [027 Bounded
-n-gram Detection](tasks/027-bounded-ngram-detection.md), are done (see
-the milestone section below); Markov transition scoring is named as
-the next illustrative slice, not yet started. The rest of this roadmap's
+Transition Rarity](tasks/026-transition-rarity.md), [027 Bounded n-gram
+Detection](tasks/027-bounded-ngram-detection.md), and [028 Markov
+Transition Scoring](tasks/028-markov-transition-scoring.md), are done
+(see the milestone section below); `v0.6` stabilization/release gate is
+named as the sole remaining illustrative slice, not yet started. The rest of this roadmap's
 remaining work (the rest of `v0.6` through `v1.0` Production-Ready OSS,
 defined below) charts the
 path to a complete, standalone, production-usable OSS product — see
@@ -825,10 +826,12 @@ Nothing remains outstanding for this release.
 
 **Status: in progress.** [Task 025](tasks/025-sequence-analysis-foundation.md)
 (Sequence Analysis Foundation), [task
-026](tasks/026-transition-rarity.md) (Transition Rarity), and [task
-027](tasks/027-bounded-ngram-detection.md) (Bounded n-gram Detection)
-are done; the next illustrative slice is Markov transition scoring (see
-"Not yet done" below) — not yet started, not yet scoped. The rest of
+026](tasks/026-transition-rarity.md) (Transition Rarity), [task
+027](tasks/027-bounded-ngram-detection.md) (Bounded n-gram Detection),
+and [task 028](tasks/028-markov-transition-scoring.md) (Markov
+Transition Scoring) are done; the sole remaining illustrative slice is
+`v0.6` stabilization/release gate (see "Not yet done" below) — not yet
+started, not yet scoped. The rest of
 the milestone below remains unscoped, per this roadmap's own "small
 vertical slices" principle.
 
@@ -840,10 +843,11 @@ section named that a production-usable OSS product genuinely needs
 before `v1.0`, per this roadmap's now-explicit product boundary.
 
 **Scope** (task files [025](tasks/025-sequence-analysis-foundation.md),
-[026](tasks/026-transition-rarity.md), and
-[027](tasks/027-bounded-ngram-detection.md) for the slices done so far;
-the rest remain unscoped and unnumbered until each is actually picked
-up — illustrative names only below):
+[026](tasks/026-transition-rarity.md),
+[027](tasks/027-bounded-ngram-detection.md), and
+[028](tasks/028-markov-transition-scoring.md) for the slices done so
+far; the rest remain unscoped and unnumbered until each is actually
+picked up — illustrative names only below):
 
 - **025 Sequence Analysis Foundation — done.** `internal/baseline.Baseline`
   gains `LastFingerprintID`/`LastFingerprintTime` (an actor's most
@@ -933,6 +937,38 @@ up — illustrative names only below):
   3-gram detection](../sequence-analysis.md#bounded-3-gram-detection-v06-task-027)
   and [task 027](tasks/027-bounded-ngram-detection.md) for benchmarks
   and the complete test list.
+- **028 Markov Transition Scoring — done.** Before writing any code,
+  this task answered a mandatory question: what would Markov scoring
+  provide that task 026's `transition_rarity` does not already? The
+  answer, proven not just asserted: **nothing new, as evidence.**
+  `transition_rarity = 1 - P(B|A)` and the textbook Markov "surprisal"
+  statistic `-log(P(B|A))` are both strictly monotonic functions of the
+  identical `count/total` frequency — proven directly by
+  `TestMarkovSurprisalIsMonotonicReparameterizationOfRarity` (see
+  [ADR 0013](adr/0013-first-order-markov-surprisal-without-duplicate-evidence.md)
+  for the full analysis). What genuinely differs is curve shape, not
+  evidence: `-log2(frequency)`, bounded into `[0,1)`, preserves more
+  resolution across the rare tail than the linear `1-frequency` mapping
+  does. The new signal, `markov_surprisal` (opt-in via
+  `Config.MarkovWeight`, defaulting to `0`), is therefore built as an
+  **alternative, mutually exclusive scoring curve** over task 025/026's
+  own existing state (`PredecessorCounts`/`OutgoingTransitionTotal` —
+  no new `Baseline`/`FingerprintStats` field, no new bound), not a
+  second, independently-weighted signal: `anomaly.Score` forces
+  `transition_rarity`'s own contribution to zero whenever
+  `MarkovWeight > 0`, enforced in code — proven by
+  `TestScoreMarkovAndTransitionRarityAreMutuallyExclusiveInScoring` —
+  so a caller cannot double-count this evidence by any combination of
+  the two weights. Reuses `Config.MinTransitionObservations` exactly
+  (no separate Markov-specific threshold); never evaluates a `count ==
+  0` transition (that remains `transition_deviation`'s domain), so
+  `-log2(0)` is never computed and `Inf`/`NaN` are impossible by
+  construction. Zero changes to `engine.go`, `internal/baseline`,
+  `internal/store`, `internal/policy`, `internal/trust`, `alert`,
+  `config`, the CLI, or `processor/`. See [ADR
+  0013](adr/0013-first-order-markov-surprisal-without-duplicate-evidence.md)
+  and [task 028](tasks/028-markov-transition-scoring.md) for the full
+  mathematical definition, benchmarks, and the complete test list.
 - **Already covered by existing signals**, named here only to close
   the gap between this document's language and the original spec's
   ([`trustvian-project-spec.md` §
@@ -947,18 +983,17 @@ up — illustrative names only below):
   `time_pattern_deviation`, both already shipped).
 - **Not yet done — illustrative future slices, unscoped, no task
   numbers reserved:**
-  - *Markov transition scoring* (**next**) — an actual
-    `P(destination|predecessor)` probability model (and, potentially,
-    its 3-gram generalization over `TrigramCounts`/
-    `TrigramContinuationTotal`) with real smoothing, once real traffic
-    justifies the added complexity tasks 025–027 deliberately deferred
-    — see [ADR 0011](adr/0011-transition-rarity-statistic-and-orientation.md#why-markov-still-waits)
-    and [ADR 0012](adr/0012-bounded-trigram-behavioral-context.md#future-extension)
-    for what specifically remains missing. Not yet started, not yet
-    scoped.
-  - *v0.6 stabilization / release gate* — mirroring [task
+  - *v0.6 stabilization / release gate* (**next**) — mirroring [task
     024](tasks/024-v05-release-gate.md)'s shape for `v0.5`, once the
-    milestone's feature slices are complete.
+    milestone's feature slices are complete. This is the sole
+    remaining item on this list: tasks 025–028 have delivered
+    pairwise transition detection (binary and graded), bounded
+    higher-order (3-gram) detection, and a first-order Markov severity
+    curve over the same evidence — a substantial build-out of this
+    milestone's "sequence-aware detection" objective. A genuinely new
+    detection slice beyond these would need its own concrete,
+    evidence-driven justification before this list grows again, not a
+    speculative addition. Not yet started, not yet scoped.
 
 **Preferred architecture** (explicit, to close off scope creep before
 it starts):
@@ -982,10 +1017,12 @@ a separate, independent EWMA dimension
 already established this) and stays in
 [Future research](#future-research) rather than being folded in here.
 No CLI/Collector/config-schema integration for `transition_deviation`,
-`transition_rarity`, `ngram_deviation`, or `ngram_rarity` yet — see
+`transition_rarity`, `ngram_deviation`, `ngram_rarity`, or
+`markov_surprisal` yet — see
 [task 025's](tasks/025-sequence-analysis-foundation.md#non-goals),
-[task 026's](tasks/026-transition-rarity.md#non-goals), and [task
-027's](tasks/027-bounded-ngram-detection.md#non-goals) own Non-Goals
+[task 026's](tasks/026-transition-rarity.md#non-goals), [task
+027's](tasks/027-bounded-ngram-detection.md#non-goals), and [task
+028's](tasks/028-markov-transition-scoring.md#non-goals) own Non-Goals
 sections. No configurable n-gram length either — task 027 ships a
 fixed 3-gram only (see [ADR 0012](adr/0012-bounded-trigram-behavioral-context.md#why-3-grams-first-not-arbitrary-n)).
 
@@ -996,12 +1033,13 @@ signal reads a fingerprint's recent history the same way
 
 **Acceptance criteria.** See [task
 025](tasks/025-sequence-analysis-foundation.md)'s, [task
-026](tasks/026-transition-rarity.md)'s, and [task
-027](tasks/027-bounded-ngram-detection.md)'s own Acceptance Criteria
+026](tasks/026-transition-rarity.md)'s, [task
+027](tasks/027-bounded-ngram-detection.md)'s, and [task
+028](tasks/028-markov-transition-scoring.md)'s own Acceptance Criteria
 sections for the slices done so far — all fully met, verified by `go
 test ./... -race -count=1` and `go test -bench=. -benchmem ./...`
 showing `BenchmarkEngineAnalyze`'s allocation profile unchanged across
-all three tasks. The milestone as a whole remains incomplete: it is not done until the
+all four tasks. The milestone as a whole remains incomplete: it is not done until the
 remaining, still-unscoped slices above are picked up.
 
 ## v0.7 — AI Agent Behavioral Security

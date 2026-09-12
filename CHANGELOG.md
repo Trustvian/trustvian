@@ -91,6 +91,39 @@ actually depend on.
   (`456 B/op, 17 allocs/op`), though its latency grows by a small,
   reported (not hidden) amount — see
   [docs/PERFORMANCE.md § v0.6 task 027](docs/PERFORMANCE.md#v06-task-027-bounded-ngram-detection).
+- **Markov Transition Scoring**
+  ([task 028](docs/tasks/028-markov-transition-scoring.md)) — a new,
+  opt-in anomaly signal, `markov_surprisal`, computing first-order
+  Markov surprisal (`-log2(P(B|A))`, bounded into `[0,1)`) over the
+  identical evidence task 026's `transition_rarity` already reads.
+  Before writing any code, this task answered a mandatory question —
+  what capability would Markov scoring add beyond `transition_rarity`?
+  — and found the honest answer: **none, as evidence.** Both signals
+  are proven (`TestMarkovSurprisalIsMonotonicReparameterizationOfRarity`)
+  to be strictly monotonic functions of the identical
+  `count/total` frequency; what differs is curve shape (surprisal
+  preserves more resolution across the rare tail than the linear
+  `1-frequency` mapping does). `markov_surprisal` is therefore built as
+  an alternative, **mutually exclusive** scoring curve, not a second,
+  independently-weighted signal: `anomaly.Score` forces
+  `transition_rarity`'s own contribution to `Score` to zero whenever
+  `Config.MarkovWeight` (defaults to `0`) is enabled, enforced in code
+  and proven by
+  `TestScoreMarkovAndTransitionRarityAreMutuallyExclusiveInScoring` — a
+  caller cannot double-count this evidence by any combination of the
+  two weights. No new `Baseline`/`FingerprintStats` state: reuses task
+  025/026's `PredecessorCounts`/`OutgoingTransitionTotal` and
+  `MinTransitionObservations` exactly. Never evaluates a `count == 0`
+  transition (that remains `transition_deviation`'s domain), so
+  `-log2(0)` is never computed — `Inf`/`NaN` are impossible by
+  construction. See [ADR
+  0013](docs/adr/0013-first-order-markov-surprisal-without-duplicate-evidence.md)
+  for the full duplication analysis and design. Existing
+  `v0.5`/task-025/026/027 callers see byte-for-byte unchanged `Score`
+  output; `Engine.Analyze`'s allocation profile stays unchanged
+  (`456 B/op, 17 allocs/op`), though its latency grows by a small,
+  reported (not hidden) amount — see
+  [docs/PERFORMANCE.md § v0.6 task 028](docs/PERFORMANCE.md#v06-task-028-markov-transition-scoring).
 
 ## v0.5.0 — Policy & Configuration
 

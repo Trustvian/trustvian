@@ -39,6 +39,7 @@ here, not moved or rewritten.
 | Sequence state (memory bounds, ordering, cross-actor isolation) | `TestBaselineObservePredecessorCountsIsBounded`, `TestBaselineObserveOutOfOrderEventDoesNotRecordOrCorruptTransition`, `TestBaselineObservePredecessorCountsIsImmutable` in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestInMemoryObserveConcurrentTransitionTracking` in [`internal/store/store_test.go`](../internal/store/store_test.go); `TestDefaultConfigTransitionWeightIsOptIn`, `TestScoreTransitionDeviation` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeTransitionDeviationEndToEnd` in [`engine_test.go`](../engine_test.go) |
 | Transition rarity — cold start, counter overflow, poisoning, actor isolation (`v0.6` task 026) | `TestBaselineObserveManyDistinctTransitionsStayBounded`, `TestBaselineObserveOutgoingTransitionTotalIsImmutable` in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestScoreTransitionRarityColdStart`, `TestScoreTransitionRarityNeverExceedsBounds`, `TestDefaultConfigTransitionRarityWeightIsOptIn` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeTransitionRarityCrossActorIsolation`, `TestAnalyzeTransitionRarityScoresBeforeLearning`, `TestObserveTransitionRarityLearnsOnlyFromEligibleDecisions` in [`engine_test.go`](../engine_test.go) |
 | Bounded 3-gram detection — independent cardinality bounds, counter overflow, poisoning, actor isolation (`v0.6` task 027) | `TestBaselineObserveTrigramCountsIsBounded`, `TestBaselineObserveTrigramContinuationTotalIsBounded`, `TestInMemoryObserveConcurrentTrigramTracking` (`internal/store/store_test.go`), `TestFileStoreSurvivesRestartWithTrigramState` (`internal/store/file_test.go`) in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestScoreNGramRarityColdStart`, `TestScoreNGramRarityNeverExceedsBounds`, `TestDefaultConfigNGramWeightIsOptIn` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeNGramCrossActorIsolation`, `TestAnalyzeNGramScoresBeforeLearning`, `TestObserveNGramLearnsOnlyFromEligibleDecisions` in [`engine_test.go`](../engine_test.go) |
+| Markov surprisal — zero-probability safety, correlated-signal double-counting, poisoning, actor isolation (`v0.6` task 028) | `TestScoreMarkovSurprisalUnseenTransitionNeverFires`, `TestScoreMarkovSurprisalNeverExceedsBounds`, `TestScoreMarkovSurprisalColdStart`, `TestMarkovSurprisalIsMonotonicReparameterizationOfRarity`, `TestScoreMarkovAndTransitionRarityAreMutuallyExclusiveInScoring`, `TestScoreCombinedMarkovAndNGramSignalsRemainBounded` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeMarkovCrossActorIsolation`, `TestAnalyzeMarkovScoresBeforeLearning`, `TestObserveMarkovLearnsOnlyFromEligibleDecisions` in [`engine_test.go`](../engine_test.go) |
 
 ## Threats considered
 
@@ -389,6 +390,48 @@ needing new ones:**
   identifier), not a growing window — no more raw history is retained
   per actor than task 025 already introduced, just one more fixed
   pointer.
+
+**`v0.6` task 028 (`markov_surprisal`) adds no new state at all — it
+reads task 025/026's own `PredecessorCounts`/`OutgoingTransitionTotal`
+fields — so it inherits every mitigation above (bounds, poisoning
+resistance, actor isolation, ordering) automatically, with two
+considerations specific to this signal's own arithmetic:**
+
+- **Zero probability, made structurally impossible, not merely
+  guarded.** `markov_surprisal` never evaluates a transition whose
+  count is zero — that remains `transition_deviation`'s domain (task
+  025) — so `-log2(0)` (`-Inf`) is never computed at all, not
+  clamped after the fact. Combined with the shared
+  `MinTransitionObservations` gate (below which no signal fires),
+  `frequency` is always in `(0, 1]` whenever this signal's arithmetic
+  runs, making `surprisal` always finite and `normalized` always in
+  `[0, 1)`. Proven by `TestScoreMarkovSurprisalUnseenTransitionNeverFires`
+  and `TestScoreMarkovSurprisalNeverExceedsBounds` (the latter across
+  totals up to 10,000, checking `!IsNaN`/`!IsInf`/bounds explicitly on
+  every reading, not just the typical case).
+- **Correlated-signal amplification, prevented structurally, not by
+  convention.** `transition_rarity` and `markov_surprisal` are
+  mathematically proven (see [ADR
+  0013](adr/0013-first-order-markov-surprisal-without-duplicate-evidence.md))
+  to be monotonic reparameterizations of the *identical* frequency
+  statistic — scoring both independently would double-count one piece
+  of evidence as if it were two, inflating `Score` beyond what the
+  underlying evidence actually supports. `anomaly.Score` forces
+  `transition_rarity`'s own contribution to zero whenever
+  `Config.MarkovWeight > 0`, regardless of what
+  `Config.TransitionRarityWeight` is separately set to — a caller
+  cannot double-count this evidence by any combination of the two
+  weight fields, because the code itself enforces the exclusion, not
+  documentation alone. Proven by
+  `TestScoreMarkovAndTransitionRarityAreMutuallyExclusiveInScoring`
+  (`Score` with both weights set is bit-for-bit identical to `Score`
+  with only `MarkovWeight` set). `markov_surprisal` *can* legitimately
+  co-fire with task 027's `ngram_deviation`/`ngram_rarity` on the same
+  event — those answer a genuinely different question (a specific
+  two-fingerprint predecessor pair, not the same first-order frequency)
+  — and `combine()`'s existing clamped noisy-OR keeps that combination
+  bounded regardless, proven by
+  `TestScoreCombinedMarkovAndNGramSignalsRemainBounded`.
 
 ### Malicious agents / privilege escalation
 

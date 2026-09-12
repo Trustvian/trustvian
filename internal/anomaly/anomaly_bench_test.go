@@ -103,6 +103,25 @@ func BenchmarkScoreTransitionDeviation(b *testing.B) {
 // (Value == 0, no Detail) transition. Compare against
 // BenchmarkScoreTransitionDeviation, which measures the same predecessor
 // scale with only the task 025 signal enabled.
+//
+// Since task 028, this benchmark's own B/op and allocs/op also include
+// markovSurprisalSignal's cost, unavoidably: markov_surprisal shares
+// transition_rarity's exact gate by design (same count/total, same
+// MinTransitionObservations — see
+// docs/adr/0013-first-order-markov-surprisal-without-duplicate-evidence.md),
+// so any fixture with enough history to fire one always has enough to
+// fire the other too, regardless of MarkovWeight's own value (Score's
+// append condition is Value > 0, weight-independent, the same
+// "always compute" precedent every prior signal already established).
+// There is no way to construct a fixture that isolates
+// transitionRaritySignal's cost alone anymore without also disabling
+// the minimum-support gate transitionRaritySignal itself needs to fire
+// — unlike BenchmarkScoreTransitionDeviation's own task-027 fixture
+// leak (internal/baseline.Baseline.PreviousFingerprintID's mere
+// existence), which was a genuine, fixable accident, this is a
+// structural consequence of the ADR 0013 design, not a bug to correct
+// here. See docs/tasks/028-markov-transition-scoring.md § Benchmarks
+// for the measured before/after delta this causes.
 func BenchmarkScoreTransitionRarity(b *testing.B) {
 	fp := fingerprint.Compute(stable("payment-db"))
 	bl := baseline.New(testKey)
@@ -137,6 +156,79 @@ func BenchmarkScoreTransitionRarity(b *testing.B) {
 	feat := features.Features{Stable: stable("payment-db"), Volatile: features.VolatileFeatures{Timestamp: now}}
 	cfg := anomaly.DefaultConfig()
 	cfg.TransitionRarityWeight = 0.7
+
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = anomaly.Score(feat, fp, bl, cfg)
+	}
+}
+
+// BenchmarkScoreMarkovSurprisal measures task 028's own added cost on
+// top of the task 026 transition-rarity foundation: markovSurprisalSignal's
+// map lookup on PredecessorCounts plus the O(1) surprisal/normalization
+// arithmetic (math.Log2 twice, one division), in the worst case where
+// the signal actually fires (a rare-but-seen transition, past
+// MinTransitionObservations, so Detail's fmt.Sprintf runs) — mirroring
+// BenchmarkScoreTransitionRarity's own worst-case shape exactly, since
+// both signals share the identical gate and denominator. Compare
+// directly against it to see this task's own added cost.
+func BenchmarkScoreMarkovSurprisal(b *testing.B) {
+	fp := fingerprint.Compute(stable("payment-db"))
+	bl := baseline.New(testKey)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	predecessor := fingerprint.Compute(stable("predecessor"))
+	for i := range 50 {
+		filler := fingerprint.Compute(stable(fmt.Sprintf("filler-%d", i)))
+		bl = bl.Observe(predecessor, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+		bl = bl.Observe(filler, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+	}
+	for range 2 {
+		bl = bl.Observe(predecessor, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+		bl = bl.Observe(fp, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+	}
+	bl = bl.Observe(predecessor, features.VolatileFeatures{}, now)
+	now = now.Add(time.Second)
+
+	feat := features.Features{Stable: stable("payment-db"), Volatile: features.VolatileFeatures{Timestamp: now}}
+	cfg := anomaly.DefaultConfig()
+	cfg.MarkovWeight = 0.7
+
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = anomaly.Score(feat, fp, bl, cfg)
+	}
+}
+
+// BenchmarkScoreMarkovLookup isolates the cold-start-gated, non-firing
+// path — the "lookup" cost §41 of the task brief asks to keep
+// approximately O(1) on the common, non-firing case: a predecessor
+// below MinTransitionObservations, so markovSurprisalSignal takes its
+// early-return path (one map read, one field read, one comparison, no
+// math.Log2, no allocation).
+func BenchmarkScoreMarkovLookup(b *testing.B) {
+	fp := fingerprint.Compute(stable("payment-db"))
+	bl := baseline.New(testKey)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	predecessor := fingerprint.Compute(stable("predecessor"))
+	// Only 5 outgoing observations: below DefaultConfig's
+	// MinTransitionObservations (20), so the cold-start gate — not the
+	// arithmetic — is what this benchmark measures.
+	for range 5 {
+		bl = bl.Observe(predecessor, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+		bl = bl.Observe(fp, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+	}
+	bl = bl.Observe(predecessor, features.VolatileFeatures{}, now)
+	now = now.Add(time.Second)
+
+	feat := features.Features{Stable: stable("payment-db"), Volatile: features.VolatileFeatures{Timestamp: now}}
+	cfg := anomaly.DefaultConfig()
+	cfg.MarkovWeight = 0.7
 
 	b.ReportAllocs()
 	for b.Loop() {

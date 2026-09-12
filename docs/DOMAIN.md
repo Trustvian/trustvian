@@ -200,7 +200,7 @@ says to add only when needed, not speculatively.
 ## Anomaly
 
 `internal/anomaly.Score(Features, Fingerprint, Baseline, Config)
-Anomaly` combines up to ten independent signals via a **noisy-OR**
+Anomaly` combines up to eleven independent signals via a **noisy-OR**
 combination — `score = 1 - Π(1 - value_i · weight_i)` — chosen
 specifically because a single severe signal should dominate the
 result, not be diluted by averaging against several unrelated benign
@@ -218,15 +218,17 @@ signals:
 | `transition_rarity` (`v0.6` task 026) | The immediately preceding fingerprint *has* led to this one before, but rarely: `1 - (PredecessorCounts_B[A] / OutgoingTransitionTotal_A)`, gated on `OutgoingTransitionTotal_A >= Config.MinTransitionObservations`. Mutually exclusive with `transition_deviation` for the same transition. **Contributes 0 to `Score` by default** — see [Sequence-aware detection](#sequence-aware-detection) below |
 | `ngram_deviation` (`v0.6` task 027) | The 3-gram (the two fingerprints immediately preceding this one) has never before led to this one, for this actor (`TrigramCounts_C[{A,B}] == 0`). Requires both a predecessor and a grandparent fingerprint to exist. **Contributes 0 to `Score` by default** — see [Sequence-aware detection](#sequence-aware-detection) below |
 | `ngram_rarity` (`v0.6` task 027) | That same 3-gram *has* been observed before, but rarely: `1 - (TrigramCounts_C[{A,B}] / TrigramContinuationTotal_B[A])`, gated on `TrigramContinuationTotal_B[A] >= Config.MinNGramObservations`. Mutually exclusive with `ngram_deviation` for the same 3-gram. **Contributes 0 to `Score` by default** — see [Sequence-aware detection](#sequence-aware-detection) below |
+| `markov_surprisal` (`v0.6` task 028) | The identical seen-transition evidence `transition_rarity` reads, through a different, unbounded-then-normalized curve: `normalized(-log2(P(B\|A)))`. A monotonic reparameterization of `transition_rarity`, not new evidence — when this signal's weight is enabled, `transition_rarity`'s own contribution to `Score` is forced to zero for that call (still reported in `Contributors`, never double-counted). **Contributes 0 to `Score` by default** — see [Sequence-aware detection](#sequence-aware-detection) below |
 
-**Seven of the ten ship inert.** `DefaultConfig()` leaves
+**Eight of the eleven ship inert.** `DefaultConfig()` leaves
 `SensitiveTargetFloor` empty (so `sensitive_target` never fires until an
 operator names their sensitive destinations), and sets
 `FrequencyWeight`, `TimePatternWeight`, `TransitionWeight`,
-`TransitionRarityWeight`, `NGramWeight`, and `NGramRarityWeight` all to
-`0` (so `frequency_deviation`, `time_pattern_deviation`,
-`transition_deviation`, `transition_rarity`, `ngram_deviation`, and
-`ngram_rarity` are all detected and reported in `Contributors`,
+`TransitionRarityWeight`, `NGramWeight`, `NGramRarityWeight`, and
+`MarkovWeight` all to `0` (so `frequency_deviation`,
+`time_pattern_deviation`, `transition_deviation`, `transition_rarity`,
+`ngram_deviation`, `ngram_rarity`, and `markov_surprisal` are all
+detected and reported in `Contributors`,
 but multiply to nothing inside the noisy-OR). In every case the
 mechanism is complete and tested; only the deployment-specific value that
 makes it count is left to the operator, because no default is correct
@@ -545,6 +547,35 @@ scoring path, no new pipeline stage.
   Markov model. Both signal weights (`Config.NGramWeight`,
   `Config.NGramRarityWeight`) default to `0`, the same precedent as
   every prior signal weight in this package.
+- **First-order Markov surprisal (`v0.6` task 028).** One more signal,
+  `markov_surprisal`, offers an alternative severity curve over the
+  *identical* evidence `transition_rarity` already reads — not new
+  evidence. `transition_rarity = 1 - P(B|A)` and
+  `markov_surprisal`'s underlying `surprisal = -log2(P(B|A))` are both
+  strictly monotonic functions of the same `count/total` frequency;
+  proven directly (not merely asserted) by
+  `TestMarkovSurprisalIsMonotonicReparameterizationOfRarity` in
+  `internal/anomaly/anomaly_test.go`. What differs is curve shape: the
+  linear `1-frequency` mapping saturates near `1` quickly across the
+  rare tail, while `-log2(frequency)` (before being bounded into
+  `[0,1)`) keeps growing across the whole tail, preserving more
+  resolution between "quite rare" and "extraordinarily rare." Because
+  the two signals are reparameterizations of one statistic, not
+  independent evidence, `anomaly.Score` never lets both contribute to
+  `Score` at once: enabling `Config.MarkovWeight` forces
+  `transition_rarity`'s own contribution to zero for that call
+  (`transition_rarity` remains visible in `Anomaly.Contributors` for
+  explainability; only its scoring effect is suppressed) — enforced in
+  code, proven by
+  `TestScoreMarkovAndTransitionRarityAreMutuallyExclusiveInScoring`, not
+  left to operator discipline. No new `Baseline`/`FingerprintStats`
+  state: Markov reuses `PredecessorCounts`/`OutgoingTransitionTotal`
+  (task 025/026) and `Config.MinTransitionObservations`'s own gate
+  exactly — no separate Markov-specific state or threshold. See [ADR
+  0013](adr/0013-first-order-markov-surprisal-without-duplicate-evidence.md)
+  for the full mathematical definition, normalization, and the
+  mandatory duplication analysis this task's own brief required before
+  any code was written.
 
 This document describes the domain model as it exists today. Planned
 extensions to it (AI-agent session/delegation fields, further v0.6
