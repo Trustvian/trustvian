@@ -72,6 +72,9 @@ func compileCondition(c PolicyCondition) policy.Condition {
 	if len(c.Attributes) > 0 {
 		compiled.Attributes = c.Attributes
 	}
+	if c.ApprovalStatus != "" {
+		compiled.ApprovalStatus = event.ApprovalStatus(c.ApprovalStatus)
+	}
 	return compiled
 }
 

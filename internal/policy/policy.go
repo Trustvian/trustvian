@@ -40,12 +40,18 @@ func (d Decision) Valid() bool {
 }
 
 // Input is what a Policy is evaluated against: the stable shape of the
-// event, the Trust result computed from it, and the event's raw
-// Attributes (for Condition.Attributes matching).
+// event, the Trust result computed from it, the event's raw Attributes
+// (for Condition.Attributes matching), and the event's ApprovalStatus
+// (for Condition.ApprovalStatus matching — see task
+// docs/tasks/030-approval-aware-policy-semantics.md). ApprovalStatus is
+// evidence the event producer supplied, not something Policy or any
+// upstream stage verifies; see that field's own doc comment in the
+// event package for the trust boundary this implies.
 type Input struct {
-	Stable     features.StableFeatures
-	Trust      trust.Trust
-	Attributes map[string]any
+	Stable         features.StableFeatures
+	Trust          trust.Trust
+	Attributes     map[string]any
+	ApprovalStatus event.ApprovalStatus
 }
 
 // Condition matches an Input. Every field is optional: its zero value
@@ -72,6 +78,22 @@ type Condition struct {
 	// AND/OR/NOT combinators, just flat key/value equality ANDed with
 	// every other Condition field.
 	Attributes map[string]string
+	// ApprovalStatus, if set, requires Input.ApprovalStatus to equal
+	// this exact value — the identical equality-match convention every
+	// other field here already uses (the zero value, "", means "don't
+	// care" and cannot itself distinguish "any approval state" from
+	// "specifically event.ApprovalUnspecified", the same limitation
+	// TargetName already has for "any target" vs. "specifically
+	// empty"). This is what lets a Rule express "this operation
+	// requires approval" without a dedicated new Rule-level primitive:
+	// pair a When matching the operation with an Unless matching
+	// ApprovalStatus: event.ApprovalApproved — the rule fires (denying
+	// or otherwise acting) for every approval state except Approved,
+	// including event.ApprovalNotRequired, because the Policy — not
+	// the event — is what determines whether approval is required. See
+	// docs/tasks/030-approval-aware-policy-semantics.md's Approval
+	// Matrix for the full, tested truth table.
+	ApprovalStatus event.ApprovalStatus
 }
 
 // Matches reports whether every non-zero field of c matches in.
@@ -89,6 +111,9 @@ func (c Condition) Matches(in Input) bool {
 		return false
 	}
 	if c.MinRiskLevel != "" && !in.Trust.Risk.AtLeast(c.MinRiskLevel) {
+		return false
+	}
+	if c.ApprovalStatus != "" && c.ApprovalStatus != in.ApprovalStatus {
 		return false
 	}
 	for key, want := range c.Attributes {

@@ -1966,6 +1966,176 @@ func TestAnalyzeAgentDelegationContextScoredIdentically(t *testing.T) {
 	}
 }
 
+// --- Task 030: Approval-Aware Policy Semantics ---
+//
+// These tests prove the central architectural claim task 030 exists to
+// establish: "behaviorally normal" and "policy-authorized" are
+// different questions. No new anomaly signal, Baseline field, or
+// pipeline stage is added — approval enforcement is entirely a Policy
+// concern, expressed with the existing Rule/Condition/Unless
+// mechanism. See docs/adr/0015-approval-as-policy-evidence-not-behavioral-anomaly.md.
+
+// approvalGatedPolicy requires approval for shell.execute (via the
+// canonical When+Unless pattern — see
+// docs/tasks/030-approval-aware-policy-semantics.md), then falls back
+// to riskGatedPolicy's own risk-based rules for everything else. The
+// approval rule is ordered first and matches only on
+// Operation/Target — never on Actor.Type — so it applies identically
+// regardless of which kind of actor performs the operation.
+func approvalGatedPolicy() policy.Policy {
+	return policy.Policy{
+		Rules: []policy.Rule{
+			{
+				Name:   "shell-execute-requires-approval",
+				When:   policy.Condition{OperationCategory: event.OperationCategoryTool, TargetName: "shell.execute"},
+				Unless: &policy.Condition{ApprovalStatus: event.ApprovalApproved},
+				Action: policy.DecisionBlock,
+				Reason: "shell.execute requires approval; approval evidence was not Approved",
+			},
+			{Name: "block-high-risk", When: policy.Condition{MinRiskLevel: trust.RiskHigh}, Action: policy.DecisionBlock, Reason: "risk too high"},
+			{Name: "alert-medium-risk", When: policy.Condition{MinRiskLevel: trust.RiskMedium}, Action: policy.DecisionAlert, Reason: "elevated risk"},
+		},
+		DefaultAction: policy.DecisionAllow,
+		DefaultReason: "risk within tolerance",
+	}
+}
+
+// toolEvent builds a tool-call Event for a given actor type/ID and
+// approval status — deliberately independent of agentEvent above, so
+// these tests can exercise both AI-agent and non-agent actors against
+// the identical approval-aware policy.
+func toolEvent(actorType event.ActorType, actorID, tool string, approval event.ApprovalStatus, ts time.Time) event.Event {
+	return event.Event{
+		ID:        actorID + "-" + tool + "-" + ts.String(),
+		Timestamp: ts,
+		Actor:     event.Actor{ID: actorID, Type: actorType, IdentityConfidence: 0.95},
+		Operation: event.Operation{Category: event.OperationCategoryTool, Name: tool},
+		Target:    event.Target{Name: tool},
+		Context:   event.Context{Environment: "production", ApprovalStatus: approval},
+	}
+}
+
+// TestAnalyzeAgentApprovalPolicyAllowsApprovedDeniesUnapproved is task
+// 030's mandatory AI-agent integration test (§37 of the task brief):
+// shell.execute is trained until it is behaviorally familiar (low
+// risk), yet the configured Policy still requires approval for it —
+// Approved is allowed, Denied is blocked, demonstrating that
+// behaviorally normal does not imply policy-authorized.
+func TestAnalyzeAgentApprovalPolicyAllowsApprovedDeniesUnapproved(t *testing.T) {
+	ctx := context.Background()
+	engine := trustvian.NewEngine(trustvian.WithPolicy(approvalGatedPolicy()))
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	step := func() time.Time { now = now.Add(time.Second); return now }
+
+	// Train shell.execute as this agent's familiar, ordinary behavior —
+	// approval is not yet a concern during warm-up (Unspecified would
+	// fail the requirement, but we only need Trust.Risk to settle
+	// below "high" here; the training loop's own calls are not
+	// asserted on).
+	for range 30 {
+		ev := toolEvent(event.ActorTypeAIAgent, "agent-1", "shell.execute", event.ApprovalApproved, step())
+		result, err := engine.Analyze(ctx, ev)
+		if err != nil {
+			t.Fatalf("Analyze (warm-up) error = %v", err)
+		}
+		if _, err := engine.Observe(ctx, result); err != nil {
+			t.Fatalf("Observe (warm-up) error = %v", err)
+		}
+	}
+
+	approved := toolEvent(event.ActorTypeAIAgent, "agent-1", "shell.execute", event.ApprovalApproved, step())
+	resultApproved, err := engine.Analyze(ctx, approved)
+	if err != nil {
+		t.Fatalf("Analyze(Approved) error = %v", err)
+	}
+	if resultApproved.Trust.Risk.AtLeast(trust.RiskHigh) {
+		t.Fatalf("Trust.Risk = %q after 30 repetitions, want below %q — shell.execute should be behaviorally familiar by now", resultApproved.Trust.Risk, trust.RiskHigh)
+	}
+	if resultApproved.Decision != policy.DecisionAllow {
+		t.Errorf("Decision (Approved) = %q, want %q", resultApproved.Decision, policy.DecisionAllow)
+	}
+
+	denied := toolEvent(event.ActorTypeAIAgent, "agent-1", "shell.execute", event.ApprovalDenied, step())
+	resultDenied, err := engine.Analyze(ctx, denied)
+	if err != nil {
+		t.Fatalf("Analyze(Denied) error = %v", err)
+	}
+	if resultDenied.Decision != policy.DecisionBlock {
+		t.Errorf("Decision (Denied) = %q, want %q — behaviorally familiar must not override a missing approval", resultDenied.Decision, policy.DecisionBlock)
+	}
+}
+
+// TestAnalyzeApprovalPolicyBehavioralScoreIndependence is task 030's
+// mandatory architectural regression (§36 of the task brief): for
+// otherwise-identical events differing only in ApprovalStatus,
+// Anomaly.Score and Trust.Score must be byte-for-byte identical — only
+// the Policy Decision may differ. Approval evidence must never leak
+// into behavioral scoring.
+func TestAnalyzeApprovalPolicyBehavioralScoreIndependence(t *testing.T) {
+	ctx := context.Background()
+	engine := trustvian.NewEngine(trustvian.WithPolicy(approvalGatedPolicy()))
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	approved := toolEvent(event.ActorTypeAIAgent, "agent-2", "shell.execute", event.ApprovalApproved, now)
+	resultApproved, err := engine.Analyze(ctx, approved)
+	if err != nil {
+		t.Fatalf("Analyze(Approved) error = %v", err)
+	}
+
+	denied := toolEvent(event.ActorTypeAIAgent, "agent-2", "shell.execute", event.ApprovalDenied, now)
+	denied.ID += "-denied" // distinct Event.ID only
+	resultDenied, err := engine.Analyze(ctx, denied)
+	if err != nil {
+		t.Fatalf("Analyze(Denied) error = %v", err)
+	}
+
+	if resultApproved.Anomaly.Score != resultDenied.Anomaly.Score {
+		t.Errorf("Anomaly.Score differs by ApprovalStatus alone: %v (Approved) vs %v (Denied)", resultApproved.Anomaly.Score, resultDenied.Anomaly.Score)
+	}
+	if resultApproved.Trust.Score != resultDenied.Trust.Score {
+		t.Errorf("Trust.Score differs by ApprovalStatus alone: %v (Approved) vs %v (Denied)", resultApproved.Trust.Score, resultDenied.Trust.Score)
+	}
+	if resultApproved.Fingerprint.ID != resultDenied.Fingerprint.ID {
+		t.Errorf("Fingerprint.ID differs by ApprovalStatus alone: %q (Approved) vs %q (Denied)", resultApproved.Fingerprint.ID, resultDenied.Fingerprint.ID)
+	}
+	if resultApproved.Decision == resultDenied.Decision {
+		t.Errorf("Decision = %q for both Approved and Denied, want them to differ — the approval rule must still discriminate", resultApproved.Decision)
+	}
+}
+
+// TestAnalyzeApprovalPolicyGenericNotHardCodedToAIAgent is task 030's
+// mandatory non-agent-genericity test (§16/§38 of the task brief):
+// approvalGatedPolicy's rule matches only on Operation/Target, never
+// on Actor.Type, so a plain "service" actor performing the identical
+// operation must be gated identically to an AI agent — proving the
+// policy primitive is domain-generic, not implicitly coupled to
+// ActorTypeAIAgent.
+func TestAnalyzeApprovalPolicyGenericNotHardCodedToAIAgent(t *testing.T) {
+	ctx := context.Background()
+	engine := trustvian.NewEngine(trustvian.WithPolicy(approvalGatedPolicy()))
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	denied := toolEvent(event.ActorTypeService, "deploy-service", "shell.execute", event.ApprovalDenied, now)
+	resultDenied, err := engine.Analyze(ctx, denied)
+	if err != nil {
+		t.Fatalf("Analyze(Denied) error = %v", err)
+	}
+	if resultDenied.Decision != policy.DecisionBlock {
+		t.Errorf("service actor, Denied: Decision = %q, want %q — approval enforcement must not be implicitly coupled to ActorTypeAIAgent", resultDenied.Decision, policy.DecisionBlock)
+	}
+
+	approved := toolEvent(event.ActorTypeService, "deploy-service", "shell.execute", event.ApprovalApproved, now)
+	approved.ID += "-approved"
+	resultApproved, err := engine.Analyze(ctx, approved)
+	if err != nil {
+		t.Fatalf("Analyze(Approved) error = %v", err)
+	}
+	if resultApproved.Decision != policy.DecisionAllow {
+		t.Errorf("service actor, Approved: Decision = %q, want %q", resultApproved.Decision, policy.DecisionAllow)
+	}
+}
+
 func hasResultSignal(result trustvian.Result, name string) bool {
 	for _, c := range result.Anomaly.Contributors {
 		if c.Name == name {

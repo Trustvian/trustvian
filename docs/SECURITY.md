@@ -41,6 +41,7 @@ here, not moved or rewritten.
 | Bounded 3-gram detection — independent cardinality bounds, counter overflow, poisoning, actor isolation (`v0.6` task 027) | `TestBaselineObserveTrigramCountsIsBounded`, `TestBaselineObserveTrigramContinuationTotalIsBounded`, `TestInMemoryObserveConcurrentTrigramTracking` (`internal/store/store_test.go`), `TestFileStoreSurvivesRestartWithTrigramState` (`internal/store/file_test.go`) in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestScoreNGramRarityColdStart`, `TestScoreNGramRarityNeverExceedsBounds`, `TestDefaultConfigNGramWeightIsOptIn` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeNGramCrossActorIsolation`, `TestAnalyzeNGramScoresBeforeLearning`, `TestObserveNGramLearnsOnlyFromEligibleDecisions` in [`engine_test.go`](../engine_test.go) |
 | Markov surprisal — zero-probability safety, correlated-signal double-counting, poisoning, actor isolation (`v0.6` task 028) | `TestScoreMarkovSurprisalUnseenTransitionNeverFires`, `TestScoreMarkovSurprisalNeverExceedsBounds`, `TestScoreMarkovSurprisalColdStart`, `TestMarkovSurprisalIsMonotonicReparameterizationOfRarity`, `TestScoreMarkovAndTransitionRarityAreMutuallyExclusiveInScoring`, `TestScoreCombinedMarkovAndNGramSignalsRemainBounded` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeMarkovCrossActorIsolation`, `TestAnalyzeMarkovScoresBeforeLearning`, `TestObserveMarkovLearnsOnlyFromEligibleDecisions` in [`engine_test.go`](../engine_test.go) |
 | AI Agent behavioral context — session-ID cardinality, fingerprint independence, actor isolation, delegation (`v0.7` task 014) | `TestAnalyzeAgentSessionIDDoesNotExplodeBaseline`, `TestAnalyzeAgentToolNoveltyDetectedByExistingEngine`, `TestAnalyzeAgentToolSequenceNoveltyDetectedByExistingEngine`, `TestAnalyzeAgentCrossActorIsolation`, `TestAnalyzeAgentDelegationContextScoredIdentically` in [`engine_test.go`](../engine_test.go); `TestFingerprintIDIndependentOfAgentContext` in [`internal/fingerprint/fingerprint_test.go`](../internal/fingerprint/fingerprint_test.go); `TestEventValidateIgnoresAgentContextFields` in [`event/event_test.go`](../event/event_test.go) |
+| Approval-aware policy — policy authority over the requirement, fail-closed missing evidence, backward compatibility, behavioral independence, non-agent genericity (`v0.7` task 030) | `TestEvaluateApprovalRequiredExampleMatrix`, `TestEvaluateApprovalPolicyAuthorityEventCannotOverridePolicy`, `TestEvaluateApprovalFailSafeOnMissingEvidence`, `TestEvaluateNoApprovalRuleConfiguredIsUnaffectedByApprovalStatus` in [`internal/policy/policy_test.go`](../internal/policy/policy_test.go); `TestAnalyzeAgentApprovalPolicyAllowsApprovedDeniesUnapproved`, `TestAnalyzeApprovalPolicyBehavioralScoreIndependence`, `TestAnalyzeApprovalPolicyGenericNotHardCodedToAIAgent` in [`engine_test.go`](../engine_test.go); `TestValidateRejectsUnknownApprovalStatusDoesNotSilentlyMapToApproved` in [`config/validate_test.go`](../config/validate_test.go) |
 
 ## Threats considered
 
@@ -867,6 +868,43 @@ the AI-agent case specifically; a few are explicitly future work.
   detector or `Policy` condition must treat `DelegatedFrom` as
   unauthenticated input requiring its own verification, not as
   something this task already secures.
+- **Approval self-assertion** (an agent's own event claiming
+  `ApprovalStatus = Approved` and having that trusted merely because
+  the event says so). **Status: `ApprovalStatus` now has a real
+  consumer ([task 030](../tasks/030-approval-aware-policy-semantics.md),
+  [ADR 0015](adr/0015-approval-as-policy-evidence-not-behavioral-anomaly.md)) —
+  the trust boundary below is enforced by construction, not merely
+  documented, but provenance verification itself remains future
+  work.** `policy.Condition.ApprovalStatus` lets a `Policy` require
+  `Approved` for a given operation, via the existing `Unless`
+  mechanism — but `ApprovalStatus` is still exactly what it was before
+  this task: an unauthenticated, self-reported field. Task 030 adds no
+  cryptographic verification, no OAuth/IAM check, and no call to an
+  external authorization system — it only makes the *evaluation* of
+  that (still-untrusted) evidence deterministic and explainable. Two
+  guarantees are enforced, not aspirational, proven by test:
+  - **The event cannot define its own requirement.** An event
+    self-declaring `ApprovalNotRequired` cannot exempt itself from a
+    `Policy` rule that requires `Approved` — only the existence of the
+    rule, authored in `Policy`, determines whether approval is
+    required at all. Proven by
+    `TestEvaluateApprovalPolicyAuthorityEventCannotOverridePolicy`.
+  - **Missing evidence fails closed.** `ApprovalUnspecified` (no
+    evidence recorded) is treated the same as an explicit `Denied` —
+    `BLOCK`, never a silent pass. Proven by
+    `TestEvaluateApprovalFailSafeOnMissingEvidence`.
+
+  What remains genuinely future work, same shape as delegation abuse
+  above: verifying that a given `ApprovalStatus = Approved` value
+  actually originated from a trusted human/authorization system, as
+  opposed to the event producer's own unverified claim. An AI agent
+  today can still self-assert `Approved` and have `Policy` accept that
+  evidence at face value — Trustvian evaluates the evidence it is
+  given; it does not (yet, and not as part of task 030) verify where
+  that evidence came from. A future task adding provenance
+  verification (e.g., a signed assertion from a specific
+  authorization system) is a distinct, larger piece of work this task
+  deliberately did not build ahead of a concrete need.
 - **Tool abuse (unexpected/rare tool usage).** **Status: implemented,
   via existing signals.** `categorical_novelty` and
   `transition_deviation`/`transition_rarity` already flag a tool an

@@ -176,6 +176,16 @@ type Target struct {
 // features.Extract today, and both are reserved for a later signal to
 // consume once one has a concrete design, not because this field is
 // speculative — see docs/tasks/014-ai-agent.md.
+//
+// The five values are one linear state, not two orthogonal booleans:
+// ApprovalRequired means a requirement was flagged with no decision
+// recorded yet — functionally "pending" — while ApprovalApproved/
+// ApprovalDenied mean a decision was recorded. This is untrusted,
+// self-reported input: a producer's own claim of ApprovalApproved is
+// not verified against any authorization system by this package, and
+// must not be treated as automatically trustworthy by a future
+// consumer absent a trusted upstream source — see ADR 0014's "Trust
+// boundary" section.
 type ApprovalStatus string
 
 const (

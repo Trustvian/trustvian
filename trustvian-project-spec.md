@@ -604,11 +604,37 @@ Trustvian understands, as of task 014:
 - Agent-to-agent communication and delegation (`Context.DelegatedFrom`,
   a single hop)
 
-Not yet built, and not this task's job: agent behavioral *detection
+**Task 030 — Approval-Aware Policy Semantics — is also done.**
+[ADR 0015](docs/adr/0015-approval-as-policy-evidence-not-behavioral-anomaly.md)
+gave `ApprovalStatus` its first real consumer, entirely inside
+`internal/policy`: a `Policy` rule can now require approval for a
+given operation (`Unless: &Condition{ApprovalStatus: Approved}`),
+with **Policy, never the event, deciding whether approval is
+required** — an event self-declaring `ApprovalNotRequired` cannot
+exempt itself from a configured requirement, and missing evidence
+fails closed to `BLOCK`. This settled the question this section
+previously left open:
+
+- **Implemented:** approval-aware deterministic policy evaluation —
+  "is this operation authorized," expressed as ordinary `Policy` data,
+  provably independent of behavioral (`Anomaly`/`Trust`) scoring, and
+  domain-generic (not coupled to `ActorTypeAIAgent`).
+- **Not implemented, and not this project's job:** an approval
+  workflow, an approval request/notification flow, approval
+  persistence, a human-approval UI, or approval granting of any kind.
+  `ApprovalStatus` also remains untrusted, self-reported evidence — no
+  cryptographic verification of its provenance exists; Trustvian
+  evaluates the evidence an integration supplies, it does not
+  authenticate where that evidence came from.
+
+Not yet built, and not either task's job: agent behavioral *detection
 scenarios* beyond proving reuse of existing signals (a later, unscoped
-`v0.7` slice), a delegation graph, and any declarative
-(YAML/CLI/Collector) configuration surface for agent-specific
-behavior (none was needed — no new detector weight was added).
+`v0.7` slice), delegation-aware detection (`DelegatedFrom` remains
+context-only, unaffected by task 030), a delegation graph, and any
+declarative (YAML/CLI/Collector) configuration surface for
+agent-specific behavior beyond the generic `approval_status` condition
+field task 030 already added (the existing `PolicyConfig`/YAML/CLI/
+Collector path already carries it — no separate surface was needed).
 
 **MCP.** Trustvian's read/query surface may eventually be exposed to AI
 agents and developer tooling via MCP
@@ -1412,11 +1438,11 @@ v0.3  Baseline & Anomaly Depth          SHIPPED
         ↓
 v0.4  Alert & Notification Foundation   SHIPPED (v0.4.0)
         ↓
-v0.5  Policy & Configuration            NEXT — planned, not implemented
+v0.5  Policy & Configuration            SHIPPED (v0.5.0)
         ↓
-v0.6  Behavioral Detection Depth        PLANNED
+v0.6  Behavioral Detection Depth        SHIPPED (v0.6.0)
         ↓
-v0.7  AI Agent Behavioral Security      PLANNED
+v0.7  AI Agent Behavioral Security      IN PROGRESS (foundation task 014 done)
         ↓
 v0.8  Production Runtime & Storage      PLANNED
         ↓
@@ -1452,10 +1478,13 @@ Why each step exists, not merely what it contains:
   behavioral-security product needs before `v1.0`, not because
   anything else structurally depends on it first.
 - **`v0.7`** exists because AI agents are already a first-class actor
-  type but lack two correlation dimensions (session, delegation) that
-  a real agent deployment needs — and because this is where this
-  document repeatedly insists the boundary matters most: reuse the
-  existing engine, never build a second one.
+  type but lacked three correlation dimensions (session, delegation,
+  approval) that a real agent deployment needs — and because this is
+  where this document repeatedly insists the boundary matters most:
+  reuse the existing engine, never build a second one. Task 014 closed
+  that representational gap; further `v0.7` slices (approval-aware
+  policy semantics, delegation behavioral semantics) are scoped, not
+  yet implemented — see `docs/ROADMAP.md` § v0.7.
 - **`v0.8`–`v0.9`** exist because a complete OSS product is not just a
   correct algorithm — it is something an operator can actually run,
   persist state for, upgrade, and trust operationally.

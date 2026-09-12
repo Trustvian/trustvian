@@ -1168,18 +1168,79 @@ duplicated.
 
 **Acceptance criteria.** See [014-ai-agent.md](tasks/014-ai-agent.md).
 
+**Task 030 — Approval-Aware Policy Semantics — is done.** [Task file
+030](tasks/030-approval-aware-policy-semantics.md) gave
+`ApprovalStatus` its first real consumer, entirely inside
+`internal/policy` — zero new anomaly signal, zero new pipeline stage.
+`policy.Input`/`Condition` and `config.PolicyCondition` each gained one
+new `ApprovalStatus` field, letting the *existing* `Rule.Unless`
+mechanism express "this operation requires approval"
+(`Unless: &Condition{ApprovalStatus: ApprovalApproved}`) with no new
+Rule-level primitive. This task's own brief demanded an answer to two
+design questions before any code was written, both now proven by test,
+not just documented:
+
+- **Approval belongs to `policy`, not `anomaly`.** `shell.execute` can
+  be completely familiar to a `Baseline` and still lack a required
+  approval — `TestAnalyzeAgentApprovalPolicyAllowsApprovedDeniesUnapproved`
+  trains it familiar first, then shows the identical, low-risk
+  behavior still gets blocked without `Approved` evidence.
+  `TestAnalyzeApprovalPolicyBehavioralScoreIndependence` proves
+  `Anomaly.Score`/`Trust.Score`/`Fingerprint.ID` are byte-for-byte
+  identical regardless of `ApprovalStatus` — only `Decision` differs.
+- **Policy owns the requirement; the event supplies only evidence.**
+  `TestEvaluateApprovalPolicyAuthorityEventCannotOverridePolicy` proves
+  an event self-declaring `ApprovalNotRequired` cannot exempt itself
+  from a `Policy` rule that requires approval, and
+  `TestEvaluateApprovalFailSafeOnMissingEvidence` proves missing
+  evidence (`ApprovalUnspecified`) fails closed to `BLOCK` rather than
+  silently passing.
+
+`ApprovalStatus` remains untrusted, self-reported evidence — this task
+adds no cryptographic verification, no OAuth/IAM integration, and no
+coupling to `Actor.IdentityConfidence`; see [ADR
+0015](adr/0015-approval-as-policy-evidence-not-behavioral-anomaly.md).
+The mechanism is domain-generic, not coupled to `ActorTypeAIAgent`:
+`TestAnalyzeApprovalPolicyGenericNotHardCodedToAIAgent` proves the
+identical rule gates a `service` actor's matching operation the same
+way. A `Policy` with no approval-aware rule at all is byte-for-byte
+unaffected (`TestEvaluateNoApprovalRuleConfiguredIsUnaffectedByApprovalStatus`)
+— this task is purely additive, and the CLI/OTel Collector processor
+require zero code changes, since both already delegate to
+`config.CompilePolicy`/`internal/policy`.
+
+**Acceptance criteria.** See
+[030-approval-aware-policy-semantics.md](tasks/030-approval-aware-policy-semantics.md).
+
 **What's next (illustrative, unscoped — none of this is implemented
-or task-filed yet).** Task 014 is a foundation slice, not the whole
-milestone. Further `v0.7` work would continue from task **030**
+or task-filed yet).** Tasks 014 and 030 are foundation slices, not the
+whole milestone. Further `v0.7` work continues from task **031**
 onward (**015** and **016** stay reserved for MCP and Control
-respectively, per the project's existing task-numbering scheme — they
-are not reusable for further agent-detection slices): a task to prove
-`ApprovalStatus`/`DelegatedFrom` against a concrete scenario once one
-exists (rather than only the context-independence tests task 014
-already wrote), and a `v0.7` stabilization/release-gate task mirroring
-[024](tasks/024-v05-release-gate.md)/[029](tasks/029-v06-stabilization-release-gate.md)'s
-shape. Each remains its own explicitly-scoped task file, written when
-that slice actually starts — not speculatively now.
+respectively, per the project's existing task-numbering scheme — not
+reusable for further agent-detection slices):
+
+- **031 — Delegation Behavioral Semantics.** Design question: *is the
+  current delegation provenance consistent with learned/allowed
+  behavior?* Smallest meaningful slice: detecting an unexpected
+  immediate delegator for a given actor — not a full delegation graph,
+  not multi-hop chain analytics, not depth-escalation scoring. Must
+  document `DelegatedFrom` as unauthenticated, self-reported input
+  (already noted in `docs/SECURITY.md § AI Agent behavioral security`)
+  before any detector treats it as a trust signal.
+- **032 — Agent Security Scenario Validation.** Validates the combined
+  system (030 + 031 + existing `v0.6` signals) against realistic
+  scenarios — unexpected privileged tool use, a sensitive
+  read-then-exfiltrate sequence, an approval violation, an unexpected
+  delegator, external-destination drift — preferring combinations of
+  existing signals/policy conditions over one bespoke detector per
+  scenario.
+- **033 — v0.7 Stabilization & Release Gate.** Mirrors
+  [024](tasks/024-v05-release-gate.md)/[029](tasks/029-v06-stabilization-release-gate.md)'s
+  shape: re-audit 014/030/031/032 against source, confirm no
+  regression, confirm documentation currency, before `v0.7.0` tags.
+
+Each remains its own explicitly-scoped task file, written when that
+slice actually starts — not speculatively now.
 
 ## v0.8 — Production Runtime & Storage
 

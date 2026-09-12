@@ -29,6 +29,7 @@ var (
 	ErrInvalidTargetCategory   = errors.New("config: invalid target_category")
 	ErrInvalidThreshold        = errors.New("config: threshold must be a finite number in [0, 1]")
 	ErrUnsupportedAlertVersion = errors.New("config: unsupported alert config version")
+	ErrInvalidApprovalStatus   = errors.New("config: invalid approval_status")
 )
 
 // Bounds on config-authored input. Configuration is operator-authored
@@ -81,6 +82,23 @@ var validOperationCategories = map[string]bool{
 	"rpc":      true,
 	"tool":     true,
 	"external": true,
+}
+
+// validApprovalStatuses mirrors event.ApprovalStatus's four non-empty
+// constants (ApprovalUnspecified, the zero value, is deliberately
+// excluded: like every other Condition field, "" means "don't care",
+// not "specifically match Unspecified" — see
+// policy.Condition.ApprovalStatus's own doc comment). Unlike
+// ActorType/OperationCategory/TargetCategory, event.ApprovalStatus has
+// no unexported valid() method for this package to mirror — the five
+// constants declared in event/event.go are themselves the
+// authoritative set; this map is this package's own validity check
+// against them.
+var validApprovalStatuses = map[string]bool{
+	"not_required": true,
+	"required":     true,
+	"approved":     true,
+	"denied":       true,
 }
 
 // validRiskLevels mirrors the four trust.RiskLevel constants —
@@ -173,6 +191,9 @@ func (c PolicyCondition) validate(path string) error {
 	}
 	if c.MinRiskLevel != "" && !validRiskLevels[c.MinRiskLevel] {
 		return fmt.Errorf("%s.min_risk_level: %w: %q", path, ErrInvalidRiskLevel, c.MinRiskLevel)
+	}
+	if c.ApprovalStatus != "" && !validApprovalStatuses[c.ApprovalStatus] {
+		return fmt.Errorf("%s.approval_status: %w: %q", path, ErrInvalidApprovalStatus, c.ApprovalStatus)
 	}
 	return nil
 }

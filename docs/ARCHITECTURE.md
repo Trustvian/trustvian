@@ -352,7 +352,12 @@ allocations. See [ADR 0005](adr/0005-fingerprint-computed-once-per-analyze.md).
   deterministic `Evaluate`. There's no per-rule Go closure or strategy
   interface. This is what will let a future YAML/file policy loader
   exist as a pure adapter producing the same `Policy` value, without
-  touching the evaluator.
+  touching the evaluator. `v0.7` task 030 is this design paying off
+  directly: "an operation requires approval" needed no new pipeline
+  stage or subsystem — `Condition` gained one more equality-match
+  field (`ApprovalStatus`), and the existing `Rule.Unless` mechanism
+  expressed the requirement without any new evaluation code. See [ADR
+  0015](adr/0015-approval-as-policy-evidence-not-behavioral-anomaly.md).
 - **`Store` is a narrow port**, not a generic repository:
   `Get`/`Observe`, nothing else. It matches `Baseline`'s actual access
   pattern (read the snapshot, apply one incremental update).

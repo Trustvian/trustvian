@@ -35,6 +35,7 @@ type Condition struct {
 	Environment       string                  // "" = any
 	MinRiskLevel      trust.RiskLevel         // "" = any; else Trust.Risk must be >= this
 	Attributes        map[string]string       // nil/empty = any; else every key must match (see below)
+	ApprovalStatus    event.ApprovalStatus    // "" = any; else Input.ApprovalStatus must equal this exactly
 }
 
 type Rule struct {
@@ -69,9 +70,10 @@ flat matchers by design.
 
 ```go
 result := myPolicy.Evaluate(policy.Input{
-	Stable:     features.Stable, // from a Result, or built directly
-	Trust:      trust,
-	Attributes: event.Attributes, // the raw Event.Attributes, for Condition.Attributes matching
+	Stable:         features.Stable, // from a Result, or built directly
+	Trust:          trust,
+	Attributes:     event.Attributes,        // the raw Event.Attributes, for Condition.Attributes matching
+	ApprovalStatus: event.Context.ApprovalStatus, // for Condition.ApprovalStatus matching (task 030)
 })
 // result.Decision, result.Explanation.{RuleName, Reason, MatchedDefault}
 ```
@@ -170,6 +172,43 @@ An external call to `partner-api` is exempted (falls through to
 whatever rule/default comes next); an external call to anything else
 triggers the alert.
 
+## Example: an operation that requires approval
+
+[Task 030](tasks/030-approval-aware-policy-semantics.md) reuses this
+exact `Unless` mechanism — no new Rule-level primitive — to express
+"this operation requires approval":
+
+```go
+policy.Rule{
+	Name:   "shell-execute-requires-approval",
+	When:   policy.Condition{OperationCategory: event.OperationCategoryTool, TargetName: "shell.execute"},
+	Unless: &policy.Condition{ApprovalStatus: event.ApprovalApproved},
+	Action: policy.DecisionBlock,
+	Reason: "shell.execute requires approval; approval evidence was not Approved",
+}
+```
+
+The rule fires (blocking) for every `ApprovalStatus` value except
+`Approved` — including `Denied`, `Required`, `Unspecified`, and,
+deliberately, `NotRequired`: an event self-declaring
+`ApprovalNotRequired` does not exempt it, because **Policy, not the
+event, decides whether an operation requires approval.** Whether this
+rule exists at all is the requirement; `ApprovalStatus` is only ever
+evidence. See [ADR
+0015](adr/0015-approval-as-policy-evidence-not-behavioral-anomaly.md)
+for the full reasoning, and
+[docs/SECURITY.md § AI Agent behavioral security](SECURITY.md) for why
+`ApprovalStatus` must be treated as untrusted, self-reported input —
+this `Unless` pattern only decides what Policy *does* with the
+evidence; it does not, by itself, verify where that evidence came
+from.
+
+This `Condition` field is a plain equality match on
+`Input.ApprovalStatus`, identical in kind to every other field above —
+nothing here is specific to AI agents. The same rule gates a `service`
+or `user` actor's identical operation exactly the same way, since
+`When` never inspects `Actor.Type`.
+
 ## Example: matching `Event.Attributes`
 
 The project spec's own AI-agent policy example — "block AI agents from
@@ -265,7 +304,7 @@ records, verified empirically there.
 
 `config.PolicyCondition`'s fields mirror `policy.Condition`'s exactly —
 `ActorType`, `OperationCategory`, `TargetName`, `Environment`,
-`MinRiskLevel`, `Attributes` — as plain strings/maps, validated against
+`MinRiskLevel`, `Attributes`, `ApprovalStatus` — as plain strings/maps, validated against
 the real enum values by `CompilePolicy` (which calls `Validate()`
 internally regardless of whether the caller already did). A typo like
 `ActorType: "srevice"` fails compilation with an actionable error
@@ -293,11 +332,18 @@ rules:
       attributes:
         tool.category: secrets
     unless:
-      attributes:
-        approval: human
+      approval_status: approved
     decision: block
-    reason: AI agent secret access requires human approval
+    reason: AI agent secret access requires approval
 ```
+
+`unless.approval_status: approved` is [task
+030](tasks/030-approval-aware-policy-semantics.md)'s typed field —
+before it existed, the only way to express this was the ad hoc
+`attributes: {approval: human}` convention (still valid syntax, since
+`Condition.Attributes` is unchanged, but with no defined meaning
+Trustvian itself understands); `approval_status` gives the identical
+intent a real, validated home instead.
 
 ```go
 cfg, err := config.LoadFile("trustvian.yaml")

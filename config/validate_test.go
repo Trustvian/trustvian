@@ -192,6 +192,75 @@ func TestValidateRejectsInvalidRiskLevel(t *testing.T) {
 	}
 }
 
+// TestValidateAcceptsEveryApprovalStatus is task 030's config
+// validation coverage: every recognized event.ApprovalStatus value
+// must round-trip through Validate without error, following the same
+// pattern TestValidateRejectsInvalidActorType/OperationCategory
+// already establish for their own enums.
+func TestValidateAcceptsEveryApprovalStatus(t *testing.T) {
+	for _, status := range []string{"not_required", "required", "approved", "denied"} {
+		t.Run(status, func(t *testing.T) {
+			cfg := minimalValidConfig()
+			cfg.Rules = []config.PolicyRule{{
+				Name:     "r1",
+				When:     config.PolicyCondition{ApprovalStatus: status},
+				Decision: "allow",
+				Reason:   "x",
+			}}
+			if err := cfg.Validate(); err != nil {
+				t.Errorf("Validate() = %v, want nil", err)
+			}
+		})
+	}
+}
+
+func TestValidateRejectsInvalidApprovalStatus(t *testing.T) {
+	cfg := minimalValidConfig()
+	cfg.Rules = []config.PolicyRule{{
+		Name:     "r1",
+		When:     config.PolicyCondition{ApprovalStatus: "aproved"}, // typo
+		Decision: "allow",
+		Reason:   "x",
+	}}
+	err := cfg.Validate()
+	if !errors.Is(err, config.ErrInvalidApprovalStatus) {
+		t.Errorf("Validate() = %v, want %v", err, config.ErrInvalidApprovalStatus)
+	}
+}
+
+// TestValidateRejectsUnknownApprovalStatusDoesNotSilentlyMapToApproved
+// is task 030's mandatory security regression (§20 of the task
+// brief): an unrecognized ApprovalStatus string must be rejected by
+// Validate, never silently accepted (and therefore never silently
+// treated as any particular status, "approved" least of all) — an
+// arbitrary-string-to-Approved mapping would be a real security
+// defect, not a validation nicety.
+func TestValidateRejectsUnknownApprovalStatusDoesNotSilentlyMapToApproved(t *testing.T) {
+	cfg := minimalValidConfig()
+	cfg.Rules = []config.PolicyRule{{
+		Name:     "r1",
+		When:     config.PolicyCondition{ApprovalStatus: "yes-approved-i-promise"},
+		Decision: "allow",
+		Reason:   "x",
+	}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("Validate() = nil, want an error — an unrecognized approval_status must never be silently accepted")
+	}
+}
+
+func TestValidateAcceptsUnsetApprovalStatusAsDontCare(t *testing.T) {
+	cfg := minimalValidConfig()
+	cfg.Rules = []config.PolicyRule{{
+		Name:     "r1",
+		When:     config.PolicyCondition{}, // ApprovalStatus unset
+		Decision: "allow",
+		Reason:   "x",
+	}}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate() = %v, want nil", err)
+	}
+}
+
 func TestValidateRejectsInvalidUnlessCondition(t *testing.T) {
 	cfg := minimalValidConfig()
 	cfg.Rules = []config.PolicyRule{{
