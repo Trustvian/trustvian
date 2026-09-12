@@ -6,15 +6,19 @@ go install github.com/Trustvian/trustvian/cmd/trustvian@latest
 ```
 
 ```
-trustvian analyze [--config <path>] <events.json>        Score each event and print a report
-trustvian baseline build [--config <path>] <events.json> Learn a baseline from a corpus of events
+trustvian analyze [--config <path>] [--anomaly-config <path>] <events.json>
+trustvian baseline build [--config <path>] [--anomaly-config <path>] <events.json>
 trustvian help
 ```
 
 By default, the CLI uses a built-in starter policy (block on
 high/critical risk, alert on medium, allow otherwise) — see
-[`cmd/trustvian/policy.go`](../cmd/trustvian/policy.go). Pass
-`--config` to use a real policy from a file instead — see below.
+[`cmd/trustvian/policy.go`](../cmd/trustvian/policy.go) — and
+`anomaly.DefaultConfig()`'s own scoring thresholds/weights, with every
+`v0.6`/`v0.7` opt-in signal (transition/n-gram/Markov/delegation
+deviation) left disabled, exactly as it always has been. Pass
+`--config` to use a real policy from a file instead, and/or
+`--anomaly-config` to enable and tune anomaly signals — see below.
 
 ## `--config <path>`
 
@@ -47,6 +51,29 @@ CLI never falls back to the built-in default policy when an explicit
 There is no environment-variable config, no auto-discovery of a
 default config file path, and no live reload — `--config` is the only
 way to select a file, and it's read once per invocation.
+
+## `--anomaly-config <path>`
+
+Both `analyze` and `baseline build` also accept an optional
+`--anomaly-config <path>`, loading a schema-v1 YAML anomaly config the
+same way any other caller outside this module would —
+`config.LoadAnomalyFile` + `config.CompileAnomaly`, then
+`trustvian.WithAnomalyConfig` — and using the result instead of
+`anomaly.DefaultConfig()` for that invocation. This is how `v0.6`/`v0.7`
+signals (opt-in, disabled by default) get enabled from the CLI.
+
+```bash
+trustvian analyze --anomaly-config anomaly.yaml event.json
+```
+
+See [Anomaly Configuration Guide](anomaly-config-guide.md) for the full
+field reference. Same fail-closed discipline as `--config`: a missing,
+unparseable, or invalid `--anomaly-config` file fails the whole
+command — non-zero exit, an error naming the problem, no analysis
+report — never a silent fallback to `anomaly.DefaultConfig()`. Without
+it, behavior is exactly what it was before this flag existed.
+`--config` and `--anomaly-config` are independent — pass either, both,
+or neither.
 
 ## `trustvian analyze`
 

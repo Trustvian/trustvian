@@ -8,7 +8,7 @@ import (
 	"os"
 )
 
-const baselineUsage = "usage: trustvian baseline build [--config <path>] <events.json>"
+const baselineUsage = "usage: trustvian baseline build [--config <path>] [--anomaly-config <path>] <events.json>"
 
 func runBaseline(args []string) error {
 	if len(args) == 0 || args[0] != "build" {
@@ -37,6 +37,7 @@ func runBaselineBuild(args []string) error {
 	fs := flag.NewFlagSet("baseline build", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	configPath := fs.String("config", "", "path to a Trustvian policy config file (schema v1 YAML)")
+	anomalyConfigPath := fs.String("anomaly-config", "", "path to a Trustvian anomaly config file (schema v1 YAML)")
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("%s", baselineUsage)
 	}
@@ -50,7 +51,7 @@ func runBaselineBuild(args []string) error {
 		return err
 	}
 
-	engine, err := newEngine(*configPath)
+	engine, err := newEngine(*configPath, *anomalyConfigPath)
 	if err != nil {
 		return err
 	}

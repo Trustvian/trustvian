@@ -663,18 +663,32 @@ read-then-external-post sequence, approval violation, unexpected
 delegator, external-destination drift) plus one combined case — with
 zero new detectors and proven independence from double-counting. This
 task also surfaced, and documents rather than silently patches, a real
-gap: `anomaly.Config` has no public-`config`-package equivalent of
+gap: `anomaly.Config` had no public-`config`-package equivalent of
 `policy.Policy`'s `config.CompilePolicy` path (available since `v0.5`),
-so an OSS consumer outside this module cannot enable
-delegation/sequence signals through public API alone today — only
-task 030's approval mechanism is demonstrable that way (see
-[examples/ai-agent-security](examples/ai-agent-security/)).
+so an OSS consumer outside this module could not enable
+delegation/sequence signals through public API alone.
 
-Not yet built, and not any of these four tasks' job: delegation
+**Task 033 — v0.7 Stabilization & Release Gate — closed that gap and
+is done.** `config.AnomalyConfig`/`config.CompileAnomaly` (see [ADR
+0017](docs/adr/0017-public-anomaly-configuration-boundary.md)) give an
+OSS consumer the identical public path to anomaly scoring that Policy
+already had — every existing `anomaly.Config` field, none newly
+invented — with existing callers who configure nothing seeing
+byte-for-byte unchanged behavior, proven by test, and the CLI gaining a
+matching `--anomaly-config` flag.
+[examples/ai-agent-security](examples/ai-agent-security/) now
+demonstrates the full combined scenario (delegation + sequence +
+approval) through public config alone. **`v0.7` is release-ready**: all
+five tasks (014, 030, 031, 032, 033) are done, and the one blocker task
+032 found is resolved, not deferred. Tagging `v0.7.0` remains a
+separate, explicit action.
+
+Not yet built, and not any of these five tasks' job: delegation
 provenance verification (signed claims, a trusted orchestration layer,
-identity-provider evidence) and a public configuration surface for
-`anomaly.Config` — both distinct, genuinely future work this project
-has not designed, only identified.
+identity-provider evidence) and public configurability for
+`trust.Config`/`features.StableFeatures` (the `WithTrustConfig`/
+`WithContextRisk` options) — both distinct, genuinely future work this
+project has not designed, only identified.
 
 **MCP.** Trustvian's read/query surface may eventually be exposed to AI
 agents and developer tooling via MCP
@@ -1482,7 +1496,7 @@ v0.5  Policy & Configuration            SHIPPED (v0.5.0)
         ↓
 v0.6  Behavioral Detection Depth        SHIPPED (v0.6.0)
         ↓
-v0.7  AI Agent Behavioral Security      IN PROGRESS (foundation task 014 done)
+v0.7  AI Agent Behavioral Security      RELEASE-READY (all 5 tasks done, not yet tagged)
         ↓
 v0.8  Production Runtime & Storage      PLANNED
         ↓
@@ -1521,10 +1535,11 @@ Why each step exists, not merely what it contains:
   type but lacked three correlation dimensions (session, delegation,
   approval) that a real agent deployment needs — and because this is
   where this document repeatedly insists the boundary matters most:
-  reuse the existing engine, never build a second one. Task 014 closed
-  that representational gap; further `v0.7` slices (approval-aware
-  policy semantics, delegation behavioral semantics) are scoped, not
-  yet implemented — see `docs/ROADMAP.md` § v0.7.
+  reuse the existing engine, never build a second one. All five `v0.7`
+  slices (foundation, approval-aware policy, delegation behavioral
+  semantics, combined scenario validation, and the public
+  configuration/stabilization gate) are done — see `docs/ROADMAP.md` §
+  v0.7.
 - **`v0.8`–`v0.9`** exist because a complete OSS product is not just a
   correct algorithm — it is something an operator can actually run,
   persist state for, upgrade, and trust operationally.

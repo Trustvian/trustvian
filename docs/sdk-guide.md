@@ -259,18 +259,28 @@ trustvian.NewEngine(
 
 `WithPolicy`, `WithAnomalyConfig`, `WithTrustConfig`, and
 `WithContextRisk` take types (`policy.Policy`, `anomaly.Config`,
-`trust.Config`, `features.StableFeatures`) that currently live under
-`internal/`. That means: **code inside this repository can use every
-option freely; a separate Go module that only depends on
-`github.com/Trustvian/trustvian` cannot construct those values yet.**
-This isn't an oversight — see
-[Architecture § package boundaries](ARCHITECTURE.md#package-boundaries)
-for the reasoning. Promoting those types to a public package is a
-reasonable next step once an external consumer actually needs it.
+`trust.Config`, `features.StableFeatures`) that live under `internal/`
+— an external module cannot spell any of these type names directly.
+That is not the same as "cannot construct these values at all," for
+two of the four: `config.CompilePolicy` (`v0.5`) and
+`config.CompileAnomaly` (`v0.7` task 033, [ADR
+0017](adr/0017-public-anomaly-configuration-boundary.md)) each produce
+a value of the corresponding internal type from a public
+`config.PolicyConfig`/`config.AnomalyConfig` input, which a caller then
+passes straight into `WithPolicy`/`WithAnomalyConfig` via ordinary Go
+type inference — see [Architecture § package
+boundaries](ARCHITECTURE.md#package-boundaries) for why this works.
+**`WithTrustConfig` and `WithContextRisk` remain genuinely
+in-module-only today** — no `config` equivalent exists yet for
+`trust.Config`/`features.StableFeatures`; promoting a public path for
+either is a reasonable next step once an external consumer actually
+needs it, following the identical pattern Policy and Anomaly
+configuration already established.
 
-In practice, today, this is how the CLI itself configures a policy
-(from [`cmd/trustvian/policy.go`](../cmd/trustvian/policy.go) — real
-code in this repository, not a hypothetical):
+In practice, today, this is how the CLI itself configures a policy and
+anomaly scoring (from
+[`cmd/trustvian/policy.go`](../cmd/trustvian/policy.go) — real code in
+this repository, not a hypothetical):
 
 ```go
 func defaultPolicy() policy.Policy {

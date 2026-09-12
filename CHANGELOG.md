@@ -96,6 +96,32 @@ actually depend on.
   gap: `anomaly.Config` has no public-`config`-package equivalent of
   `policy.Policy`'s path, so delegation/sequence signals remain
   demonstrable only from inside this module today.
+- **`v0.7` Stabilization & Release Gate**
+  ([task 033](docs/tasks/033-v07-stabilization-release-gate.md)) —
+  closes the gap task 032 found: `config.AnomalyConfig` (new public
+  document) compiled by `config.CompileAnomaly` into the exact
+  `anomaly.Config` value `trustvian.WithAnomalyConfig` already
+  accepted, mirroring `config.CompilePolicy`'s exact shape as a third
+  independent document alongside Policy and Alert configuration. Every
+  existing `anomaly.Config` field is now publicly configurable
+  (`DelegationWeight`, `NGramWeight`, `TransitionWeight`,
+  `MarkovWeight`, `SensitiveTargetFloor`, and the rest) — none newly
+  invented; `internal/baseline`'s state-size bounds stay internal,
+  deliberately. `CompileAnomaly(AnomalyConfig{})` reproduces
+  `anomaly.DefaultConfig()` byte-for-byte, proven by
+  `TestCompileAnomalyZeroValueMatchesDefaultConfig` — existing callers
+  who configure nothing see unchanged behavior. `trustvian analyze`/
+  `baseline build` gain a matching `--anomaly-config <path>` flag.
+  [`examples/ai-agent-security`](examples/ai-agent-security/) now
+  demonstrates the full combined scenario — delegation, sequence, and
+  approval evidence together — through public config alone, verified
+  by a new `main_test.go` run from within the genuinely separate
+  `examples` Go module (no `internal/*` import). Full `v0.7` regression
+  (tasks 014/030/031/032's own tests, plus every `v0.6` sequence test)
+  re-confirmed green. No new package, no new anomaly detector, no
+  processor change, no new dependency. **`v0.7` is release-ready** —
+  tagging `v0.7.0` remains a separate, explicit action. See [ADR
+  0017](docs/adr/0017-public-anomaly-configuration-boundary.md).
 
 ## v0.6.0 — Behavioral Detection Depth
 

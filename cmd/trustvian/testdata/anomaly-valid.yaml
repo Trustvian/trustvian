@@ -1,0 +1,3 @@
+version: v1
+delegation_weight: 0.7
+ngram_weight: 0.7

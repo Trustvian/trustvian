@@ -3,6 +3,7 @@ package config
 import (
 	"github.com/Trustvian/trustvian/alert"
 	"github.com/Trustvian/trustvian/event"
+	"github.com/Trustvian/trustvian/internal/anomaly"
 	"github.com/Trustvian/trustvian/internal/policy"
 	"github.com/Trustvian/trustvian/internal/trust"
 )
@@ -125,4 +126,66 @@ func compileAlertCondition(c AlertConditionConfig) alert.Condition {
 		compiled.TargetCategory = event.TargetCategory(c.TargetCategory)
 	}
 	return compiled
+}
+
+// CompileAnomaly validates cfg and translates it into an anomaly.Config
+// — the exact type trustvian.WithAnomalyConfig accepts. Like
+// CompilePolicy/CompileAlerts, it always validates cfg itself first,
+// and is pure: no I/O, no global state, no mutation of cfg.
+//
+// The result always starts from anomaly.DefaultConfig(), so any field
+// cfg leaves unset (a nil pointer, or a plain-value field at its Go
+// zero value) resolves to exactly the value existing v0.1-v0.6 callers
+// already see today — CompileAnomaly(AnomalyConfig{}) reproduces
+// anomaly.DefaultConfig() byte-for-byte, proven by
+// TestCompileAnomalyZeroValueMatchesDefaultConfig, not merely intended.
+//
+// The returned anomaly.Config is safe for a caller outside this module
+// to receive and pass straight into trustvian.WithAnomalyConfig via
+// type inference, identical to CompilePolicy's own return value — see
+// docs/adr/0017-public-anomaly-configuration-boundary.md.
+func CompileAnomaly(cfg AnomalyConfig) (anomaly.Config, error) {
+	if err := cfg.Validate(); err != nil {
+		return anomaly.Config{}, err
+	}
+
+	out := anomaly.DefaultConfig()
+
+	if cfg.MinObservations != nil {
+		out.MinObservations = *cfg.MinObservations
+	}
+	if cfg.LatencyZThreshold != nil {
+		out.LatencyZThreshold = *cfg.LatencyZThreshold
+	}
+	if cfg.FrequencyZThreshold != nil {
+		out.FrequencyZThreshold = *cfg.FrequencyZThreshold
+	}
+	if cfg.NoveltyWeight != nil {
+		out.NoveltyWeight = *cfg.NoveltyWeight
+	}
+	if cfg.LatencyWeight != nil {
+		out.LatencyWeight = *cfg.LatencyWeight
+	}
+	if cfg.ErrorWeight != nil {
+		out.ErrorWeight = *cfg.ErrorWeight
+	}
+	out.FrequencyWeight = cfg.FrequencyWeight
+	out.TimePatternWeight = cfg.TimePatternWeight
+	out.TransitionWeight = cfg.TransitionWeight
+	if cfg.MinTransitionObservations != nil {
+		out.MinTransitionObservations = *cfg.MinTransitionObservations
+	}
+	out.TransitionRarityWeight = cfg.TransitionRarityWeight
+	out.NGramWeight = cfg.NGramWeight
+	if cfg.MinNGramObservations != nil {
+		out.MinNGramObservations = *cfg.MinNGramObservations
+	}
+	out.NGramRarityWeight = cfg.NGramRarityWeight
+	out.MarkovWeight = cfg.MarkovWeight
+	out.DelegationWeight = cfg.DelegationWeight
+	if cfg.SensitiveTargetFloor != nil {
+		out.SensitiveTargetFloor = cfg.SensitiveTargetFloor
+	}
+
+	return out, nil
 }
