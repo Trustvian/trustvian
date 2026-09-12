@@ -1263,26 +1263,55 @@ actor-isolation and Fingerprint-independence guarantees every other
 **Acceptance criteria.** See
 [031-delegation-behavioral-semantics.md](tasks/031-delegation-behavioral-semantics.md).
 
-**What's next (illustrative, unscoped — none of this is implemented
-or task-filed yet).** Tasks 014, 030, and 031 are foundation slices,
-not the whole milestone. Further `v0.7` work continues from task
-**032** onward (**015** and **016** stay reserved for MCP and Control
-respectively, per the project's existing task-numbering scheme — not
-reusable for further agent-detection slices):
+**Task 032 — Agent Security Scenario Validation — is done.** [Task
+file 032](tasks/032-agent-security-scenario-validation.md) validated
+the combined system (030 + 031 + existing `v0.6`/`v0.1` signals)
+against five realistic scenarios plus a combined case, adding
+**zero** new detectors: unexpected privileged tool use
+(`categorical_novelty`/`transition_deviation`), a sensitive
+read-then-external-post sequence (`ngram_deviation`), an approval
+violation (task 030's `Policy` mechanism), an unexpected delegator
+(task 031's `delegation_deviation`), external-destination drift
+(`categorical_novelty` via `Target.Category`), and one combined
+scenario exercising all three evidence types (delegation, sequence,
+approval) together — proven orthogonal, explainable, and bounded, not
+merely asserted, by
+`TestScenarioCombinedDelegationSequenceApproval` in
+[`scenario_test.go`](../scenario_test.go). A dedicated poisoning
+regression, a session-cardinality re-run, a non-agent regression, and
+an identity-confidence-independence check round out the eleven new
+tests.
 
-- **032 — Agent Security Scenario Validation.** Validates the combined
-  system (030 + 031 + existing `v0.6` signals) against realistic
-  scenarios — unexpected privileged tool use, a sensitive
-  read-then-exfiltrate sequence, an approval violation, an unexpected
-  delegator, external-destination drift — preferring combinations of
-  existing signals/policy conditions over one bespoke detector per
-  scenario.
+**One genuine gap surfaced, reported, not silently patched:**
+`anomaly.Config` (unlike `policy.Policy`, which got a public
+`config.CompilePolicy` path in `v0.5`) has no public-API equivalent —
+an OSS consumer outside this module cannot raise
+`DelegationWeight`/`NGramWeight`/any `v0.6`/`v0.7` signal weight above
+its default-`0` opt-in value. This means the one fully-public,
+`internal/`-import-free example this task added
+([`examples/ai-agent-security`](../examples/ai-agent-security/)) can
+demonstrate task 030's approval mechanism end-to-end (a genuinely
+differentiated `ALLOW`/`BLOCK` `Decision`, the first example in this
+directory to have one), but not task 031's delegation signal or
+`v0.6`'s sequence signals — those remain validated only inside this
+module's own test suite (`scenario_test.go`, using
+`trustvian.WithAnomalyConfig`). This gap is real and is not this
+task's to fix — see the task file's own Findings section for why a
+speculative `config.AnomalyConfig` was not added here.
+
+**What's next (illustrative, unscoped — none of this is implemented
+or task-filed yet).** Tasks 014, 030, 031, and 032 are validated
+foundation slices, not a shipped milestone. Only **033** remains
+(**015** and **016** stay reserved for MCP and Control respectively):
+
 - **033 — v0.7 Stabilization & Release Gate.** Mirrors
   [024](tasks/024-v05-release-gate.md)/[029](tasks/029-v06-stabilization-release-gate.md)'s
   shape: re-audit 014/030/031/032 against source, confirm no
-  regression, confirm documentation currency, before `v0.7.0` tags.
+  regression, confirm documentation currency, decide whether the
+  `anomaly.Config` public-API gap 032 surfaced blocks `v0.7.0` or is
+  explicitly deferred, before `v0.7.0` tags.
 
-Each remains its own explicitly-scoped task file, written when that
+It remains its own explicitly-scoped task file, written when that
 slice actually starts — not speculatively now.
 
 ## v0.8 — Production Runtime & Storage

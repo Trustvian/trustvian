@@ -159,6 +159,25 @@ operation from an approval requirement, and a novel delegator does not
 itself block an operation approval already satisfies. See [ADR
 0016](docs/adr/0016-delegation-as-behavioral-evidence-not-provenance.md).
 
+`v0.7`'s three behavioral/policy slices are now validated **in
+combination**, not just individually
+([task 032](docs/tasks/032-agent-security-scenario-validation.md)):
+agent behavior, `v0.6` sequence analysis, delegation deviation, and
+approval-aware policy all compose correctly against realistic
+scenarios — an unexpected privileged tool, a sensitive
+read-then-external-post sequence, an approval violation, an unexpected
+delegator, external-destination drift, and one combined case
+exercising delegation, sequence, and approval evidence together — with
+zero new detectors and no evidence double-counting. Trustvian does not
+provide authenticated delegation or an approval workflow; both remain
+exactly the boundaries tasks 030/031 already documented. This task also
+found, and documents rather than works around, a real gap: unlike
+`policy.Policy` (publicly configurable since `v0.5` via
+`config.CompilePolicy`), `anomaly.Config` has no public equivalent —
+see [`examples/ai-agent-security`](examples/ai-agent-security/) for
+what is (task 030's approval mechanism) and isn't (delegation/sequence
+signals) demonstrable through public API alone today.
+
 **Trustvian OSS is meant to be a complete, standalone,
 production-usable behavioral security product on its own** — detect,
 score, decide, alert, integrate, and run, all without Trustvian
@@ -169,9 +188,10 @@ alert sink (Slack/Teams/PagerDuty) — declarative *alert* configuration
 itself is
 now implemented (see above); wiring it into the CLI or the Collector
 processor is deliberately deferred, since neither has an alert-delivery
-flow yet for it to plug into — combined agent-security-scenario
-validation beyond the three `v0.7` slices above, a production-grade
-persistent store beyond `FileStore`, and
+flow yet for it to plug into — a public `config`-package equivalent
+for `anomaly.Config` (the gap task 032 surfaced), `v0.7` stabilization
+and release-gating, a production-grade persistent store beyond
+`FileStore`, and
 release/operational engineering (CI, Docker image, SBOM). See
 [`docs/ROADMAP.md`](docs/ROADMAP.md#the-oss--enterprise-product-boundary)
 for the explicit OSS/Control boundary and the full milestone sequence

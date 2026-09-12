@@ -1,6 +1,6 @@
 # Examples
 
-Seven small, runnable `package main` programs demonstrating the full
+Eight small, runnable `package main` programs demonstrating the full
 `Event -> Features -> Fingerprint -> Baseline -> Anomaly -> Trust ->
 Policy -> Decision` pipeline — and, since v0.4, the downstream Alert &
 Notification Foundation — against the real
@@ -25,6 +25,7 @@ README below has real, `go run`-captured output, not hand-written output.
 | [frequency-abuse](frequency-abuse/) | A fully mature, familiar fingerprint bursts far outside its learned request cadence — `frequency_deviation` is detected with zero categorical novelty, and reported even though it ships opt-in (`FrequencyWeight` defaults to `0`) | [frequency-abuse/README.md](frequency-abuse/README.md) |
 | [ai-agent](ai-agent/) | An AI agent's baseline matures against a benign CRM-lookup tool call, then the same agent reaches for a credentials store | [ai-agent/README.md](ai-agent/README.md) |
 | [alert-webhook](alert-webhook/) | A cold-start, highly novel event resolves to `OBSERVE_ONLY`, but an `alert.Rule` matching on anomaly score alone still produces a `HIGH`-severity `Alert`, signed and delivered over HTTPS to a webhook — proving `Decision != Alert` end to end via the direct Go SDK, no OTel involved | [alert-webhook/README.md](alert-webhook/README.md) |
+| [ai-agent-security](ai-agent-security/) | An AI agent's `shell.execute` matures into fully familiar behavior; a `config.PolicyConfig`-compiled approval requirement still blocks it when `ApprovalStatus` isn't `approved` — the one example here with a genuinely differentiated `Decision`, since `Policy` (unlike `anomaly.Config`) has a public configuration path | [ai-agent-security/README.md](ai-agent-security/README.md) |
 
 ## Running them
 
@@ -44,22 +45,27 @@ beyond `go run`.
 
 ## A note on `Decision`
 
-Every example in this directory uses `trustvian.NewEngine()` with no
-options, so every printed `Decision` is `observe_only` — `NewEngine()`'s
-default `Policy` has no rules and always falls through to its
-`observe_only` default (see
+Seven of the eight examples here use `trustvian.NewEngine()` with no
+options, so their printed `Decision` is always `observe_only` —
+`NewEngine()`'s default `Policy` has no rules and always falls through
+to its `observe_only` default (see
 [docs/sdk-guide.md § Constructing an Engine](../docs/sdk-guide.md#constructing-an-engine)).
+This is deliberate, not a limitation: these seven are each demonstrating
+one specific `Anomaly`/`Trust` reading, and a custom `Policy` would be
+one more moving part than the scenario needs.
 
-This is deliberate, not an oversight: getting `ALLOW`/`BLOCK`
-differentiation like [docs/use-cases.md](../docs/use-cases.md) requires
-passing a custom `Policy` via `trustvian.WithPolicy`, and `policy.Policy`
-is a type that currently lives under `internal/` — per
+`policy.Policy` itself is a type that lives under `internal/` — per
 [ADR 0002](../docs/adr/0002-public-api-boundary.md), a true external
-module (which is exactly what `examples/` is set up to be) cannot
-construct one yet. `Anomaly` and `Trust` — the interesting, differentiated
-numbers each example is actually demonstrating — are unaffected by this;
-only the final policy decision is flattened to `observe_only` here. See
-[docs/sdk-guide.md § The public/internal boundary, today](../docs/sdk-guide.md#the-publicinternal-boundary-today)
-for the full reasoning, and [`cmd/trustvian`](../cmd/trustvian) for how
-this repository's own CLI configures a differentiated policy from code
-living inside the module.
+module (which is exactly what `examples/` is set up to be) cannot name
+that type directly. But since `v0.5` ([ADR
+0008](../docs/adr/0008-policy-config-boundary.md)), a caller doesn't
+need to: `config.CompilePolicy` compiles a public `config.PolicyConfig`
+value into a `policy.Policy` a caller receives and passes straight into
+`trustvian.WithPolicy` via ordinary Go type inference, without ever
+importing `internal/policy`. [ai-agent-security](ai-agent-security/) is
+this directory's own example of that path — the one example here with
+a genuinely differentiated `ALLOW`/`BLOCK` `Decision`, not
+`observe_only`. See
+[docs/policy-guide.md § Configuring a Policy from outside this module](../docs/policy-guide.md#configuring-a-policy-from-outside-this-module)
+for the full mechanism, and [`cmd/trustvian`](../cmd/trustvian) for how
+this repository's own CLI uses the same path.
