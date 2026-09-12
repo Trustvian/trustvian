@@ -822,6 +822,144 @@ func TestScoreTransitionDeviation(t *testing.T) {
 // TestScoreMatchesDocumentedNoisyOrFormulaWithTimePatternSignal's exact
 // bar: reproduce combine()'s noisy-OR arithmetic with a firing
 // transition_deviation signal, not just spot-check its direction.
+func TestDefaultConfigDelegationWeightIsOptIn(t *testing.T) {
+	cfg := anomaly.DefaultConfig()
+	if cfg.DelegationWeight != 0 {
+		t.Errorf("DefaultConfig().DelegationWeight = %v, want 0 (opt-in, like every other v0.6/v0.7 signal weight)", cfg.DelegationWeight)
+	}
+}
+
+// TestScoreDelegationDeviation is task 031's own signal test, mirroring
+// TestScoreTransitionDeviation's table shape exactly.
+func TestScoreDelegationDeviation(t *testing.T) {
+	fp := fingerprint.Compute(stable("shell.execute"))
+	cfg := anomaly.DefaultConfig()
+	cfg.DelegationWeight = 0.7 // opt-in: default is 0, see TestDefaultConfigDelegationWeightIsOptIn
+
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	t.Run("familiar delegator does not fire", func(t *testing.T) {
+		b := baseline.New(testKey)
+		now := base
+		for range 20 {
+			b = b.Observe(fp, features.VolatileFeatures{DelegatedFrom: "agent-a"}, now)
+			now = now.Add(time.Second)
+		}
+
+		feat := features.Features{Stable: fp.Stable, Volatile: features.VolatileFeatures{Timestamp: now, DelegatedFrom: "agent-a"}}
+		got := anomaly.Score(feat, fp, b, cfg)
+
+		if hasSignal(got.Contributors, "delegation_deviation") {
+			t.Fatalf("Contributors = %+v, want no delegation_deviation for a delegator observed 20 times", got.Contributors)
+		}
+	})
+
+	t.Run("novel delegator fires strongly", func(t *testing.T) {
+		b := baseline.New(testKey)
+		now := base
+		for range 20 {
+			b = b.Observe(fp, features.VolatileFeatures{DelegatedFrom: "agent-a"}, now)
+			now = now.Add(time.Second)
+		}
+
+		feat := features.Features{Stable: fp.Stable, Volatile: features.VolatileFeatures{Timestamp: now, DelegatedFrom: "agent-x"}}
+		got := anomaly.Score(feat, fp, b, cfg)
+
+		if !hasSignal(got.Contributors, "delegation_deviation") {
+			t.Fatalf("Contributors = %+v, want delegation_deviation for a never-observed delegator", got.Contributors)
+		}
+	})
+
+	t.Run("no delegation on this event does not fire", func(t *testing.T) {
+		b := baseline.New(testKey)
+		feat := features.Features{Stable: fp.Stable, Volatile: features.VolatileFeatures{Timestamp: base}} // DelegatedFrom unset
+		got := anomaly.Score(feat, fp, b, cfg)
+
+		if hasSignal(got.Contributors, "delegation_deviation") {
+			t.Fatalf("Contributors = %+v, want no delegation_deviation when the event carries no DelegatedFrom", got.Contributors)
+		}
+	})
+
+	t.Run("first-ever event for a brand-new actor still evaluates delegation", func(t *testing.T) {
+		// Cold start: this actor has no history at all, including no
+		// delegation history. delegation_deviation still fires
+		// (maximal novelty, mirroring transitionSignal's own
+		// first-observation behavior for a genuinely novel case) but
+		// the overall Confidence this Score call returns is 0 (driven
+		// by the destination Fingerprint's own maturity, per
+		// categorical_novelty) — cold start is handled downstream via
+		// Confidence, not by suppressing this signal's own Value, the
+		// same architectural stance this package's own doc comment
+		// documents for every signal.
+		b := baseline.New(testKey)
+		feat := features.Features{Stable: fp.Stable, Volatile: features.VolatileFeatures{Timestamp: base, DelegatedFrom: "agent-x"}}
+		got := anomaly.Score(feat, fp, b, cfg)
+
+		if !hasSignal(got.Contributors, "delegation_deviation") {
+			t.Fatalf("Contributors = %+v, want delegation_deviation for a first-ever event with a delegator", got.Contributors)
+		}
+		if got.Confidence != 0 {
+			t.Fatalf("Confidence = %v, want 0 for a brand-new actor's first-ever event", got.Confidence)
+		}
+	})
+}
+
+// TestScoreDelegationDeviationDoesNotAffectFingerprintOrStable proves
+// delegation evidence never becomes behavioral identity, at the Score
+// level: two Score calls differing only in Volatile.DelegatedFrom must
+// compute the identical fp.ID (already guaranteed structurally, since
+// DelegatedFrom lives on VolatileFeatures, never StableFeatures — this
+// test proves it end-to-end through Score, not just at Extract).
+func TestScoreDelegationDeviationDoesNotAffectFingerprintOrStable(t *testing.T) {
+	fp := fingerprint.Compute(stable("shell.execute"))
+	b := baseline.New(testKey)
+	cfg := anomaly.DefaultConfig()
+	cfg.DelegationWeight = 0.7
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	withA := anomaly.Score(features.Features{Stable: fp.Stable, Volatile: features.VolatileFeatures{Timestamp: now, DelegatedFrom: "agent-a"}}, fp, b, cfg)
+	withX := anomaly.Score(features.Features{Stable: fp.Stable, Volatile: features.VolatileFeatures{Timestamp: now, DelegatedFrom: "agent-x"}}, fp, b, cfg)
+
+	if withA.FingerprintID != withX.FingerprintID {
+		t.Errorf("FingerprintID differs by DelegatedFrom alone: %q vs %q", withA.FingerprintID, withX.FingerprintID)
+	}
+}
+
+// TestScoreMatchesDocumentedNoisyOrFormulaWithDelegationSignal mirrors
+// TestScoreMatchesDocumentedNoisyOrFormulaWithTransitionSignal's exact
+// bar for the new signal: reproduce combine()'s noisy-OR arithmetic
+// with a firing delegation_deviation signal, not just spot-check its
+// direction.
+func TestScoreMatchesDocumentedNoisyOrFormulaWithDelegationSignal(t *testing.T) {
+	fp := fingerprint.Compute(stable("shell.execute"))
+	cfg := anomaly.DefaultConfig()
+	cfg.DelegationWeight = 0.7
+
+	// A mature fp (so categorical_novelty does not also fire) whose
+	// only-ever delegator is "agent-a"; the event under test carries a
+	// different, never-seen delegator.
+	b := baseline.New(testKey)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for range int(cfg.MinObservations) + 10 {
+		b = b.Observe(fp, features.VolatileFeatures{DelegatedFrom: "agent-a"}, now)
+		now = now.Add(matureBaselineInterval)
+	}
+
+	feat := features.Features{Stable: fp.Stable, Volatile: features.VolatileFeatures{Timestamp: now, DelegatedFrom: "agent-x"}}
+	got := anomaly.Score(feat, fp, b, cfg)
+
+	if !hasSignal(got.Contributors, "delegation_deviation") {
+		t.Fatalf("Contributors = %+v, want delegation_deviation", got.Contributors)
+	}
+
+	delegationContribution := 1.0 * cfg.DelegationWeight // never-seen delegator -> Value 1
+	want := 1 - (1 - delegationContribution)
+
+	if diff := got.Score - want; diff > 1e-9 || diff < -1e-9 {
+		t.Fatalf("Score = %v, want %v (documented noisy-OR formula, including delegation_deviation)", got.Score, want)
+	}
+}
+
 func TestScoreMatchesDocumentedNoisyOrFormulaWithTransitionSignal(t *testing.T) {
 	fpRead := fingerprint.Compute(stable("customer-db"))
 	fpDelete := fingerprint.Compute(features.StableFeatures{

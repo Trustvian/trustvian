@@ -53,6 +53,29 @@ actually depend on.
   package, no new pipeline stage, no new dependency; CLI and the OTel
   Collector processor require zero code changes. See [ADR
   0015](docs/adr/0015-approval-as-policy-evidence-not-behavioral-anomaly.md).
+- **Delegation Behavioral Semantics**
+  ([task 031](docs/tasks/031-delegation-behavioral-semantics.md)) —
+  a new, opt-in `internal/anomaly` signal, `delegation_deviation`:
+  has this actor ever received delegation from this immediate
+  delegator before? `internal/features.VolatileFeatures` gains
+  `DelegatedFrom` (read from `Context.DelegatedFrom`, never into
+  `StableFeatures`); `internal/baseline.Baseline` gains a bounded
+  (64-entry) `DelegatorCounts` map, scoped to the actor receiving
+  delegation, not to any one operation; `internal/anomaly.Config`
+  gains `DelegationWeight` (defaults to `0`, opt-in). Behavioral
+  familiarity, not authorization or authenticated provenance: a
+  familiar delegator is never thereby authorized, and an unfamiliar
+  one is never thereby malicious — `DelegatedFrom` remains exactly as
+  unauthenticated and self-reported as task 014 left it. Proven, not
+  just documented: existing learning-eligibility (BLOCKed attempts
+  never "normalize" a forged delegator through repetition), actor
+  isolation, score-before-learn, cardinality bounding (200 distinct
+  delegators stay capped at 64), and independence from both
+  `Fingerprint` identity and task 030's approval-policy evidence. No
+  new package, no new pipeline stage, no new `Store.Observe`
+  parameter, no new dependency; `BenchmarkEngineAnalyzeDelegationAbsent`
+  confirms zero added allocation when unused. See [ADR
+  0016](docs/adr/0016-delegation-as-behavioral-evidence-not-provenance.md).
 
 ## v0.6.0 — Behavioral Detection Depth
 

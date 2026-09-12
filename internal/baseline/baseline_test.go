@@ -612,6 +612,95 @@ func TestBaselineObservePredecessorCountsIsBounded(t *testing.T) {
 	}
 }
 
+// TestBaselineObserveTracksDelegatorCounts is task 031's own signal
+// foundation test, mirroring TestBaselineObserveTracksOutgoingTransitionTotal's
+// shape.
+func TestBaselineObserveTracksDelegatorCounts(t *testing.T) {
+	fpRead := readFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	b = b.Observe(fpRead, features.VolatileFeatures{DelegatedFrom: "agent-a"}, now)
+	now = now.Add(time.Second)
+	b = b.Observe(fpRead, features.VolatileFeatures{DelegatedFrom: "agent-a"}, now)
+	now = now.Add(time.Second)
+	b = b.Observe(fpRead, features.VolatileFeatures{DelegatedFrom: "agent-b"}, now)
+
+	if got := b.DelegatorCounts["agent-a"]; got != 2 {
+		t.Fatalf("DelegatorCounts[agent-a] = %d, want 2", got)
+	}
+	if got := b.DelegatorCounts["agent-b"]; got != 1 {
+		t.Fatalf("DelegatorCounts[agent-b] = %d, want 1", got)
+	}
+	if got := len(b.DelegatorCounts); got != 2 {
+		t.Fatalf("len(DelegatorCounts) = %d, want 2", got)
+	}
+}
+
+// TestBaselineObserveMissingDelegationDoesNotUpdateDelegatorCounts is
+// task 031's mandatory missing-delegation regression (§23/§48 of the
+// task brief): an event with no DelegatedFrom must leave DelegatorCounts
+// completely untouched — preserving non-agent/direct-action behavior.
+func TestBaselineObserveMissingDelegationDoesNotUpdateDelegatorCounts(t *testing.T) {
+	fpRead := readFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	b = b.Observe(fpRead, features.VolatileFeatures{}, now)
+	now = now.Add(time.Second)
+	b = b.Observe(fpRead, features.VolatileFeatures{}, now)
+
+	if got := len(b.DelegatorCounts); got != 0 {
+		t.Fatalf("len(DelegatorCounts) = %d, want 0 for events with no DelegatedFrom", got)
+	}
+}
+
+func TestBaselineObserveDelegatorCountsIsImmutable(t *testing.T) {
+	fpRead := readFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	b = b.Observe(fpRead, features.VolatileFeatures{DelegatedFrom: "agent-a"}, now)
+	snapshot := b.Observe(fpRead, features.VolatileFeatures{DelegatedFrom: "agent-a"}, now.Add(time.Second))
+
+	if got := snapshot.DelegatorCounts["agent-a"]; got != 2 {
+		t.Fatalf("snapshot DelegatorCounts[agent-a] = %d, want 2", got)
+	}
+
+	// A further Observe on top of snapshot must not reach back and
+	// mutate snapshot's own DelegatorCounts map.
+	_ = snapshot.Observe(fpRead, features.VolatileFeatures{DelegatedFrom: "agent-a"}, now.Add(2*time.Second))
+	if got := snapshot.DelegatorCounts["agent-a"]; got != 2 {
+		t.Fatalf("a later Observe mutated an earlier snapshot's DelegatorCounts: got %d, want 2", got)
+	}
+}
+
+// TestBaselineObserveDelegatorCountsIsBounded is task 031's mandatory
+// cardinality-attack regression (§16/§51 of the task brief): far more
+// than maxDelegators distinct delegators must never grow DelegatorCounts
+// past its bound, mirroring TestBaselineObservePredecessorCountsIsBounded's
+// exact shape and scale.
+func TestBaselineObserveDelegatorCountsIsBounded(t *testing.T) {
+	fpRead := readFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	// Far more distinct delegators than the bound allows — well beyond
+	// the illustrative "one over the bound" case
+	// TestBaselineObservePredecessorCountsIsBounded uses, matching this
+	// task's own explicit request for a cardinality-attack-shaped test
+	// (a reasonable size, not 100,000 events, per the brief's own
+	// guidance).
+	const distinctDelegators = 200
+	for i := range distinctDelegators {
+		b = b.Observe(fpRead, features.VolatileFeatures{DelegatedFrom: fmt.Sprintf("delegator-%d", i)}, now.Add(time.Duration(i)*time.Second))
+	}
+
+	if got := len(b.DelegatorCounts); got != 64 {
+		t.Fatalf("len(DelegatorCounts) = %d, want 64 (bounded, even with %d distinct delegators observed)", got, distinctDelegators)
+	}
+}
+
 func TestBaselineObserveTracksOutgoingTransitionTotal(t *testing.T) {
 	fpRead, fpUpdate, fpDelete := readFingerprint(), updateFingerprint(), deleteFingerprint()
 	b := baseline.New(testKey)

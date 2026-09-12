@@ -42,6 +42,7 @@ here, not moved or rewritten.
 | Markov surprisal — zero-probability safety, correlated-signal double-counting, poisoning, actor isolation (`v0.6` task 028) | `TestScoreMarkovSurprisalUnseenTransitionNeverFires`, `TestScoreMarkovSurprisalNeverExceedsBounds`, `TestScoreMarkovSurprisalColdStart`, `TestMarkovSurprisalIsMonotonicReparameterizationOfRarity`, `TestScoreMarkovAndTransitionRarityAreMutuallyExclusiveInScoring`, `TestScoreCombinedMarkovAndNGramSignalsRemainBounded` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeMarkovCrossActorIsolation`, `TestAnalyzeMarkovScoresBeforeLearning`, `TestObserveMarkovLearnsOnlyFromEligibleDecisions` in [`engine_test.go`](../engine_test.go) |
 | AI Agent behavioral context — session-ID cardinality, fingerprint independence, actor isolation, delegation (`v0.7` task 014) | `TestAnalyzeAgentSessionIDDoesNotExplodeBaseline`, `TestAnalyzeAgentToolNoveltyDetectedByExistingEngine`, `TestAnalyzeAgentToolSequenceNoveltyDetectedByExistingEngine`, `TestAnalyzeAgentCrossActorIsolation`, `TestAnalyzeAgentDelegationContextScoredIdentically` in [`engine_test.go`](../engine_test.go); `TestFingerprintIDIndependentOfAgentContext` in [`internal/fingerprint/fingerprint_test.go`](../internal/fingerprint/fingerprint_test.go); `TestEventValidateIgnoresAgentContextFields` in [`event/event_test.go`](../event/event_test.go) |
 | Approval-aware policy — policy authority over the requirement, fail-closed missing evidence, backward compatibility, behavioral independence, non-agent genericity (`v0.7` task 030) | `TestEvaluateApprovalRequiredExampleMatrix`, `TestEvaluateApprovalPolicyAuthorityEventCannotOverridePolicy`, `TestEvaluateApprovalFailSafeOnMissingEvidence`, `TestEvaluateNoApprovalRuleConfiguredIsUnaffectedByApprovalStatus` in [`internal/policy/policy_test.go`](../internal/policy/policy_test.go); `TestAnalyzeAgentApprovalPolicyAllowsApprovedDeniesUnapproved`, `TestAnalyzeApprovalPolicyBehavioralScoreIndependence`, `TestAnalyzeApprovalPolicyGenericNotHardCodedToAIAgent` in [`engine_test.go`](../engine_test.go); `TestValidateRejectsUnknownApprovalStatusDoesNotSilentlyMapToApproved` in [`config/validate_test.go`](../config/validate_test.go) |
+| Delegation behavioral semantics — novelty detection, cardinality bound, poisoning protection, score-before-learn, actor isolation, approval independence, Fingerprint independence (`v0.7` task 031) | `TestAnalyzeDelegationNoveltyDetectedByExistingSignal`, `TestAnalyzeDelegationScoreBeforeLearn`, `TestAnalyzeDelegationPoisoningIneligibleEventsDoNotTrain`, `TestAnalyzeDelegationActorIsolation`, `TestAnalyzeDelegationMissingDelegationUnaffected`, `TestAnalyzeDelegationFingerprintStability`, `TestAnalyzeDelegationApprovalIndependence` in [`engine_test.go`](../engine_test.go); `TestBaselineObserveDelegatorCountsIsBounded`, `TestBaselineObserveMissingDelegationDoesNotUpdateDelegatorCounts` in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestScoreDelegationDeviation`, `TestScoreDelegationDeviationDoesNotAffectFingerprintOrStable` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go) |
 
 ## Threats considered
 
@@ -857,17 +858,29 @@ the AI-agent case specifically; a few are explicitly future work.
   Verifying the calling agent's real identity is the deploying
   application's authentication layer's job, upstream of Trustvian.
 - **Delegation abuse** (an attacker forging `DelegatedFrom` to make an
-  unauthorized action appear delegated from a trusted agent).
-  **Status: recorded, not yet defended — future work, honestly
-  labeled.** `DelegatedFrom` is presently an unauthenticated,
-  self-reported field with zero scoring effect
-  (`TestAnalyzeAgentDelegationContextScoredIdentically` proves this
-  directly) — nothing in this task treats it as a trust signal, so
-  nothing can be tricked by a forged value *today*, but nothing
-  verifies it either. A future task that builds a delegation-aware
-  detector or `Policy` condition must treat `DelegatedFrom` as
-  unauthenticated input requiring its own verification, not as
-  something this task already secures.
+  unauthorized action appear delegated from a trusted agent, or to
+  behaviorally "normalize" a forged delegator through repetition).
+  **Status: `DelegatedFrom` now has a real consumer ([task
+  031](../tasks/031-delegation-behavioral-semantics.md), [ADR
+  0016](adr/0016-delegation-as-behavioral-evidence-not-provenance.md))
+  — behavioral novelty is detected, but provenance verification
+  remains genuinely future work, honestly labeled, not something this
+  task claims to have solved.** `internal/anomaly`'s new
+  `delegation_deviation` signal flags a delegator this actor has never
+  (or rarely, at this bounded scale) received delegation from — proven
+  by `TestAnalyzeDelegationNoveltyDetectedByExistingSignal`. This is
+  behavioral evidence only: **a familiar delegator is not thereby
+  authorized, and an unfamiliar one is not thereby malicious.** A
+  malicious actor that sets `DelegatedFrom = "trusted-agent-A"` and
+  repeats an eligible (non-blocked) action enough times will make that
+  claim read as behaviorally "familiar" — Trustvian has no mechanism to
+  know the claim is false, because nothing in this task (or task 014)
+  authenticates it. `DelegatedFrom` remains exactly as unauthenticated
+  and self-reported as before this task; a future task adding
+  cryptographic/authenticated provenance verification (signed
+  delegation claims, a trusted orchestration layer, identity-provider
+  evidence) is distinct, larger, out-of-scope future work — see ADR
+  0016's own "Future trusted provenance" section.
 - **Approval self-assertion** (an agent's own event claiming
   `ApprovalStatus = Approved` and having that trusted merely because
   the event says so). **Status: `ApprovalStatus` now has a real

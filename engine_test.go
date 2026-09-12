@@ -2136,6 +2136,344 @@ func TestAnalyzeApprovalPolicyGenericNotHardCodedToAIAgent(t *testing.T) {
 	}
 }
 
+// --- Task 031: Delegation Behavioral Semantics ---
+//
+// These tests prove delegation_deviation is behavioral evidence only,
+// never authorization or authenticated provenance: a familiar
+// delegator is not thereby authorized, an unfamiliar one is not
+// thereby malicious, and the signal never touches Fingerprint identity
+// or entangles with approval policy. See
+// docs/adr/0016-delegation-as-behavioral-evidence-not-provenance.md.
+
+// delegationGatedConfig enables DelegationWeight — every other test in
+// this section constructs its own Engine with this Config, mirroring
+// how the task 014/030 sections above construct their own policy
+// fixtures locally rather than sharing a package-level default.
+func delegationGatedConfig() anomaly.Config {
+	cfg := anomaly.DefaultConfig()
+	cfg.DelegationWeight = 0.7
+	return cfg
+}
+
+// TestAnalyzeDelegationNoveltyDetectedByExistingSignal is task 031's
+// own foundation test (§42/§43 of the task brief), mirroring task
+// 014's TestAnalyzeAgentToolNoveltyDetectedByExistingEngine shape: a
+// familiar delegator produces no delegation_deviation; a delegator
+// this actor has never seen does, and reads at least as risky.
+func TestAnalyzeDelegationNoveltyDetectedByExistingSignal(t *testing.T) {
+	ctx := context.Background()
+	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()), trustvian.WithAnomalyConfig(delegationGatedConfig()))
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	step := func() time.Time { now = now.Add(time.Second); return now }
+
+	// agent-b's normal path: delegated from agent-a, repeatedly.
+	for i := range 20 {
+		ev := agentEvent("agent-b", fmt.Sprintf("session-%d", i), "search", step())
+		ev.Context.DelegatedFrom = "agent-a"
+		result, err := engine.Analyze(ctx, ev)
+		if err != nil {
+			t.Fatalf("Analyze error = %v", err)
+		}
+		if _, err := engine.Observe(ctx, result); err != nil {
+			t.Fatalf("Observe error = %v", err)
+		}
+	}
+
+	familiar := agentEvent("agent-b", "session-familiar", "search", step())
+	familiar.Context.DelegatedFrom = "agent-a"
+	familiarResult, err := engine.Analyze(ctx, familiar)
+	if err != nil {
+		t.Fatalf("Analyze(familiar) error = %v", err)
+	}
+	if hasResultSignal(familiarResult, "delegation_deviation") {
+		t.Fatalf("Contributors = %+v, want no delegation_deviation for a delegator observed 20 times", familiarResult.Anomaly.Contributors)
+	}
+
+	novel := agentEvent("agent-b", "session-novel", "search", step())
+	novel.Context.DelegatedFrom = "agent-x"
+	novelResult, err := engine.Analyze(ctx, novel)
+	if err != nil {
+		t.Fatalf("Analyze(novel) error = %v", err)
+	}
+	if !hasResultSignal(novelResult, "delegation_deviation") {
+		t.Fatalf("Contributors = %+v, want delegation_deviation for a never-observed delegator", novelResult.Anomaly.Contributors)
+	}
+	if !novelResult.Trust.Risk.AtLeast(familiarResult.Trust.Risk) {
+		t.Errorf("novel-delegator Risk = %q, familiar-delegator Risk = %q — want the novel delegator at least as risky", novelResult.Trust.Risk, familiarResult.Trust.Risk)
+	}
+
+	// Behavioral evidence only, not an authorization/malice verdict —
+	// this test asserts anomaly evidence and relative risk, never that
+	// either Decision is ALLOW or BLOCK by itself; that remains
+	// Policy's call, proven separately by
+	// TestAnalyzeDelegationApprovalIndependence below.
+}
+
+// TestAnalyzeDelegationScoreBeforeLearn is task 031's mandatory
+// score-before-learn regression (§25/§45 of the task brief): Analyze
+// alone (no Observe) must never make a delegator look familiar on a
+// later call — Engine.Analyze is documented as read-only, and this
+// proves it holds for delegation specifically.
+func TestAnalyzeDelegationScoreBeforeLearn(t *testing.T) {
+	ctx := context.Background()
+	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()), trustvian.WithAnomalyConfig(delegationGatedConfig()))
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	ev := func(id string, ts time.Time) event.Event {
+		e := agentEvent("agent-c", "session-1", "search", ts)
+		e.ID = id
+		e.Context.DelegatedFrom = "agent-x"
+		return e
+	}
+
+	first, err := engine.Analyze(ctx, ev("call-1", now))
+	if err != nil {
+		t.Fatalf("Analyze (1st) error = %v", err)
+	}
+	if !hasResultSignal(first, "delegation_deviation") {
+		t.Fatalf("Contributors = %+v, want delegation_deviation on the first call", first.Anomaly.Contributors)
+	}
+
+	// No Observe call in between — Analyze must not have learned
+	// anything on its own.
+	second, err := engine.Analyze(ctx, ev("call-2", now.Add(time.Second)))
+	if err != nil {
+		t.Fatalf("Analyze (2nd) error = %v", err)
+	}
+	if !hasResultSignal(second, "delegation_deviation") {
+		t.Fatalf("Contributors = %+v, want delegation_deviation still present on the second call — Analyze alone must never learn", second.Anomaly.Contributors)
+	}
+}
+
+// TestAnalyzeDelegationPoisoningIneligibleEventsDoNotTrain is task
+// 031's mandatory poisoning regression (§26/§46 of the task brief):
+// repeated BLOCKed delegation from a never-approved delegator must
+// never become "familiar" through repetition alone — the identical
+// eligibleForLearning gate every other behavioral dimension already
+// obeys.
+func TestAnalyzeDelegationPoisoningIneligibleEventsDoNotTrain(t *testing.T) {
+	ctx := context.Background()
+	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()), trustvian.WithAnomalyConfig(delegationGatedConfig()))
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	step := func() time.Time { now = now.Add(time.Second); return now }
+
+	// Mature this actor's fingerprint first (no delegation involved),
+	// so Anomaly.Confidence is 1 once the attack begins below — cold
+	// start (Confidence 0) would otherwise zero out
+	// delegation_deviation's contribution to Trust via
+	// effectiveAnomaly = Score*Confidence, and the attack would never
+	// reach BLOCK in the first place, defeating the point of this
+	// test.
+	for range 25 {
+		ev := agentEvent("agent-d", "session-warmup", "search", step())
+		result, err := engine.Analyze(ctx, ev)
+		if err != nil {
+			t.Fatalf("Analyze (warm-up) error = %v", err)
+		}
+		if _, err := engine.Observe(ctx, result); err != nil {
+			t.Fatalf("Observe (warm-up) error = %v", err)
+		}
+	}
+
+	var lastResult trustvian.Result
+	for range 30 {
+		ev := agentEvent("agent-d", "session-attack", "search", step())
+		ev.Context.DelegatedFrom = "agent-x"
+		result, err := engine.Analyze(ctx, ev)
+		if err != nil {
+			t.Fatalf("Analyze error = %v", err)
+		}
+		if result.Decision != policy.DecisionBlock {
+			t.Fatalf("Decision = %q, want %q — this test requires every attempt to be learning-ineligible", result.Decision, policy.DecisionBlock)
+		}
+		learned, err := engine.Observe(ctx, result)
+		if err != nil {
+			t.Fatalf("Observe error = %v", err)
+		}
+		if learned {
+			t.Fatalf("Observe() learned = true, want false for a BLOCKed decision")
+		}
+		lastResult = result
+	}
+
+	if !hasResultSignal(lastResult, "delegation_deviation") {
+		t.Fatalf("Contributors = %+v, want delegation_deviation to remain present after 30 repeated, ineligible attempts", lastResult.Anomaly.Contributors)
+	}
+}
+
+// TestAnalyzeDelegationActorIsolation is task 031's mandatory
+// cross-actor regression (§27/§47 of the task brief): agent-e's
+// delegation history from agent-a must not leak into agent-f's own
+// baseline.
+func TestAnalyzeDelegationActorIsolation(t *testing.T) {
+	ctx := context.Background()
+	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()), trustvian.WithAnomalyConfig(delegationGatedConfig()))
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	step := func() time.Time { now = now.Add(time.Second); return now }
+
+	for i := range 20 {
+		ev := agentEvent("agent-e", fmt.Sprintf("session-%d", i), "search", step())
+		ev.Context.DelegatedFrom = "agent-a"
+		result, err := engine.Analyze(ctx, ev)
+		if err != nil {
+			t.Fatalf("Analyze error = %v", err)
+		}
+		if _, err := engine.Observe(ctx, result); err != nil {
+			t.Fatalf("Observe error = %v", err)
+		}
+	}
+
+	// agent-f has never been observed at all — the identical
+	// delegator (agent-a), for agent-f, must still read as novel.
+	other := agentEvent("agent-f", "session-1", "search", step())
+	other.Context.DelegatedFrom = "agent-a"
+	otherResult, err := engine.Analyze(ctx, other)
+	if err != nil {
+		t.Fatalf("Analyze error = %v", err)
+	}
+	if !hasResultSignal(otherResult, "delegation_deviation") {
+		t.Errorf("Contributors = %+v, want delegation_deviation — agent-e's history must not leak into agent-f's baseline", otherResult.Anomaly.Contributors)
+	}
+}
+
+// TestAnalyzeDelegationMissingDelegationUnaffected is task 031's
+// mandatory backward-compatibility regression (§23/§48 of the task
+// brief): an event with no DelegatedFrom at all — the vast majority of
+// v0.1-v0.6 traffic — must produce no delegation_deviation and no
+// Decision change, even with DelegationWeight enabled.
+func TestAnalyzeDelegationMissingDelegationUnaffected(t *testing.T) {
+	ctx := context.Background()
+	withDelegation := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()), trustvian.WithAnomalyConfig(delegationGatedConfig()))
+	withoutDelegation := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy())) // DelegationWeight defaults to 0
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	ev := paymentEventAt(10, "evt-1", now) // no Context.DelegatedFrom
+
+	got, err := withDelegation.Analyze(ctx, ev)
+	if err != nil {
+		t.Fatalf("Analyze error = %v", err)
+	}
+	if hasResultSignal(got, "delegation_deviation") {
+		t.Fatalf("Contributors = %+v, want no delegation_deviation when the event carries no DelegatedFrom", got.Anomaly.Contributors)
+	}
+
+	want, err := withoutDelegation.Analyze(ctx, ev)
+	if err != nil {
+		t.Fatalf("Analyze error = %v", err)
+	}
+	if got.Anomaly.Score != want.Anomaly.Score || got.Decision != want.Decision {
+		t.Errorf("enabling DelegationWeight changed a non-delegated event's result: Score %v->%v, Decision %q->%q", want.Anomaly.Score, got.Anomaly.Score, want.Decision, got.Decision)
+	}
+}
+
+// TestAnalyzeDelegationFingerprintStability proves DelegatedFrom never
+// affects Fingerprint identity through the full engine, with
+// DelegationWeight actually enabled this time (task 014's own
+// TestAnalyzeAgentDelegationContextScoredIdentically predates this
+// signal's existence and runs with the default engine, where
+// DelegationWeight is 0).
+func TestAnalyzeDelegationFingerprintStability(t *testing.T) {
+	ctx := context.Background()
+	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()), trustvian.WithAnomalyConfig(delegationGatedConfig()))
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	withA := agentEvent("agent-g", "session-1", "search", now)
+	withA.Context.DelegatedFrom = "agent-a"
+	resultA, err := engine.Analyze(ctx, withA)
+	if err != nil {
+		t.Fatalf("Analyze error = %v", err)
+	}
+
+	withX := agentEvent("agent-g", "session-1", "search", now)
+	withX.ID += "-x"
+	withX.Context.DelegatedFrom = "agent-x"
+	resultX, err := engine.Analyze(ctx, withX)
+	if err != nil {
+		t.Fatalf("Analyze error = %v", err)
+	}
+
+	if resultA.Fingerprint.ID != resultX.Fingerprint.ID {
+		t.Errorf("Fingerprint.ID differs by DelegatedFrom alone: %q vs %q", resultA.Fingerprint.ID, resultX.Fingerprint.ID)
+	}
+}
+
+// TestAnalyzeDelegationApprovalIndependence is task 031's mandatory
+// orthogonality regression (§29/§49/§30 of the task brief): delegation
+// behavioral evidence and approval policy evidence must not entangle.
+// Case 1: familiar delegation + approval denied -> the approval rule
+// still fires on its own terms, low delegation evidence notwithstanding.
+// Case 2: novel delegation + approval approved -> the approval rule is
+// satisfied (suppressed) on its own terms, elevated delegation evidence
+// notwithstanding.
+func TestAnalyzeDelegationApprovalIndependence(t *testing.T) {
+	ctx := context.Background()
+	// A policy whose only rule is the approval requirement — no
+	// risk-gate fallback — isolates this test to exactly the
+	// interaction it means to prove, uncomplicated by a novel
+	// delegator also tripping some unrelated risk-based rule.
+	approvalOnly := policy.Policy{
+		Rules: []policy.Rule{
+			{
+				Name:   "shell-execute-requires-approval",
+				When:   policy.Condition{OperationCategory: event.OperationCategoryTool, TargetName: "shell.execute"},
+				Unless: &policy.Condition{ApprovalStatus: event.ApprovalApproved},
+				Action: policy.DecisionBlock,
+				Reason: "shell.execute requires approval",
+			},
+		},
+		DefaultAction: policy.DecisionAllow,
+		DefaultReason: "no approval requirement configured",
+	}
+	engine := trustvian.NewEngine(trustvian.WithPolicy(approvalOnly), trustvian.WithAnomalyConfig(delegationGatedConfig()))
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	step := func() time.Time { now = now.Add(time.Second); return now }
+
+	// Train agent-h's familiar delegator, agent-a.
+	for i := range 20 {
+		ev := agentEvent("agent-h", fmt.Sprintf("session-%d", i), "shell.execute", step())
+		ev.Context.DelegatedFrom = "agent-a"
+		ev.Context.ApprovalStatus = event.ApprovalApproved
+		result, err := engine.Analyze(ctx, ev)
+		if err != nil {
+			t.Fatalf("Analyze (warm-up) error = %v", err)
+		}
+		if _, err := engine.Observe(ctx, result); err != nil {
+			t.Fatalf("Observe (warm-up) error = %v", err)
+		}
+	}
+
+	// Case 1: familiar delegation + approval denied.
+	case1 := agentEvent("agent-h", "session-case1", "shell.execute", step())
+	case1.Context.DelegatedFrom = "agent-a"
+	case1.Context.ApprovalStatus = event.ApprovalDenied
+	result1, err := engine.Analyze(ctx, case1)
+	if err != nil {
+		t.Fatalf("Analyze (case 1) error = %v", err)
+	}
+	if hasResultSignal(result1, "delegation_deviation") {
+		t.Errorf("case 1: Contributors = %+v, want no delegation_deviation for a familiar delegator", result1.Anomaly.Contributors)
+	}
+	if result1.Decision != policy.DecisionBlock {
+		t.Errorf("case 1: Decision = %q, want %q — the approval requirement must fire regardless of familiar delegation", result1.Decision, policy.DecisionBlock)
+	}
+
+	// Case 2: novel delegation + approval approved.
+	case2 := agentEvent("agent-h", "session-case2", "shell.execute", step())
+	case2.Context.DelegatedFrom = "agent-x"
+	case2.Context.ApprovalStatus = event.ApprovalApproved
+	result2, err := engine.Analyze(ctx, case2)
+	if err != nil {
+		t.Fatalf("Analyze (case 2) error = %v", err)
+	}
+	if !hasResultSignal(result2, "delegation_deviation") {
+		t.Errorf("case 2: Contributors = %+v, want delegation_deviation for a never-observed delegator", result2.Anomaly.Contributors)
+	}
+	if result2.Decision != policy.DecisionAllow {
+		t.Errorf("case 2: Decision = %q, want %q — the approval requirement must be satisfied regardless of novel delegation", result2.Decision, policy.DecisionAllow)
+	}
+}
+
 func hasResultSignal(result trustvian.Result, name string) bool {
 	for _, c := range result.Anomaly.Contributors {
 		if c.Name == name {

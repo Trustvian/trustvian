@@ -45,6 +45,16 @@ type VolatileFeatures struct {
 	Latency    time.Duration
 	HasLatency bool
 	Error      bool
+
+	// DelegatedFrom is the immediate delegator's Actor.ID for this
+	// event (event.Context.DelegatedFrom), read here rather than into
+	// StableFeatures for the identical reason SessionID/ApprovalStatus
+	// (task 014) stay off Fingerprint identity: who delegated *this
+	// specific event* is a per-event fact, not a stable dimension of
+	// what this actor typically does. "" means this event was not the
+	// result of delegation — see docs/tasks/031-delegation-behavioral-semantics.md
+	// and ADR 0016.
+	DelegatedFrom string
 }
 
 // Features is the result of extracting both stable and volatile signals
@@ -68,10 +78,11 @@ func Extract(e event.Event) Features {
 			Environment:       e.Context.Environment,
 		},
 		Volatile: VolatileFeatures{
-			Timestamp:  e.Timestamp,
-			Latency:    latency,
-			HasLatency: hasLatency,
-			Error:      boolAttr(e.Attributes, AttrError),
+			Timestamp:     e.Timestamp,
+			Latency:       latency,
+			HasLatency:    hasLatency,
+			Error:         boolAttr(e.Attributes, AttrError),
+			DelegatedFrom: e.Context.DelegatedFrom,
 		},
 	}
 }

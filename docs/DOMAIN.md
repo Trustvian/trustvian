@@ -617,9 +617,56 @@ not** — the central design question this task answers explicitly:
   single agent-to-agent delegation hop (Agent A delegates to Agent B:
   B's own `Event` carries `Actor.ID = B`, `DelegatedFrom = A`'s ID). A
   single hop only — no delegation graph, no `DelegationID`, no depth
-  counter; no current consumer needs more than "who asked for this."
-  `TestAnalyzeAgentDelegationContextScoredIdentically` proves it has
-  zero scoring effect today.
+  counter. Never enters `Fingerprint`/`baseline.Key` identity — proven
+  by `TestAnalyzeAgentDelegationContextScoredIdentically` (task 014)
+  and `TestAnalyzeDelegationFingerprintStability`/
+  `TestScoreDelegationDeviationDoesNotAffectFingerprintOrStable`
+  (task 031).
+
+  **`v0.7` task 031 gave it its first real consumer:**
+  `features.VolatileFeatures.DelegatedFrom` (read from
+  `Context.DelegatedFrom` in `Extract`, never into `StableFeatures`)
+  feeds `baseline.Baseline.DelegatorCounts` — a bounded map (64
+  distinct delegators, `maxDelegators`), scoped to the *actor*
+  receiving the delegation, not to any one operation it performs
+  (`Baseline`-level state, like `LastFingerprintID`, not
+  `FingerprintStats`-level state, like `PredecessorCounts`) — and a
+  new opt-in anomaly signal, `delegation_deviation`
+  (`Config.DelegationWeight`, defaults to `0`): binary seen/unseen,
+  mirroring `transition_deviation`'s exact shape, deliberately not a
+  rarity/probability estimate. See [docs/policy-guide.md](policy-guide.md)
+  for `ApprovalStatus`'s own analogous consumer and [ADR
+  0016](adr/0016-delegation-as-behavioral-evidence-not-provenance.md)
+  for the full design.
+
+  **Orientation, stated precisely:** the learned relationship is "for
+  the current actor (the delegatee), how familiar is this delegator?"
+  — never "for this delegator, which actors does it typically delegate
+  to." `Actor.ID` is the actor's own behavioral identity, as always;
+  `DelegatedFrom` is contextual provenance about one specific event,
+  never itself a second identity dimension.
+
+  **Cold start:** a brand-new actor's first delegation observation
+  still evaluates `delegation_deviation` (maximal novelty, since no
+  delegator has ever been seen) — cold start is handled the same way
+  every other signal in this module handles it, through the overall
+  `Anomaly.Confidence` this actor's own `Fingerprint` maturity drives,
+  not by a dedicated minimum-support gate on this signal (which,
+  unlike `transition_rarity`, does not have one — see ADR 0016 for why
+  a binary seen/unseen signal doesn't need it).
+
+  **Familiar is not authorized; unfamiliar is not malicious.**
+  `delegation_deviation` is behavioral evidence only — "is this
+  unusual for this actor?" — never an authorization or provenance
+  judgment. `DelegatedFrom` remains exactly as unauthenticated,
+  self-reported input after task 031 as it was after task 014; nothing
+  in this task verifies who actually delegated an event. See
+  [docs/SECURITY.md § AI Agent behavioral security](SECURITY.md) for
+  the full trust-boundary writeup, and
+  [ApprovalStatus's own entry](#ai-agent-behavioral-context) above for
+  the parallel case task 030 already established — the two evidence
+  types are proven independent by
+  `TestAnalyzeDelegationApprovalIndependence`.
 - **`ApprovalStatus`** (`event.ApprovalStatus`: `ApprovalUnspecified`
   (zero value) / `NotRequired` / `Required` (a requirement flagged
   with no decision recorded yet — functionally *pending*) / `Approved`

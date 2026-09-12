@@ -2,6 +2,7 @@ package trustvian_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -188,6 +189,101 @@ func BenchmarkEngineAnalyzeFullBehavioral(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		if _, err := engine.Analyze(ctx, paymentEventAt(10, "steady-state", steadyStateTS)); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkEngineAnalyzeDelegationAbsent measures the same steady-state
+// pipeline as BenchmarkEngineAnalyze, but with task 031's
+// delegation_deviation signal enabled (DelegationWeight > 0) against
+// events that never carry Context.DelegatedFrom — the common,
+// non-agent case. Compare against BenchmarkEngineAnalyze to confirm
+// enabling the weight costs nothing when no event ever exercises the
+// signal: delegationSignal is gated on feat.Volatile.DelegatedFrom !=
+// "" before it is even called (see anomaly.Score), so this measures
+// only that gate check's own (expected-zero) cost.
+func BenchmarkEngineAnalyzeDelegationAbsent(b *testing.B) {
+	cfg := anomaly.DefaultConfig()
+	cfg.DelegationWeight = 0.7
+	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()), trustvian.WithAnomalyConfig(cfg))
+	ctx := context.Background()
+
+	lastWarmUp := warmUpEngine(b, engine, ctx)
+	steadyStateTS := lastWarmUp.Add(time.Second)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := engine.Analyze(ctx, paymentEventAt(10, "steady-state", steadyStateTS)); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// warmUpEngineWithDelegator mirrors warmUpEngine's exact shape and
+// rationale (a fixed, one-second cadence, not time.Now(), to avoid a
+// spurious frequency_deviation reading), but for AI-agent tool-call
+// events that consistently carry the same delegator — the fixture
+// task 031's own familiar/novel delegation benchmarks both build on.
+func warmUpEngineWithDelegator(b *testing.B, engine *trustvian.Engine, ctx context.Context, delegator string) time.Time {
+	b.Helper()
+	clock := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := range 30 {
+		clock = clock.Add(time.Second)
+		ev := agentEvent("agent-b", fmt.Sprintf("session-%d", i), "search", clock)
+		ev.Context.DelegatedFrom = delegator
+		result, err := engine.Analyze(ctx, ev)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if _, err := engine.Observe(ctx, result); err != nil {
+			b.Fatal(err)
+		}
+	}
+	return clock
+}
+
+// BenchmarkEngineAnalyzeDelegationFamiliar measures the same
+// steady-state pipeline with delegation_deviation enabled, against a
+// delegator this actor has seen 30 times already — the common,
+// "nothing is wrong" case for a genuinely agentic workload.
+func BenchmarkEngineAnalyzeDelegationFamiliar(b *testing.B) {
+	cfg := anomaly.DefaultConfig()
+	cfg.DelegationWeight = 0.7
+	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()), trustvian.WithAnomalyConfig(cfg))
+	ctx := context.Background()
+
+	lastWarmUp := warmUpEngineWithDelegator(b, engine, ctx, "agent-a")
+	steadyStateTS := lastWarmUp.Add(time.Second)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		ev := agentEvent("agent-b", "session-steady-state", "search", steadyStateTS)
+		ev.Context.DelegatedFrom = "agent-a"
+		if _, err := engine.Analyze(ctx, ev); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkEngineAnalyzeDelegationNovel measures the same steady-state
+// pipeline with delegation_deviation enabled, against a delegator this
+// actor has never seen — the worst case, where delegationSignal's
+// Detail string is actually formatted on every call.
+func BenchmarkEngineAnalyzeDelegationNovel(b *testing.B) {
+	cfg := anomaly.DefaultConfig()
+	cfg.DelegationWeight = 0.7
+	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()), trustvian.WithAnomalyConfig(cfg))
+	ctx := context.Background()
+
+	lastWarmUp := warmUpEngineWithDelegator(b, engine, ctx, "agent-a")
+	steadyStateTS := lastWarmUp.Add(time.Second)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		ev := agentEvent("agent-b", "session-steady-state", "search", steadyStateTS)
+		ev.Context.DelegatedFrom = "agent-x" // never observed for agent-b
+		if _, err := engine.Analyze(ctx, ev); err != nil {
 			b.Fatal(err)
 		}
 	}

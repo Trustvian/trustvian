@@ -93,7 +93,17 @@ are additive `Event`/`Context` fields, not a parallel `AgentEngine`,
 identical `internal/anomaly` signals (including every `v0.6` sequence
 signal) any other actor's operation sequence would be — proven, not
 merely asserted, by `TestAnalyzeAgentToolSequenceNoveltyDetectedByExistingEngine`
-in [`engine_test.go`](../engine_test.go).
+in [`engine_test.go`](../engine_test.go). Task
+[030](tasks/030-approval-aware-policy-semantics.md) and
+[031](tasks/031-delegation-behavioral-semantics.md) hold the identical
+line: approval-aware policy is one more `policy.Condition` field, and
+delegation novelty is one more bounded map on `Baseline`
+(`DelegatorCounts`, alongside `PredecessorCounts`/`TrigramCounts`) and
+one more opt-in `internal/anomaly` signal — never a second
+engine, a `DelegationGraph`, or an `ApprovalPolicyEngine`. See [ADR
+0015](adr/0015-approval-as-policy-evidence-not-behavioral-anomaly.md)
+and [ADR
+0016](adr/0016-delegation-as-behavioral-evidence-not-provenance.md).
 
 Every stage but `Baseline` is a pure function. `Baseline` is
 immutable-value-with-copy-on-write: `Baseline.Observe(...)` never

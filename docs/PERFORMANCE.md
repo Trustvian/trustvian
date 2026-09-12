@@ -713,6 +713,39 @@ granularity), but remain in the same low-allocation range every other
 adding one more `string` field to an existing struct literal, not a
 new code path.
 
+### v0.7 task 031 (Delegation Behavioral Semantics)
+
+Measured same environment (Go 1.27, darwin/arm64, Apple M3 Pro).
+
+| Benchmark | Result |
+|---|---:|
+| `BenchmarkEngineAnalyze` (root, before) | 456 B/op, 17 allocs/op |
+| `BenchmarkEngineAnalyzeDelegationAbsent` (`DelegationWeight` enabled, no event carries `DelegatedFrom`) | 456 B/op, 17 allocs/op — unchanged |
+| `BenchmarkEngineAnalyzeDelegationFamiliar` (`DelegatedFrom` set, seen 30 times) | 200 B/op, 17 allocs/op |
+| `BenchmarkEngineAnalyzeDelegationNovel` (`DelegatedFrom` set, never seen) | 328 B/op, 20 allocs/op |
+
+**Zero cost when unused, confirmed by the matched pair.**
+`BenchmarkEngineAnalyzeDelegationAbsent`'s `456 B/op, 17 allocs/op`
+matches `BenchmarkEngineAnalyze` exactly: `delegationSignal` is gated
+on `feat.Volatile.DelegatedFrom != ""` before it is ever called (see
+`anomaly.Score`), so an event that never carries a delegator pays
+nothing beyond the one string-empty check, identical in shape to every
+prior opt-in signal's own "computed only when the input exists" gate.
+The Familiar/Novel numbers differ from `BenchmarkEngineAnalyzeDelegationAbsent`
+because they additionally exercise `agentEvent`'s own construction path
+(`AI Agent` events carry `Target`, `Context.SessionID`, etc.,
+distinctly from `paymentEventAt`'s fixture) and, for the Novel case,
+`delegationSignal`'s `Detail` string formatting (`fmt.Sprintf`) on
+every call — the identical "Detail only formatted when the signal
+actually fires" cost every other signal in `internal/anomaly` already
+pays (see `latencySignal`'s own doc comment). Neither number reflects
+a `DelegatorCounts` map-copy cost on the read (`anomaly.Score`) path,
+since scoring only ever reads the map; the copy-on-write cost lives
+entirely in `Baseline.Observe` (the write path), structurally identical
+to `recordPredecessor`'s already-measured cost
+(`BenchmarkObserveTransition`) — no dedicated new
+`internal/baseline` benchmark was added for this reason.
+
 ## Reading the numbers
 
 **Session-to-session `ns/op` moved broadly; allocation counts didn't —
