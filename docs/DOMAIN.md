@@ -621,12 +621,20 @@ not** — the central design question this task answers explicitly:
   `TestAnalyzeAgentDelegationContextScoredIdentically` proves it has
   zero scoring effect today.
 - **`ApprovalStatus`** (`event.ApprovalStatus`: `ApprovalUnspecified`
-  (zero value) / `NotRequired` / `Required` / `Approved` / `Denied`)
-  records a per-event fact, not a workflow state — Trustvian does not
-  manage an approval process. Follows `OperationDirection`'s own
-  existing precedent exactly: a typed, optional field, not yet read by
-  `features.Extract`, reserved for a future signal or `Policy`
-  condition to consume once one has a concrete design.
+  (zero value) / `NotRequired` / `Required` (a requirement flagged
+  with no decision recorded yet — functionally *pending*) / `Approved`
+  / `Denied`) records a per-event fact, not a workflow state —
+  Trustvian does not manage an approval process. Follows
+  `OperationDirection`'s own existing precedent exactly: a typed,
+  optional field, not yet read by `features.Extract` or by
+  `policy.Condition` (which currently matches only
+  `Event.Attributes`, not `Event.Context` — there is no way to write
+  a `Policy` rule against approval state today), reserved for a future
+  signal or `Policy` condition to consume once one has a concrete
+  design. **Untrusted input**: a producer's own event asserting
+  `Approved` is not verified against any authorization system — see
+  [docs/SECURITY.md § AI Agent behavioral security](SECURITY.md)'s
+  "Approval self-assertion" entry.
 - **Agent identity is `Actor.ID`, never model/provider metadata.** A
   model name (`"gpt-5"`) is not behavioral identity — two agents built
   on the same model are different actors; the same agent migrating

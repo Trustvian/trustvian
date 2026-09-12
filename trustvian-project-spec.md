@@ -1412,11 +1412,11 @@ v0.3  Baseline & Anomaly Depth          SHIPPED
         ↓
 v0.4  Alert & Notification Foundation   SHIPPED (v0.4.0)
         ↓
-v0.5  Policy & Configuration            NEXT — planned, not implemented
+v0.5  Policy & Configuration            SHIPPED (v0.5.0)
         ↓
-v0.6  Behavioral Detection Depth        PLANNED
+v0.6  Behavioral Detection Depth        SHIPPED (v0.6.0)
         ↓
-v0.7  AI Agent Behavioral Security      PLANNED
+v0.7  AI Agent Behavioral Security      IN PROGRESS (foundation task 014 done)
         ↓
 v0.8  Production Runtime & Storage      PLANNED
         ↓
@@ -1452,10 +1452,13 @@ Why each step exists, not merely what it contains:
   behavioral-security product needs before `v1.0`, not because
   anything else structurally depends on it first.
 - **`v0.7`** exists because AI agents are already a first-class actor
-  type but lack two correlation dimensions (session, delegation) that
-  a real agent deployment needs — and because this is where this
-  document repeatedly insists the boundary matters most: reuse the
-  existing engine, never build a second one.
+  type but lacked three correlation dimensions (session, delegation,
+  approval) that a real agent deployment needs — and because this is
+  where this document repeatedly insists the boundary matters most:
+  reuse the existing engine, never build a second one. Task 014 closed
+  that representational gap; further `v0.7` slices (approval-aware
+  policy semantics, delegation behavioral semantics) are scoped, not
+  yet implemented — see `docs/ROADMAP.md` § v0.7.
 - **`v0.8`–`v0.9`** exist because a complete OSS product is not just a
   correct algorithm — it is something an operator can actually run,
   persist state for, upgrade, and trust operationally.

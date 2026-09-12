@@ -13,6 +13,27 @@ actually depend on.
 > each slice lands. This section is renamed to the milestone's actual
 > version heading only once a real tag exists — never before.
 
+### Added
+
+- **AI Agent Event/Context Foundation**
+  ([task 014](docs/tasks/014-ai-agent.md)) — `event.Context` gains
+  three optional fields: `SessionID` (session/conversation grouping),
+  `DelegatedFrom` (single-hop agent-to-agent delegation), and
+  `ApprovalStatus` (a new exported enum type — `ApprovalUnspecified`
+  (zero value) / `ApprovalNotRequired` / `ApprovalRequired` /
+  `ApprovalApproved` / `ApprovalDenied` — recording a per-event
+  human-approval fact, not a workflow state). None of the three affect
+  `Fingerprint`/`baseline.Key` identity — proven, not just asserted,
+  by a test that runs 1,000 distinct `SessionID` values through the
+  real engine and confirms exactly one `Fingerprint` accumulates all
+  1,000 observations. The task also proves `v0.6`'s existing bounded
+  3-gram signal (`ngram_deviation`) already detects AI-agent
+  tool-sequence novelty with zero new detector code. No new package,
+  no new dependency, no agent-specific `Fingerprint`/`Baseline`/
+  `Anomaly` type. Existing `v0.1`–`v0.6` callers are unaffected:
+  `BenchmarkEngineAnalyze`'s allocation profile is unchanged. See [ADR
+  0014](docs/adr/0014-ai-agents-as-first-class-behavioral-actors.md).
+
 ## v0.6.0 — Behavioral Detection Depth
 
 Adds sequence-aware behavioral detection on top of `v0.5`'s

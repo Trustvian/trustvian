@@ -867,6 +867,21 @@ the AI-agent case specifically; a few are explicitly future work.
   detector or `Policy` condition must treat `DelegatedFrom` as
   unauthenticated input requiring its own verification, not as
   something this task already secures.
+- **Approval self-assertion** (an agent's own event claiming
+  `ApprovalStatus = Approved` and having that trusted merely because
+  the event says so). **Status: recorded, not yet defended — future
+  work, honestly labeled, same shape as delegation abuse above.**
+  `ApprovalStatus` is presently an unauthenticated, self-reported
+  field with zero scoring or policy effect — nothing reads it today
+  (not `features.Extract`, not `policy.Condition`), so nothing can be
+  bypassed by a forged value *today*, but nothing verifies it either.
+  A future approval-aware `Policy` condition (see [ROADMAP.md §
+  v0.7](../ROADMAP.md#v07--ai-agent-behavioral-security)'s task 030)
+  must treat `ApprovalStatus` the same way `DelegatedFrom` is already
+  treated above: an AI agent must never be able to self-assert
+  `Approved` and thereby bypass a policy that requires it, absent
+  evidence from a trusted upstream authorization source Trustvian
+  itself did not compute.
 - **Tool abuse (unexpected/rare tool usage).** **Status: implemented,
   via existing signals.** `categorical_novelty` and
   `transition_deviation`/`transition_rarity` already flag a tool an

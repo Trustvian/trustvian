@@ -162,6 +162,36 @@ or a `Policy` condition, once one has a concrete design — building that
 consumer speculatively, in this task, would be exactly the workflow
 engine the brief explicitly says not to build.
 
+The five values collapse "was approval required" and "what was the
+outcome" into one linear state (`ApprovalUnspecified` — not recorded;
+`ApprovalNotRequired` — no requirement; `ApprovalRequired` —
+requirement flagged, no decision recorded yet, i.e. functionally
+*pending*; `ApprovalApproved`/`ApprovalDenied` — a decision was
+recorded) rather than two orthogonal fields. This is deliberate, not
+an oversight: every concrete use this task identified needs "what is
+the current state of approval for this event," never "was approval
+ever required, independent of the eventual outcome" as a separate
+question — a second boolean would be a speculative dimension with no
+reader, the exact thing this codebase's conventions say not to add.
+
+**Trust boundary — approval context is untrusted input, like
+`DelegatedFrom`.** `ApprovalStatus` is self-reported by whatever
+produced the `Event` — an AI agent's own event can claim
+`ApprovalApproved`, and Trustvian records that claim without
+verifying it against any authorization system. This task adds no
+consumer of `ApprovalStatus`, so there is nothing to bypass today; but
+a *future* task that adds an approval-aware `Policy` condition (see
+`docs/ROADMAP.md § v0.7`'s task 030) must not treat
+`ApprovalStatus = Approved` as automatically trustworthy — doing so
+would let an agent self-assert its way past a policy that requires
+approval, defeating the requirement's entire purpose. Evidence must
+come from a trusted upstream source Trustvian itself did not compute,
+the identical principle `.claude/rules/security.md` § "Identity is an
+input, not a computation" already applies to `IdentityConfidence`,
+extended here to approval state. See `docs/SECURITY.md § AI Agent
+behavioral security`'s "Approval self-assertion" entry for the full
+threat writeup.
+
 ## Delegation: one hop, no graph
 
 `DelegatedFrom` carries the immediate parent `Actor.ID` for a single

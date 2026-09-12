@@ -1170,16 +1170,53 @@ duplicated.
 
 **What's next (illustrative, unscoped — none of this is implemented
 or task-filed yet).** Task 014 is a foundation slice, not the whole
-milestone. Further `v0.7` work would continue from task **030**
-onward (**015** and **016** stay reserved for MCP and Control
-respectively, per the project's existing task-numbering scheme — they
-are not reusable for further agent-detection slices): a task to prove
-`ApprovalStatus`/`DelegatedFrom` against a concrete scenario once one
-exists (rather than only the context-independence tests task 014
-already wrote), and a `v0.7` stabilization/release-gate task mirroring
-[024](tasks/024-v05-release-gate.md)/[029](tasks/029-v06-stabilization-release-gate.md)'s
-shape. Each remains its own explicitly-scoped task file, written when
-that slice actually starts — not speculatively now.
+milestone. Further `v0.7` work continues from task **030** onward
+(**015** and **016** stay reserved for MCP and Control respectively,
+per the project's existing task-numbering scheme — not reusable for
+further agent-detection slices):
+
+- **030 — Approval-Aware Policy Semantics.** `ApprovalStatus` is
+  currently read by nothing — not `features.Extract`, and not
+  `policy.Condition` either: `policy.Input.Attributes` is populated
+  from `Event.Attributes`, not `Event.Context`, so a `Policy` cannot
+  today condition on approval state at all. The design question this
+  task must answer first: *how does Trustvian evaluate an approval
+  requirement deterministically, without becoming an approval
+  workflow engine?* This is `policy` territory (deterministic
+  authorization: "not allowed without approval"), not `anomaly`
+  territory ("unusual compared to history") — the two must stay
+  distinct. Concrete scope is no larger than: give `Policy` a way to
+  condition on `Context.ApprovalStatus` (most likely extending
+  `policy.Input`/`Condition`, not adding a new pipeline stage), and
+  document explicitly that `ApprovalStatus` is unauthenticated,
+  self-reported input — an agent asserting `Approved` must not be
+  trusted as if a real authorization system vouched for it, absent a
+  concrete trusted source. Non-goals: approval UI, approval request
+  workflow, approval persistence, human-notification workflow, OAuth
+  consent, an RBAC/IAM replacement, agent orchestration — Trustvian
+  consumes approval evidence, it does not grant approval.
+- **031 — Delegation Behavioral Semantics.** Design question: *is the
+  current delegation provenance consistent with learned/allowed
+  behavior?* Smallest meaningful slice: detecting an unexpected
+  immediate delegator for a given actor — not a full delegation graph,
+  not multi-hop chain analytics, not depth-escalation scoring. Must
+  document `DelegatedFrom` as unauthenticated, self-reported input
+  (already noted in `docs/SECURITY.md § AI Agent behavioral security`)
+  before any detector treats it as a trust signal.
+- **032 — Agent Security Scenario Validation.** Validates the combined
+  system (030 + 031 + existing `v0.6` signals) against realistic
+  scenarios — unexpected privileged tool use, a sensitive
+  read-then-exfiltrate sequence, an approval violation, an unexpected
+  delegator, external-destination drift — preferring combinations of
+  existing signals/policy conditions over one bespoke detector per
+  scenario.
+- **033 — v0.7 Stabilization & Release Gate.** Mirrors
+  [024](tasks/024-v05-release-gate.md)/[029](tasks/029-v06-stabilization-release-gate.md)'s
+  shape: re-audit 014/030/031/032 against source, confirm no
+  regression, confirm documentation currency, before `v0.7.0` tags.
+
+Each remains its own explicitly-scoped task file, written when that
+slice actually starts — not speculatively now.
 
 ## v0.8 — Production Runtime & Storage
 
