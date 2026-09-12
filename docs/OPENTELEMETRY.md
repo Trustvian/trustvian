@@ -205,6 +205,34 @@ this lives in a separate module at all, and
 [`tasks/009-otel-collector.md`](tasks/009-otel-collector.md) for the
 task this closes.
 
+## Potential AI-agent (GenAI) mappings — documented, not implemented
+
+`v0.7` ([task 014](tasks/014-ai-agent.md)) added `event.Context.SessionID`/
+`DelegatedFrom`/`ApprovalStatus`. OpenTelemetry's own GenAI semantic
+conventions (`gen_ai.*` span/event attributes — covering conversation
+IDs, agent names, and tool-call spans) are, as of this writing, still
+marked experimental/evolving upstream. `internal/otel.EventFromSpan`
+does **not** read any `gen_ai.*` attribute today, and this task did not
+add that mapping — hard-coding an unstable external convention into
+this module's adapter would risk a breaking upstream rename reaching
+into Trustvian's own `Event` semantics for no current consumer need.
+
+Documented here as *potential* future adapter work, not a commitment or
+an implemented behavior:
+
+| OTel GenAI attribute (illustrative, unstable) | Potential Trustvian mapping |
+|---|---|
+| `gen_ai.conversation.id` | `Context.SessionID` |
+| A span representing one delegated call between agents | `Context.DelegatedFrom` = the calling agent's identity |
+| `gen_ai.tool.name` | `Operation.Name` (already representable via the existing `Operation`/`Target` mapping this document describes above — no new mapping rule needed) |
+
+If and when a future task adopts a stabilized GenAI convention, the
+change belongs entirely in `internal/otel` (or a dedicated adapter),
+exactly like every other mapping this document describes — never in
+`event`, `internal/features`, or any other core package, preserving
+the "OTel is an adapter, never a dependency of the core" boundary
+[`docs/ARCHITECTURE.md`](ARCHITECTURE.md) already establishes.
+
 ## Best-effort, not validated
 
 `EventFromSpan` never fabricates data it doesn't have. A span with no

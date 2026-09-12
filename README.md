@@ -47,8 +47,8 @@ Alerts](#configuring-alerts) below and [ADR
 0009](docs/adr/0009-alert-config-is-a-separate-document.md)). See
 [Configuring a Policy](#configuring-a-policy) below.
 
-**`v0.6` — Behavioral Detection Depth is in progress.** Its first four
-tasks are done: [Sequence Analysis
+**`v0.6.0` — Behavioral Detection Depth is shipped.** All four of its
+feature tasks (plus a stabilization pass) are done: [Sequence Analysis
 Foundation](docs/tasks/025-sequence-analysis-foundation.md) added a
 new, opt-in `transition_deviation` anomaly signal that answers whether
 the immediately preceding action has ever led to this one before, for
@@ -92,17 +92,41 @@ smoothing, or a Markov treatment merged with the 3-gram context above)
 remains unscoped future work — see
 [`docs/ROADMAP.md` § v0.6](docs/ROADMAP.md#v06--behavioral-detection-depth).
 
+**`v0.7` — AI Agent Behavioral Security is now in progress.** Its
+foundation task, [AI Agent Event/Context
+Foundation](docs/tasks/014-ai-agent.md), is done: AI agents are
+behavioral actors analyzed by the same engine above, not a second
+security engine. `event.Context` gained three optional fields —
+`SessionID`, `DelegatedFrom`, and `ApprovalStatus` — for session
+grouping, single-hop agent-to-agent delegation, and a recorded
+human-approval fact, respectively; none of the three enter
+`Fingerprint`/baseline identity, proven (not just asserted) by a test
+that runs 1000 distinct `SessionID`s with identical behavior through
+the real engine and confirms exactly one `Fingerprint` accumulates all
+1000 observations. The task also proved `v0.6`'s existing bounded
+3-gram signal already detects agent tool-sequence novelty — training
+`search → secret.read` and `secret.read → external.post` as
+independently familiar, then confirming
+`search → secret.read → external.post` still gets flagged as
+anomalous — with zero agent-specific detection code. See [ADR
+0014](docs/adr/0014-ai-agents-as-first-class-behavioral-actors.md) and
+[`docs/ROADMAP.md` §
+v0.7](docs/ROADMAP.md#v07--ai-agent-behavioral-security) for the full
+domain-model reasoning and current state.
+
 **Trustvian OSS is meant to be a complete, standalone,
 production-usable behavioral security product on its own** — detect,
 score, decide, alert, integrate, and run, all without Trustvian
-Control. Not yet built, on the path there: n-gram/Markov sequence
-scoring beyond the single-step foundation above, delivery reliability
-(retry/deduplication/cooldown) and any provider-specific alert sink
-(Slack/Teams/PagerDuty) — declarative *alert* configuration itself is
+Control. Not yet built, on the path there: arbitrary-length n-gram/full
+Markov sequence scoring beyond the bounded foundation above, delivery
+reliability (retry/deduplication/cooldown) and any provider-specific
+alert sink (Slack/Teams/PagerDuty) — declarative *alert* configuration
+itself is
 now implemented (see above); wiring it into the CLI or the Collector
 processor is deliberately deferred, since neither has an alert-delivery
-flow yet for it to plug into — AI-agent session/delegation concepts, a
-production-grade persistent store beyond `FileStore`, and
+flow yet for it to plug into — further AI-agent behavioral-detection
+scenarios beyond the foundation task above, a production-grade
+persistent store beyond `FileStore`, and
 release/operational engineering (CI, Docker image, SBOM). See
 [`docs/ROADMAP.md`](docs/ROADMAP.md#the-oss--enterprise-product-boundary)
 for the explicit OSS/Control boundary and the full milestone sequence

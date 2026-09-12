@@ -8,15 +8,19 @@ actually depend on.
 
 ## Unreleased
 
-> This repository's convention through `v0.5.0` was one heading per
-> actual, published tag, with no interim `Unreleased` section — a
-> milestone's full entry was written once, when it shipped. `v0.6` is
-> the first milestone expected to span more real development time
-> across multiple slices before it tags, so entries accumulate here as
-> each slice lands, rather than being reconstructed retroactively at
-> release time. This section is renamed to `## v0.6.0 — Behavioral
-> Detection Depth` (or whatever version the milestone actually ships
-> as) only once a real tag exists — never before.
+> Same convention `v0.6`'s own entry established: `v0.7` is expected to
+> span multiple slices before it tags, so entries accumulate here as
+> each slice lands. This section is renamed to the milestone's actual
+> version heading only once a real tag exists — never before.
+
+## v0.6.0 — Behavioral Detection Depth
+
+Adds sequence-aware behavioral detection on top of `v0.5`'s
+configuration boundary: pairwise transition novelty and rarity,
+bounded 3-gram (higher-order) detection, and a first-order Markov
+severity curve over the same transition evidence — four vertical
+slices plus a stabilization pass, all opt-in and byte-for-byte
+compatible with `v0.5.0` by default.
 
 ### Added
 

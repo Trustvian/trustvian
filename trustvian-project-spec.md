@@ -555,42 +555,60 @@ Anomaly
 
 ## 16. AI-Agent Roadmap
 
-**Scoped, not yet implemented:** [`docs/ROADMAP.md` §
+**`v0.7` — AI Agent Behavioral Security is in progress; its foundation
+task is done:** [`docs/ROADMAP.md` §
 v0.7](docs/ROADMAP.md#v07--ai-agent-behavioral-security)
 ([task 014](docs/tasks/014-ai-agent.md)) is the pre-`v1.0` OSS
-milestone for this. Agent identity, tool calls, external
-destinations/file/database/secret access, and human approval are
-already representable today through the generic `Event`/`Actor`/
-`Target` model (`ActorTypeAIAgent`, `OperationCategoryTool`,
-`TargetCategoryExternal`/`Database`, `REQUIRE_APPROVAL`); `v0.7` adds
-only the two genuinely missing correlation dimensions — session and
-delegation — as optional `Event` fields. Tool-*sequence* analysis is
-explicitly not this milestone's job; it belongs to
-[§ v0.6 — Behavioral Detection
-Depth](docs/ROADMAP.md#v06--behavioral-detection-depth)'s sequence
-signal, applied to an agent's tool-call sequence like any other actor's
-operation sequence. No second, agent-specific security engine is
-introduced by any of this — agents remain "another behavioral source"
-through the same pipeline:
+milestone for this. **AI agents are behavioral actors analyzed by the
+same Trustvian engine** — not a second product, not a second security
+engine. Agent identity, tool calls, external
+destinations/file/database/secret access, and human approval were
+already representable through the generic `Event`/`Actor`/`Target`
+model (`ActorTypeAIAgent`, `OperationCategoryTool`,
+`TargetCategoryExternal`/`Database`); task 014 added the genuinely
+missing correlation dimensions as optional `Context` fields —
+`SessionID` (session/conversation grouping), `DelegatedFrom`
+(single-hop agent-to-agent delegation), and `ApprovalStatus` (a
+recorded human-approval fact, not a workflow engine) — and proved,
+with integration tests through the real engine, that tool-*sequence*
+analysis needs no agent-specific algorithm: [§ v0.6 — Behavioral
+Detection Depth](docs/ROADMAP.md#v06--behavioral-detection-depth)'s
+existing bounded 3-gram signal already detects a novel tool sequence
+(e.g. a sensitive read immediately followed by an external post) even
+when both individual steps are independently familiar. Agents remain
+"another behavioral source" through the same pipeline:
 
 ```text
 Event → Features → Fingerprint → Baseline → Anomaly → Trust → Policy → Decision
 ```
 
-Trustvian should understand:
+A field affects `Fingerprint`/behavioral identity only if it describes
+*what the actor typically does* — session, delegation, and approval
+context describe one specific event, not a stable behavioral
+dimension, so none of them enter `Fingerprint` identity (see
+[ADR 0014](docs/adr/0014-ai-agents-as-first-class-behavioral-actors.md)
+for the full reasoning and the cardinality proof this distinction
+protects against).
 
-- Agent identity
-- Agent sessions
-- Tool calls
-- Tool sequences
-- External calls
-- File access
-- Database access
-- Secrets access
-- Human approval
-- Agent-to-agent communication
-- Delegation
-- Agent behavioral baselines
+Trustvian understands, as of task 014:
+
+- Agent identity (`Actor.ID` — distinct from model/provider metadata,
+  which is not behavioral identity and carries no dedicated field)
+- Agent sessions (`Context.SessionID`, context-only)
+- Tool calls (`Operation`/`Target`, reused as-is)
+- Tool sequences (`v0.6`'s existing sequence signals, proven to
+  generalize with zero new code)
+- External calls, file access, database access, secrets access
+  (`Target.Category`, `Config.SensitiveTargetFloor`, reused as-is)
+- Human approval (`Context.ApprovalStatus`, a recorded fact)
+- Agent-to-agent communication and delegation (`Context.DelegatedFrom`,
+  a single hop)
+
+Not yet built, and not this task's job: agent behavioral *detection
+scenarios* beyond proving reuse of existing signals (a later, unscoped
+`v0.7` slice), a delegation graph, and any declarative
+(YAML/CLI/Collector) configuration surface for agent-specific
+behavior (none was needed — no new detector weight was added).
 
 **MCP.** Trustvian's read/query surface may eventually be exposed to AI
 agents and developer tooling via MCP

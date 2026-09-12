@@ -646,6 +646,40 @@ tasks 025–028's own sections above. Not optimized away; reported here
 in full, per this codebase's "report as found" discipline, exactly as
 every prior task's own PERFORMANCE.md entry already does.
 
+### v0.7 task 014 (AI Agent Event/Context Foundation)
+
+Measured same environment (Go 1.27, darwin/arm64, Apple M3 Pro). This
+task adds three optional `event.Context` fields (`SessionID`,
+`DelegatedFrom`, `ApprovalStatus`) and reads none of them in
+`features.Extract` — so, unlike every `v0.6` signal (each of which
+*does* run unconditionally on the hot path once its gate condition is
+met), this task's own fields impose no cost at all when unset, and no
+new cost at any weight/configuration, because nothing in the pipeline
+reads them yet:
+
+| Benchmark | Before (v0.6, unaffected) | After (task 014) |
+|---|---:|---:|
+| `BenchmarkExtract` (`internal/features`) | 18.02–18.80 ns/op, 0 B/op, 0 allocs | 18.80 ns/op, 0 B/op, 0 allocs — unchanged |
+| `BenchmarkCompute` (`internal/fingerprint`) | 170.1–180.1 ns/op, 120 B/op, 15 allocs | 170.6 ns/op, 120 B/op, 15 allocs — unchanged |
+
+**Byte-for-byte identical allocation profile, confirmed, not
+assumed.** `features.Extract` never reads `Context.SessionID`/
+`DelegatedFrom`/`ApprovalStatus` — the three new fields are plain
+strings/one small string-enum sitting on the `Event` value the caller
+already constructed, costing nothing extra to *not* read. This is a
+structurally different situation from every `v0.6` signal's own
+"always compute regardless of weight" cost (see the sections above):
+those signals *do* run and *do* cost real, measured nanoseconds once
+their gate condition is met, by deliberate design, for explainability.
+This task's fields aren't consumed by any signal yet at all — there is
+nothing to gate.
+`BenchmarkEngineAnalyze` itself was not re-measured for this task
+specifically, since no code on that path changed (`Event`'s new fields
+are additive struct fields Go's compiler lays out at zero marginal
+cost when unread; `Analyze`'s own logic is byte-for-byte unchanged) —
+the `features`/`fingerprint`-level numbers above are the load-bearing
+proof for this task's own overhead claim.
+
 ## Reading the numbers
 
 **Session-to-session `ns/op` moved broadly; allocation counts didn't —

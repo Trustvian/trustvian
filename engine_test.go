@@ -1659,6 +1659,313 @@ func TestObserveMarkovLearnsOnlyFromEligibleDecisions(t *testing.T) {
 	}
 }
 
+// --- v0.7 task 014: AI Agent Event/Context Foundation ---
+//
+// None of the tests below add a new detector, a new baseline field, or
+// a new pipeline stage. Each one drives the *existing* Engine (the
+// exact same one every prior test in this file uses) with
+// agent-shaped Events (Actor.Type = ActorTypeAIAgent, Operation.Category
+// = OperationCategoryTool, Context.SessionID/DelegatedFrom set) — the
+// direct proof that "AI Agent support" is richer event semantics
+// through the existing engine, not a second security engine. See
+// docs/adr/0014-ai-agents-as-first-class-behavioral-actors.md.
+
+// agentEvent builds an AI-agent-shaped Event for these tests: a fixed
+// actor, environment, and session, varying only the tool operation and
+// timestamp — mirroring paymentEventAt's own shape one level up.
+func agentEvent(actorID, sessionID, tool string, ts time.Time) event.Event {
+	return event.Event{
+		ID:        actorID + "-" + tool + "-" + ts.String(),
+		Timestamp: ts,
+		Actor:     event.Actor{ID: actorID, Type: event.ActorTypeAIAgent, IdentityConfidence: 0.95},
+		Operation: event.Operation{Category: event.OperationCategoryTool, Name: tool},
+		Target:    event.Target{Name: tool},
+		Context:   event.Context{Environment: "production", SessionID: sessionID},
+	}
+}
+
+// TestAnalyzeAgentSessionIDDoesNotExplodeBaseline is task 014's own
+// mandatory cardinality proof (§23/§44 of the task brief): 1,000
+// events with unique SessionIDs but otherwise identical behavior must
+// accumulate into exactly one Baseline entry under one Fingerprint —
+// not 1,000 separate ones — proving Context.SessionID never enters
+// baseline.Key or Fingerprint identity, empirically, not just by
+// reading the source.
+func TestAnalyzeAgentSessionIDDoesNotExplodeBaseline(t *testing.T) {
+	ctx := context.Background()
+	agentStore := store.NewInMemory()
+	engine := trustvian.NewEngine(trustvian.WithStore(agentStore))
+
+	const observations = 1000
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	var lastResult trustvian.Result
+	for i := range observations {
+		now = now.Add(time.Second)
+		sessionID := fmt.Sprintf("session-%d", i) // 1,000 distinct session IDs
+		result, err := engine.Analyze(ctx, agentEvent("customer-support-agent-42", sessionID, "search", now))
+		if err != nil {
+			t.Fatalf("Analyze() call %d: error = %v", i, err)
+		}
+		if _, err := engine.Observe(ctx, result); err != nil {
+			t.Fatalf("Observe() call %d: error = %v", i, err)
+		}
+		if i > 0 && result.BaselineKey != lastResult.BaselineKey {
+			t.Fatalf("call %d: BaselineKey = %+v, want %+v (unchanged — SessionID must not affect it)", i, result.BaselineKey, lastResult.BaselineKey)
+		}
+		if i > 0 && result.Fingerprint.ID != lastResult.Fingerprint.ID {
+			t.Fatalf("call %d: Fingerprint.ID = %q, want %q (unchanged — SessionID must not affect it)", i, result.Fingerprint.ID, lastResult.Fingerprint.ID)
+		}
+		lastResult = result
+	}
+
+	// Confirm, directly from the store, that all 1,000 observations
+	// landed in a single Fingerprint entry's Count — not spread across
+	// 1,000 distinct baseline entries.
+	bl, ok := agentStore.Get(ctx, lastResult.BaselineKey)
+	if !ok {
+		t.Fatalf("Get(%+v) ok = false, want true", lastResult.BaselineKey)
+	}
+	if got := len(bl.Fingerprints); got != 1 {
+		t.Fatalf("len(Baseline.Fingerprints) = %d, want 1 — 1,000 distinct SessionIDs must not create 1,000 distinct Fingerprints", got)
+	}
+	if got := bl.Fingerprints[lastResult.Fingerprint.ID].Count; got != observations {
+		t.Fatalf("Fingerprints[%q].Count = %d, want %d — all observations must accumulate into the same entry", lastResult.Fingerprint.ID, got, observations)
+	}
+}
+
+// TestAnalyzeAgentToolNoveltyDetectedByExistingEngine proves task
+// 014's central "no new detector needed" claim (§16/§45 of the task
+// brief): an agent that has only ever used search/read/summarize, then
+// invokes shell.execute, is flagged by the *existing*
+// categorical_novelty/transition_deviation signals — no agent-specific
+// detector exists or is added.
+func TestAnalyzeAgentToolNoveltyDetectedByExistingEngine(t *testing.T) {
+	ctx := context.Background()
+	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()))
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	step := func() time.Time { now = now.Add(time.Second); return now }
+
+	for i := range 20 {
+		for _, tool := range []string{"search", "read", "summarize"} {
+			result, err := engine.Analyze(ctx, agentEvent("agent-1", fmt.Sprintf("session-%d", i), tool, step()))
+			if err != nil {
+				t.Fatalf("Analyze(%s) error = %v", tool, err)
+			}
+			if _, err := engine.Observe(ctx, result); err != nil {
+				t.Fatalf("Observe(%s) error = %v", tool, err)
+			}
+		}
+	}
+
+	shellResult, err := engine.Analyze(ctx, agentEvent("agent-1", "session-attack", "shell.execute", step()))
+	if err != nil {
+		t.Fatalf("Analyze(shell.execute) error = %v", err)
+	}
+	if !hasResultSignal(shellResult, "categorical_novelty") {
+		t.Fatalf("Contributors = %+v, want categorical_novelty — shell.execute has never been observed for this agent", shellResult.Anomaly.Contributors)
+	}
+	if !hasResultSignal(shellResult, "transition_deviation") {
+		t.Fatalf("Contributors = %+v, want transition_deviation — no predecessor has ever led to shell.execute", shellResult.Anomaly.Contributors)
+	}
+
+	familiarResult, err := engine.Analyze(ctx, agentEvent("agent-1", "session-normal", "search", step()))
+	if err != nil {
+		t.Fatalf("Analyze(search) error = %v", err)
+	}
+	if !shellResult.Trust.Risk.AtLeast(familiarResult.Trust.Risk) {
+		t.Errorf("shell.execute Risk = %q, familiar search Risk = %q — want the novel tool at least as risky", shellResult.Trust.Risk, familiarResult.Trust.Risk)
+	}
+}
+
+// TestAnalyzeAgentToolSequenceNoveltyDetectedByExistingEngine is task
+// 014's mandatory critical semantic test (§19/§46 of the task brief),
+// mirroring task 027's own
+// TestScoreNGramDeviationDetectsNovelTrigramDespiteFamiliarPairwiseTransitions
+// with agent-shaped events: search -> read -> summarize is trained as
+// this agent's normal path; search -> secret.read and
+// secret.read -> external.post are *each* trained as familiar pairwise
+// transitions, via different contexts, so neither individual hop is
+// novel; the complete sequence search -> secret.read -> external.post
+// is never trained as one continuous path. The existing v0.6
+// ngram_deviation signal must still detect the higher-order novelty —
+// the direct proof that v0.6 sequence analysis, unmodified, already
+// works for AI-agent tool sequences.
+func TestAnalyzeAgentToolSequenceNoveltyDetectedByExistingEngine(t *testing.T) {
+	ctx := context.Background()
+
+	// See TestAnalyzeNGramEndToEnd's own comment (task 027) for why
+	// warm-up uses NGramWeight's default (0) and only the final scored
+	// call raises it, via a second Engine sharing one Store.
+	sharedStore := store.NewInMemory()
+	warmupEngine := trustvian.NewEngine(trustvian.WithStore(sharedStore), trustvian.WithPolicy(riskGatedPolicy()))
+	scoredCfg := anomaly.DefaultConfig()
+	scoredCfg.NGramWeight = 0.9
+	engine := trustvian.NewEngine(
+		trustvian.WithStore(sharedStore),
+		trustvian.WithPolicy(riskGatedPolicy()),
+		trustvian.WithAnomalyConfig(scoredCfg),
+	)
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	step := func() time.Time { now = now.Add(time.Second); return now }
+
+	analyzeAndObserve := func(t *testing.T, sessionID, tool string, ts time.Time) trustvian.Result {
+		t.Helper()
+		result, err := warmupEngine.Analyze(ctx, agentEvent("agent-1", sessionID, tool, ts))
+		if err != nil {
+			t.Fatalf("Analyze(%s) error = %v", tool, err)
+		}
+		if _, err := warmupEngine.Observe(ctx, result); err != nil {
+			t.Fatalf("Observe(%s) error = %v", tool, err)
+		}
+		return result
+	}
+
+	// This agent's actual normal path: search -> read -> summarize,
+	// repeated many times.
+	for i := range 20 {
+		s := fmt.Sprintf("normal-%d", i)
+		analyzeAndObserve(t, s, "search", step())
+		analyzeAndObserve(t, s, "read", step())
+		analyzeAndObserve(t, s, "summarize", step())
+	}
+
+	// Familiarize search -> secret.read as a pairwise transition, via
+	// search -> secret.read -> audit_log (never external.post).
+	for i := range 20 {
+		s := fmt.Sprintf("secret-seed-%d", i)
+		analyzeAndObserve(t, s, "search", step())
+		analyzeAndObserve(t, s, "secret.read", step())
+		analyzeAndObserve(t, s, "audit_log", step())
+	}
+
+	// Familiarize secret.read -> external.post as a pairwise transition,
+	// via a *different* predecessor: notify -> secret.read -> external.post.
+	for i := range 20 {
+		s := fmt.Sprintf("post-seed-%d", i)
+		analyzeAndObserve(t, s, "notify", step())
+		analyzeAndObserve(t, s, "secret.read", step())
+		analyzeAndObserve(t, s, "external.post", step())
+	}
+
+	// Position the real history window at (search, secret.read) — the
+	// exact attack sequence's first two steps, never trained as a
+	// continuous path with external.post next.
+	analyzeAndObserve(t, "attack", "search", step())
+	analyzeAndObserve(t, "attack", "secret.read", step())
+
+	attackResult, err := engine.Analyze(ctx, agentEvent("agent-1", "attack", "external.post", step()))
+	if err != nil {
+		t.Fatalf("Analyze(external.post) error = %v", err)
+	}
+	if hasResultSignal(attackResult, "transition_deviation") {
+		t.Fatalf("Contributors = %+v, want no transition_deviation — secret.read->external.post is a familiar pairwise transition", attackResult.Anomaly.Contributors)
+	}
+	if !hasResultSignal(attackResult, "ngram_deviation") {
+		t.Fatalf("Contributors = %+v, want ngram_deviation — search->secret.read->external.post was never observed as a complete sequence, even though both individual hops are familiar", attackResult.Anomaly.Contributors)
+	}
+
+	// The trained continuation for this exact window (search,
+	// secret.read) -> audit_log must show no such novelty, for
+	// comparison.
+	auditResult, err := engine.Analyze(ctx, agentEvent("agent-1", "attack", "audit_log", step()))
+	if err != nil {
+		t.Fatalf("Analyze(audit_log) error = %v", err)
+	}
+	if hasResultSignal(auditResult, "ngram_deviation") {
+		t.Fatalf("Contributors = %+v, want no ngram_deviation — search->secret.read->audit_log has been observed 20 times", auditResult.Anomaly.Contributors)
+	}
+}
+
+// TestAnalyzeAgentCrossActorIsolation mirrors
+// TestAnalyzeNGramCrossActorIsolation for agent actors specifically:
+// one agent's learned tool-use history must never leak into a
+// different agent's scoring for the nominally identical tool.
+func TestAnalyzeAgentCrossActorIsolation(t *testing.T) {
+	ctx := context.Background()
+	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()))
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	step := func() time.Time { now = now.Add(time.Second); return now }
+
+	// agent-a: shell.execute is extremely common (30 times).
+	for i := range 30 {
+		s := fmt.Sprintf("session-%d", i)
+		r, err := engine.Analyze(ctx, agentEvent("agent-a", s, "shell.execute", step()))
+		if err != nil {
+			t.Fatalf("Analyze: %v", err)
+		}
+		if _, err := engine.Observe(ctx, r); err != nil {
+			t.Fatalf("Observe: %v", err)
+		}
+	}
+
+	// agent-b has never been observed at all — the identical
+	// shell.execute tool call, for agent-b, must still read as
+	// maximally novel.
+	rB, err := engine.Analyze(ctx, agentEvent("agent-b", "session-1", "shell.execute", step()))
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if !hasResultSignal(rB, "categorical_novelty") {
+		t.Errorf("agent-b Contributors = %+v, want categorical_novelty — agent-a's 30 observations must not leak into agent-b's baseline", rB.Anomaly.Contributors)
+	}
+	var noveltyValue float64
+	for _, c := range rB.Anomaly.Contributors {
+		if c.Name == "categorical_novelty" {
+			noveltyValue = c.Value
+		}
+	}
+	if noveltyValue != 1 {
+		t.Errorf("agent-b categorical_novelty Value = %v, want exactly 1 — anything less would mean agent-a's history leaked into agent-b's baseline", noveltyValue)
+	}
+}
+
+// TestAnalyzeAgentDelegationContextScoredIdentically proves
+// Context.DelegatedFrom is scored by the exact same pipeline as any
+// other event — no delegation-specific anomaly rule is invented (task
+// 014 §48/§37 of the brief: "detection comes later," this task only
+// carries the metadata). Two otherwise-identical events, differing
+// only in DelegatedFrom, must produce byte-for-byte identical Anomaly/
+// Trust/Decision — proving DelegatedFrom has no scoring effect yet,
+// while still being present on the Event for a future policy/detector
+// to read.
+func TestAnalyzeAgentDelegationContextScoredIdentically(t *testing.T) {
+	ctx := context.Background()
+	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()))
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	withDelegation := agentEvent("agent-1", "session-1", "search", now)
+	withDelegation.Context.DelegatedFrom = "orchestrator-agent"
+
+	withoutDelegation := agentEvent("agent-1", "session-1", "search", now)
+	withoutDelegation.ID = withoutDelegation.ID + "-b" // distinct Event.ID only
+
+	resultWith, err := engine.Analyze(ctx, withDelegation)
+	if err != nil {
+		t.Fatalf("Analyze(with delegation): %v", err)
+	}
+	resultWithout, err := engine.Analyze(ctx, withoutDelegation)
+	if err != nil {
+		t.Fatalf("Analyze(without delegation): %v", err)
+	}
+
+	if resultWith.Fingerprint.ID != resultWithout.Fingerprint.ID {
+		t.Errorf("Fingerprint.ID differs with/without DelegatedFrom: %q vs %q", resultWith.Fingerprint.ID, resultWithout.Fingerprint.ID)
+	}
+	if resultWith.Anomaly.Score != resultWithout.Anomaly.Score {
+		t.Errorf("Anomaly.Score differs with/without DelegatedFrom: %v vs %v", resultWith.Anomaly.Score, resultWithout.Anomaly.Score)
+	}
+	if resultWith.Trust.Score != resultWithout.Trust.Score {
+		t.Errorf("Trust.Score differs with/without DelegatedFrom: %v vs %v", resultWith.Trust.Score, resultWithout.Trust.Score)
+	}
+	if resultWith.Decision != resultWithout.Decision {
+		t.Errorf("Decision differs with/without DelegatedFrom: %q vs %q", resultWith.Decision, resultWithout.Decision)
+	}
+}
+
 func hasResultSignal(result trustvian.Result, name string) bool {
 	for _, c := range result.Anomaly.Contributors {
 		if c.Name == name {

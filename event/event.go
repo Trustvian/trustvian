@@ -167,13 +167,67 @@ type Target struct {
 	Category TargetCategory `json:"category,omitzero"`
 }
 
+// ApprovalStatus records whether an Operation required, and received,
+// human approval — a per-event operational fact, not a workflow-engine
+// state (Trustvian records this value; it does not manage an approval
+// process). The zero value, ApprovalUnspecified, means "not recorded" —
+// the identical "typed but optional, no default assumed" precedent
+// OperationDirection already established: neither is read by
+// features.Extract today, and both are reserved for a later signal to
+// consume once one has a concrete design, not because this field is
+// speculative — see docs/tasks/014-ai-agent.md.
+type ApprovalStatus string
+
+const (
+	ApprovalUnspecified ApprovalStatus = ""
+	ApprovalNotRequired ApprovalStatus = "not_required"
+	ApprovalRequired    ApprovalStatus = "required"
+	ApprovalApproved    ApprovalStatus = "approved"
+	ApprovalDenied      ApprovalStatus = "denied"
+)
+
 // Context carries correlation and scoping data for an Event: the
-// deployment environment and, when available, OpenTelemetry trace/span
-// identifiers.
+// deployment environment, OpenTelemetry trace/span identifiers when
+// available, and — for actors that operate across multiple related
+// events, most notably AI agents — session, delegation, and approval
+// context.
+//
+// Every field here is correlation/context data, never behavioral
+// identity: none of SessionID, DelegatedFrom, or ApprovalStatus is read
+// by features.Extract into StableFeatures, for the identical reason
+// TraceID/SpanID already aren't (see
+// internal/fingerprint/fingerprint_test.go's
+// TestFingerprintIDIndependentOfEventIdentifiers, extended by this
+// task to cover these three fields too). This is deliberate, not an
+// oversight: a SessionID is typically unique per conversation/session,
+// and folding it into a Fingerprint would make every session-scoped
+// actor generate a fresh, never-reused Fingerprint (and, if it entered
+// baseline.Key, a fresh Baseline) — defeating the entire point of
+// behavioral profiling across sessions. See
+// docs/adr/0014-ai-agents-as-first-class-behavioral-actors.md.
 type Context struct {
 	Environment string `json:"environment,omitempty"`
 	TraceID     string `json:"trace_id,omitempty"`
 	SpanID      string `json:"span_id,omitempty"`
+
+	// SessionID groups events belonging to one bounded
+	// interaction/session — e.g. one AI-agent conversation. Optional;
+	// most non-agent workloads leave it unset. See this type's own doc
+	// comment for why it never affects Fingerprint identity.
+	SessionID string `json:"session_id,omitempty"`
+
+	// DelegatedFrom is the Actor.ID of the actor that delegated this
+	// operation, for a single agent-to-agent delegation hop (e.g. Agent
+	// A asks Agent B to perform an operation: B's own Event carries
+	// Actor.ID = B, DelegatedFrom = A's Actor.ID). A single hop is
+	// sufficient scope — see docs/tasks/014-ai-agent.md's own Non-Goals
+	// for why a full delegation graph is not built here. Optional; ""
+	// means this event was not the result of delegation.
+	DelegatedFrom string `json:"delegated_from,omitempty"`
+
+	// ApprovalStatus records this specific event's human-approval
+	// state. See ApprovalStatus's own doc comment.
+	ApprovalStatus ApprovalStatus `json:"approval_status,omitempty"`
 }
 
 // Event is an immutable, atomic observed action: the input to every stage
