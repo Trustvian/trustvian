@@ -364,6 +364,112 @@ benchmark exists to measure, mirroring
 `BenchmarkScoreTransitionDeviation`'s own choice to benchmark the firing
 case rather than a degenerate always-common one.
 
+### v0.6 task 027 (Bounded n-gram Detection)
+
+Measured same environment (Go 1.27, darwin/arm64, Apple M3 Pro).
+"Before" is task 026 (Transition Rarity) re-measured on this same
+machine in a disposable `git worktree` at commit `ead742f`, the same
+same-machine-A/B discipline task 026's own PERFORMANCE.md entry used:
+
+| Benchmark | Before (task 026) | After (task 027) |
+|---|---:|---:|
+| `BenchmarkObserveTransition` | 435.9 ns/op, 1,408 B/op, 6 allocs | 688.4–701.9 ns/op, 2,064 B/op, 10 allocs |
+| `BenchmarkObserveTrigram` (new) | — | 757.8–771.7 ns/op, 2,512 B/op, 11 allocs |
+| `BenchmarkInMemoryObserveSameKey` (pre-existing, `internal/store`) | 619.8 ns/op, 944 B/op, 4 allocs | 960.7–979.2 ns/op, 1,559 B/op, 8 allocs |
+| `BenchmarkInMemoryObserveDistinctKeys` (pre-existing, `internal/store`) | 248.1 ns/op, 960 B/op, 5 allocs | 424.8 ns/op, 1,616 B/op, 9 allocs |
+| `BenchmarkScoreKnownFamiliar` | 136.3–136.9 ns/op, 0 B/op, 0 allocs | 198.9–204.6 ns/op, 0 B/op, 0 allocs |
+| `BenchmarkScoreTransitionDeviation` | 206.6–206.9 ns/op, 160 B/op, 3 allocs | 203.4–210.2 ns/op, 160 B/op, 3 allocs — unchanged (see below) |
+| `BenchmarkScoreTransitionRarity` | 359.3 ns/op, 296 B/op, 5 allocs | 425.0–435.1 ns/op, 296 B/op, 5 allocs — unchanged allocation profile |
+| `BenchmarkScoreNGramDeviation` (new) | — | 289.9–291.5 ns/op, 224 B/op, 4 allocs |
+| `BenchmarkScoreNGramRarity` (new) | — | 660.2–669.5 ns/op, 672 B/op, 10 allocs |
+| `BenchmarkEngineAnalyze` (end-to-end, read-only, default config) | 512.6–518.8 ns/op, 456 B/op, 17 allocs | 579.7–588.0 ns/op, 456 B/op, 17 allocs |
+| `BenchmarkEngineAnalyzeNGram` (new, both weights enabled) | — | 584.0–587.7 ns/op, 456 B/op, 17 allocs |
+
+**`Engine.Analyze`'s allocation profile is unchanged — `456 B/op, 17
+allocs/op`, identical to task 026 — but its latency grows by
+~65–70ns/call, for the identical structural reason task 026's own
+latency growth did.** `ngramDeviationSignal`/`ngramRaritySignal` are
+both called unconditionally alongside the existing transition signals
+on every event that has a complete two-fingerprint history, the same
+"always compute, weight-gate the contribution" pattern every prior
+signal already follows — paid on every steady-state `Analyze` call
+from this task onward, whether or not `NGramWeight`/`NGramRarityWeight`
+are ever raised above their `0` default:
+
+- `BenchmarkScoreKnownFamiliar`: 136.3–136.9ns → 198.9–204.6ns
+  (+~63–68ns), still `0 B/0 allocs` — two more map lookups
+  (`TrigramCounts`, `TrigramContinuationTotal`) plus a division/min/max,
+  on a self-transition fixture where the resulting 3-gram is 100%
+  frequent (`ngram_rarity` value `0`), so the early-return path is what
+  runs, never building a `Detail` string.
+- `BenchmarkEngineAnalyze`: 512.6–518.8ns → 579.7–588.0ns
+  (+~67–70ns), consistent with the isolated `anomaly.Score` delta
+  above, confirming the full-pipeline cost is fully accounted for by
+  the two new signal functions, not an incidental change elsewhere.
+- `BenchmarkEngineAnalyzeNGram` (both weights actually set to `0.7`)
+  measures within noise of `BenchmarkEngineAnalyze` on the same tree
+  (584.0–587.7ns vs. 579.7–588.0ns) — expected, since the weight only
+  changes whether `combine()` incorporates an already-computed,
+  already-fired `Value`, not whether the computation runs.
+- `BenchmarkObserveTransition`/`BenchmarkInMemoryObserveSameKey`/
+  `BenchmarkInMemoryObserveDistinctKeys`: each grew by 4–5 allocs and a
+  proportional `B/op` increase. These benchmarks use a strictly
+  advancing clock and a small, fixed set of fingerprints, so — once
+  `PreviousFingerprintID` is populated (after the second observation) —
+  every subsequent call also completes a valid 3-gram, exercising both
+  new bounded maps' copy-on-write (`recordTrigram` +
+  `recordTrigramContinuation`, each allocating a fresh map, mirroring
+  `recordPredecessor`'s own established cost) on top of the pre-existing
+  transition bookkeeping. This is a real, structural cost — the same
+  "copy-on-write pays a real, non-optimized-away price" discipline
+  task 025's own `recordPredecessor` already established, now paid
+  twice more per call in the worst case (a strictly-ordered, repeating
+  or small-alphabet event stream) — not investigated further at the
+  individual-allocation level beyond confirming it reproduces
+  identically across repeated runs.
+
+**Not hidden: two pre-existing benchmarks incidentally now also
+exercise the new signals, and were handled differently depending on
+whether that changed what they measure.**
+`BenchmarkScoreTransitionDeviation`'s own fixture ends with an extra,
+unpaired `Observe` call (to correctly position `LastFingerprintID` for
+the transition-deviation case it was written to isolate) — which, now
+that `PreviousFingerprintID` exists at all, also left it non-empty,
+making `ngram_deviation` fire too and changing this benchmark's
+allocation count (a real, measured regression: `160 B/3 allocs` →
+`432 B/7 allocs` before the fix). Since this benchmark's own doc
+comment states its purpose is to isolate `transitionSignal`'s cost
+alone (predating task 027 by two tasks), its fixture now explicitly
+clears `bl.PreviousFingerprintID` before the timed loop — a one-line,
+test-only fix, no production code touched — restoring its original,
+documented scope; see its own updated comment in
+`internal/anomaly/anomaly_bench_test.go`. `BenchmarkScoreTransitionRarity`
+was left as-is: its own fixture's history window ends up positioned
+such that the incidentally-exercised `ngram_deviation`/`ngram_rarity`
+compute but do not fire (`Value == 0`), so its allocation profile
+(`296 B/5 allocs`) is genuinely unaffected — only its `ns/op` moved,
+for the same "computed, not fired" reason `BenchmarkScoreKnownFamiliar`'s
+own delta is explained above.
+
+**`BenchmarkScoreNGramDeviation`'s 224 B / 4 allocs is
+`ngramDeviationSignal`'s cost** on a `TrigramCounts` map sized near
+`maxTrigramPredecessors` (64 entries) — a single map lookup plus one
+`Signal` struct and its `Detail` string formatting, paid only when the
+signal actually fires (a genuinely unseen 3-gram), mirroring
+`BenchmarkScoreTransitionDeviation`'s own discipline one level up.
+
+**`BenchmarkScoreNGramRarity`'s 672 B / 10 allocs is
+`ngramRaritySignal`'s cost when it actually fires** — a rare
+(2-of-52), but seen and past-minimum-support 3-gram, so the `Detail`
+string is built; the roughly 2x cost over `BenchmarkScoreTransitionRarity`
+(296 B/5 allocs) is expected, not a red flag — this benchmark's own
+fixture construction does twice as much `Baseline.Observe` work per
+repeat (three `Observe` calls — grandparent, predecessor, destination —
+versus two for the pairwise case), and `ngramRaritySignal` itself does
+one more map lookup (`TrigramContinuationTotal` in addition to
+`TrigramCounts`) than `transitionRaritySignal`'s single
+`OutgoingTransitionTotal` scalar read.
+
 ## Reading the numbers
 
 **Session-to-session `ns/op` moved broadly; allocation counts didn't —

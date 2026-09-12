@@ -199,13 +199,71 @@ rarity(A -> B)     = 1 - frequency(A -> B)
   cfg.TransitionRarityWeight = 0.7 // opt-in: defaults to 0
   ```
 
+## Bounded 3-gram detection (`v0.6` task 027)
+
+`transition_deviation`/`transition_rarity` above compare one event
+against its single immediate predecessor. That structurally cannot see
+a real gap: `authenticate -> read_customer` may be normal, and
+`read_customer -> export_customer` may *also* be normal, elsewhere —
+yet the complete sequence `authenticate -> read_customer ->
+export_customer`, as one continuous path, may never have happened for
+this actor. `ngram_deviation`/`ngram_rarity`
+([task 027](tasks/027-bounded-ngram-detection.md),
+[ADR 0012](adr/0012-bounded-trigram-behavioral-context.md)) close that
+gap with a fixed, bounded 3-gram — not a configurable `n`:
+
+```
+frequency(A, B -> C) = TrigramCounts_C[{A,B}] / TrigramContinuationTotal_B[A]
+```
+
+- **Minimal added history.** Exactly one more fingerprint of history
+  than a transition needs: `Baseline` gains
+  `PreviousFingerprintID` (the fingerprint two steps back), alongside
+  the existing `LastFingerprintID`. No ring buffer, no raw `Event`
+  retention.
+- **The orientation question, answered again, one level up.** A 3-gram's
+  denominator is "how many continuations has this specific *pair*
+  `(A, B)` had," which a scalar (like task 026's own
+  `OutgoingTransitionTotal`) cannot answer — a single fingerprint `B`
+  participates in many distinct pairs. The fix:
+  `TrigramContinuationTotal`, a *bounded map* keyed by grandparent `A`,
+  living on `B`'s own stats. See
+  [ADR 0012 § The orientation problem, generalized one level up](adr/0012-bounded-trigram-behavioral-context.md#the-orientation-problem-generalized-one-level-up).
+- **Two independently-bounded maps, not one bound inherited from
+  another.** `TrigramCounts` (on the destination) and
+  `TrigramContinuationTotal` (on the immediate predecessor) each carry
+  their own explicit `maxTrigramPredecessors` (64) cap — a genuine
+  subtlety this task's own review caught: `PredecessorCounts`'s
+  existing cap does *not* automatically bound either new map. See
+  ADR 0012 for the full argument.
+- **Cold start has three states, not two.** No predecessor at all
+  (first-ever observation); a predecessor but no grandparent
+  (second-ever observation — enough for a 2-gram, not a 3-gram); both
+  present (third-ever observation onward — a complete 3-gram exists).
+  `ngram_deviation`/`ngram_rarity` only evaluate in the third case.
+- **Mutually exclusive with each other, and can co-fire with the
+  pairwise signals.** `ngram_deviation`/`ngram_rarity` split on
+  seen/unseen exactly like `transition_deviation`/`transition_rarity`
+  do. When the final hop `B -> C` is itself unseen,
+  `transition_deviation` and `ngram_deviation` fire together (a 3-gram
+  cannot be familiar if its last transition never happened) —
+  `combine()`'s noisy-OR is not redesigned for this; every contribution
+  is already clamped before multiplying, so the combined score stays
+  bounded regardless. See ADR 0012's own section on this.
+- **Activation** is the identical `WithAnomalyConfig` pattern:
+
+  ```go
+  cfg := anomaly.DefaultConfig()
+  cfg.NGramWeight = 0.7       // opt-in: defaults to 0
+  cfg.NGramRarityWeight = 0.7 // opt-in: defaults to 0
+  ```
+
 ## What's next
 
-`docs/ROADMAP.md` § v0.6 lists the remaining, unscoped progression
-beyond this foundation and transition rarity — n-gram detection
-(generalizing `LastFingerprintID` into a small, bounded ring buffer)
-and Markov transition probabilities (a full `P(*|A)` row over the same
-`OutgoingTransitionTotal`/`PredecessorCounts` counters, with smoothing)
-— neither is implemented yet. This document describes what exists
+`docs/ROADMAP.md` § v0.6 lists the one remaining, unscoped slice beyond
+this foundation, transition rarity, and bounded 3-gram detection:
+Markov transition probabilities (a full `P(*|A)` row, with smoothing,
+over the same counters this and task 026 already established) — not
+implemented yet. This document describes what exists
 today, not what's planned; it will be updated as each slice actually
 ships, not before.

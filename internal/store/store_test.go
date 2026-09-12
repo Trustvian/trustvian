@@ -319,3 +319,76 @@ func TestInMemoryObserveConcurrentTransitionTracking(t *testing.T) {
 		t.Fatalf("sum(PredecessorCounts) = %d, want <= dest.Count (%d) — each dest observation can contribute at most one predecessor count", total, got.Fingerprints[dest.ID].Count)
 	}
 }
+
+// TestInMemoryObserveConcurrentTrigramTracking is task 027's own
+// dedicated concurrency proof, mirroring
+// TestInMemoryObserveConcurrentTransitionTracking one level up: many
+// goroutines, each with its own distinct grandparent fingerprint, race
+// to observe (grandparent, then the *same shared* predecessor, then
+// the *same shared* destination) for the same Key — stressing both new
+// bounded maps (TrigramCounts on the destination, keyed by
+// (grandparent, predecessor) pairs; TrigramContinuationTotal on the
+// shared predecessor, keyed by grandparent) under real concurrent
+// contention. Proven by running under `go test -race`, not merely by
+// not panicking.
+func TestInMemoryObserveConcurrentTrigramTracking(t *testing.T) {
+	s := store.NewInMemory()
+	predecessor := destinationFingerprint()
+	dest := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "EXPORT customer", TargetName: "customer-db", Environment: "production",
+	})
+	ctx := context.Background()
+
+	const goroutines = 50
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := range goroutines {
+		go func(i int) {
+			defer wg.Done()
+			grandparent := fingerprint.Compute(features.StableFeatures{
+				ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+				OperationName: fmt.Sprintf("grandparent-%d", i), TargetName: "customer-db", Environment: "production",
+			})
+			now := time.Now()
+			if _, err := s.Observe(ctx, testKey, grandparent, features.VolatileFeatures{}, now); err != nil {
+				t.Errorf("Observe(grandparent) error = %v", err)
+			}
+			if _, err := s.Observe(ctx, testKey, predecessor, features.VolatileFeatures{}, now.Add(time.Millisecond)); err != nil {
+				t.Errorf("Observe(predecessor) error = %v", err)
+			}
+			if _, err := s.Observe(ctx, testKey, dest, features.VolatileFeatures{}, now.Add(2*time.Millisecond)); err != nil {
+				t.Errorf("Observe(dest) error = %v", err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	got, ok := s.Get(ctx, testKey)
+	if !ok {
+		t.Fatalf("Get() ok = false after concurrent Observe calls")
+	}
+
+	// Both new bounded maps must hold their independent bound even
+	// under concurrent writers — real wall-clock interleaving is
+	// inherently nondeterministic (whether a given dest observation
+	// actually completed a valid 3-gram at all depends on scheduling),
+	// so this checks the invariants that must hold regardless of
+	// interleaving, not exact per-pair counts.
+	trigramCounts := got.Fingerprints[dest.ID].TrigramCounts
+	if len(trigramCounts) > 64 {
+		t.Fatalf("len(TrigramCounts) = %d, want <= 64 (bound must hold under concurrency)", len(trigramCounts))
+	}
+	continuationTotal := got.Fingerprints[predecessor.ID].TrigramContinuationTotal
+	if len(continuationTotal) > 64 {
+		t.Fatalf("len(TrigramContinuationTotal) = %d, want <= 64 (bound must hold under concurrency)", len(continuationTotal))
+	}
+
+	var trigramSum uint64
+	for _, count := range trigramCounts {
+		trigramSum += count
+	}
+	if trigramSum > got.Fingerprints[dest.ID].Count {
+		t.Fatalf("sum(TrigramCounts) = %d, want <= dest.Count (%d)", trigramSum, got.Fingerprints[dest.ID].Count)
+	}
+}

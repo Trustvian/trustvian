@@ -1123,6 +1123,552 @@ func TestScoreTransitionRarityNeverExceedsBounds(t *testing.T) {
 	}
 }
 
+// --- Task 027: bounded 3-gram behavioral detection ---
+
+func TestDefaultConfigNGramWeightIsOptIn(t *testing.T) {
+	cfg := anomaly.DefaultConfig()
+	if cfg.NGramWeight != 0 {
+		t.Errorf("DefaultConfig().NGramWeight = %v, want 0 (opt-in, like every other v0.6 signal weight)", cfg.NGramWeight)
+	}
+	if cfg.NGramRarityWeight != 0 {
+		t.Errorf("DefaultConfig().NGramRarityWeight = %v, want 0", cfg.NGramRarityWeight)
+	}
+	if cfg.MinNGramObservations != 20 {
+		t.Errorf("DefaultConfig().MinNGramObservations = %v, want 20 (matching MinObservations/MinTransitionObservations's own default)", cfg.MinNGramObservations)
+	}
+}
+
+// ngramBaseline builds a Baseline where the pair (grandparent,
+// predecessor) precedes each fingerprint in dests[i] exactly counts[i]
+// times, interleaved as
+// grandparent -> predecessor -> dests[i] -> grandparent -> predecessor
+// -> dests[i] -> ... for each i in turn, so each dests[i]'s
+// TrigramCounts[{grandparent,predecessor}] and predecessor's own
+// TrigramContinuationTotal[grandparent] end up with exactly the sum of
+// the requested counts. Ends with two final, unpaired observations
+// (grandparent, then predecessor), so the returned Baseline's
+// (PreviousFingerprintID, LastFingerprintID) = (grandparent,
+// predecessor) — the caller can then score any dests[i] as the event
+// under test and have it correctly evaluated as a
+// (grandparent, predecessor) -> dests[i] 3-gram, mirroring
+// transitionRarityBaseline's own "one final unpaired observation"
+// technique, extended by one more step since a complete 3-gram window
+// needs two prior fingerprints positioned correctly, not one.
+func ngramBaseline(grandparent, predecessor fingerprint.Fingerprint, dests []fingerprint.Fingerprint, counts []int) baseline.Baseline {
+	b := baseline.New(testKey)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i, dest := range dests {
+		for range counts[i] {
+			b = b.Observe(grandparent, features.VolatileFeatures{}, now)
+			now = now.Add(time.Second)
+			b = b.Observe(predecessor, features.VolatileFeatures{}, now)
+			now = now.Add(time.Second)
+			b = b.Observe(dest, features.VolatileFeatures{}, now)
+			now = now.Add(time.Second)
+		}
+	}
+	b = b.Observe(grandparent, features.VolatileFeatures{}, now)
+	now = now.Add(time.Second)
+	b = b.Observe(predecessor, features.VolatileFeatures{}, now)
+	return b
+}
+
+// TestScoreNoNGramSignalBeforeTrigramHistoryExists is task 027's own
+// cold-start proof, following the task brief's own example precisely:
+// event #1 and #2 have insufficient history for a 3-gram (no
+// ngram_deviation/ngram_rarity at all — not even a "novel" reading,
+// since there is no trigram to evaluate yet); event #3 is the first
+// with a complete 3-gram.
+func TestScoreNoNGramSignalBeforeTrigramHistoryExists(t *testing.T) {
+	fpAuth := fingerprint.Compute(stable("auth-service"))
+	fpRead := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "read_customer", TargetName: "customer-db", Environment: "production",
+	})
+	fpExport := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "export_customer", TargetName: "customer-db", Environment: "production",
+	})
+
+	cfg := anomaly.DefaultConfig()
+	cfg.NGramWeight = 0.7
+	cfg.NGramRarityWeight = 0.7
+
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	b := baseline.New(testKey)
+
+	// Event #1: no prior history at all.
+	feat1 := features.Features{Stable: fpAuth.Stable, Volatile: features.VolatileFeatures{Timestamp: base}}
+	got1 := anomaly.Score(feat1, fpAuth, b, cfg)
+	if hasSignal(got1.Contributors, "ngram_deviation") || hasSignal(got1.Contributors, "ngram_rarity") {
+		t.Fatalf("event #1: Contributors = %+v, want no ngram signal (no history)", got1.Contributors)
+	}
+	b = b.Observe(fpAuth, features.VolatileFeatures{}, base)
+
+	// Event #2: one prior observation — a predecessor exists, but no
+	// grandparent yet, so still insufficient for a 3-gram.
+	t2 := base.Add(time.Second)
+	feat2 := features.Features{Stable: fpRead.Stable, Volatile: features.VolatileFeatures{Timestamp: t2}}
+	got2 := anomaly.Score(feat2, fpRead, b, cfg)
+	if hasSignal(got2.Contributors, "ngram_deviation") || hasSignal(got2.Contributors, "ngram_rarity") {
+		t.Fatalf("event #2: Contributors = %+v, want no ngram signal (only one prior observation)", got2.Contributors)
+	}
+	b = b.Observe(fpRead, features.VolatileFeatures{}, t2)
+
+	// Event #3: both a predecessor and a grandparent now exist — the
+	// first complete 3-gram.
+	t3 := t2.Add(time.Second)
+	feat3 := features.Features{Stable: fpExport.Stable, Volatile: features.VolatileFeatures{Timestamp: t3}}
+	got3 := anomaly.Score(feat3, fpExport, b, cfg)
+	if !hasSignal(got3.Contributors, "ngram_deviation") {
+		t.Fatalf("event #3: Contributors = %+v, want ngram_deviation (first complete, never-seen 3-gram)", got3.Contributors)
+	}
+}
+
+func TestScoreNGramDeviationFamiliarTrigram(t *testing.T) {
+	fpAuth := fingerprint.Compute(stable("auth-service"))
+	fpRead := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "read_customer", TargetName: "customer-db", Environment: "production",
+	})
+	fpExport := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "export_customer", TargetName: "customer-db", Environment: "production",
+	})
+
+	// authenticate -> read_customer -> export_customer, trained many times.
+	b := ngramBaseline(fpAuth, fpRead, []fingerprint.Fingerprint{fpExport}, []int{25})
+
+	cfg := anomaly.DefaultConfig()
+	cfg.NGramWeight = 0.7
+
+	eventTime := b.LastFingerprintTime.Add(time.Second)
+	feat := features.Features{Stable: fpExport.Stable, Volatile: features.VolatileFeatures{Timestamp: eventTime}}
+	got := anomaly.Score(feat, fpExport, b, cfg)
+
+	if hasSignal(got.Contributors, "ngram_deviation") {
+		t.Fatalf("Contributors = %+v, want no ngram_deviation for a 3-gram observed 25 times", got.Contributors)
+	}
+}
+
+// TestScoreNGramDeviationNovelTrigram trains two distinct
+// continuations from the same (grandparent, predecessor) pair, then
+// evaluates a third, never-trained continuation — ngram_deviation must
+// fire.
+func TestScoreNGramDeviationNovelTrigram(t *testing.T) {
+	fpAuth := fingerprint.Compute(stable("auth-service"))
+	fpRead := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "read_customer", TargetName: "customer-db", Environment: "production",
+	})
+	fpUpdate := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "update_customer", TargetName: "customer-db", Environment: "production",
+	})
+	fpExport := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "export_customer", TargetName: "customer-db", Environment: "production",
+	})
+	fpDelete := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "delete_customer", TargetName: "customer-db", Environment: "production",
+	})
+
+	// authenticate -> read_customer -> {update_customer, export_customer}
+	// — never -> delete_customer.
+	b := ngramBaseline(fpAuth, fpRead, []fingerprint.Fingerprint{fpUpdate, fpExport}, []int{15, 15})
+
+	cfg := anomaly.DefaultConfig()
+	cfg.NGramWeight = 0.7
+
+	eventTime := b.LastFingerprintTime.Add(time.Second)
+	feat := features.Features{Stable: fpDelete.Stable, Volatile: features.VolatileFeatures{Timestamp: eventTime}}
+	got := anomaly.Score(feat, fpDelete, b, cfg)
+
+	if !hasSignal(got.Contributors, "ngram_deviation") {
+		t.Fatalf("Contributors = %+v, want ngram_deviation for a never-observed authenticate->read_customer->delete_customer 3-gram", got.Contributors)
+	}
+}
+
+// TestScoreNGramDeviationDetectsNovelTrigramDespiteFamiliarPairwiseTransitions
+// is task 027's mandatory critical-semantic proof (§39): both
+// individual pairwise transitions (authenticate->read_customer and
+// read_customer->export_customer) are independently familiar — neither
+// transition_deviation nor transition_rarity fires for the final hop —
+// yet the complete 3-gram authenticate->read_customer->export_customer
+// has never actually occurred as a single sequence. ngram_deviation
+// must still detect this higher-order novelty. This is the test that
+// proves the 3-gram detector adds genuine information beyond what
+// tasks 025/026's pairwise signals already provide.
+func TestScoreNGramDeviationDetectsNovelTrigramDespiteFamiliarPairwiseTransitions(t *testing.T) {
+	fpAuth := fingerprint.Compute(stable("auth-service"))
+	fpRead := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "read_customer", TargetName: "customer-db", Environment: "production",
+	})
+	fpExport := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "export_customer", TargetName: "customer-db", Environment: "production",
+	})
+	// Distinct fingerprints used only to make authenticate->read_customer
+	// and read_customer->export_customer each familiar independently,
+	// via a *different* 3-gram context each time, so the exact 3-gram
+	// (authenticate, read_customer, export_customer) is never trained.
+	fpOtherStart := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "other_start", TargetName: "customer-db", Environment: "production",
+	})
+	fpOtherEnd := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "other_end", TargetName: "customer-db", Environment: "production",
+	})
+
+	b := baseline.New(testKey)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Make authenticate -> read_customer familiar, via
+	// authenticate -> read_customer -> other_end (never export_customer).
+	for range 20 {
+		b = b.Observe(fpAuth, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+		b = b.Observe(fpRead, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+		b = b.Observe(fpOtherEnd, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+	}
+
+	// Make read_customer -> export_customer familiar, via
+	// other_start -> read_customer -> export_customer (never
+	// preceded by authenticate).
+	for range 20 {
+		b = b.Observe(fpOtherStart, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+		b = b.Observe(fpRead, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+		b = b.Observe(fpExport, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+	}
+
+	// Position the history window at (authenticate, read_customer) —
+	// the real sequence under test — without ever having observed
+	// export_customer as its continuation.
+	b = b.Observe(fpAuth, features.VolatileFeatures{}, now)
+	now = now.Add(time.Second)
+	b = b.Observe(fpRead, features.VolatileFeatures{}, now)
+	now = now.Add(time.Second)
+
+	cfg := anomaly.DefaultConfig()
+	cfg.TransitionWeight = 0.7
+	cfg.TransitionRarityWeight = 0.7
+	cfg.NGramWeight = 0.7
+	cfg.MinTransitionObservations = 1
+
+	feat := features.Features{Stable: fpExport.Stable, Volatile: features.VolatileFeatures{Timestamp: now}}
+	got := anomaly.Score(feat, fpExport, b, cfg)
+
+	// The pairwise hop (read_customer -> export_customer) is genuinely
+	// familiar: no transition_deviation.
+	if hasSignal(got.Contributors, "transition_deviation") {
+		t.Fatalf("Contributors = %+v, want no transition_deviation — read_customer->export_customer is a familiar pairwise transition", got.Contributors)
+	}
+	// The 3-gram (authenticate, read_customer) -> export_customer has
+	// never been observed as a complete sequence: ngram_deviation must
+	// fire despite both individual hops being familiar.
+	if !hasSignal(got.Contributors, "ngram_deviation") {
+		t.Fatalf("Contributors = %+v, want ngram_deviation — the complete 3-gram was never observed, even though both pairwise transitions are familiar", got.Contributors)
+	}
+}
+
+// TestScoreNGramRarityOrdering mirrors TestScoreTransitionRarityOrdering
+// one level up: common, uncommon, and rare continuations from the same
+// (grandparent, predecessor) pair must produce strictly increasing
+// rarity values, and an unseen continuation must carry ngram_deviation,
+// not ngram_rarity.
+func TestScoreNGramRarityOrdering(t *testing.T) {
+	grandparent := fingerprint.Compute(stable("auth-service"))
+	predecessor := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "read_customer", TargetName: "customer-db", Environment: "production",
+	})
+	common := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "common", TargetName: "customer-db", Environment: "production",
+	})
+	uncommon := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "uncommon", TargetName: "customer-db", Environment: "production",
+	})
+	rare := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "rare", TargetName: "customer-db", Environment: "production",
+	})
+	unseen := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "unseen", TargetName: "customer-db", Environment: "production",
+	})
+
+	// 900 + 90 + 10 = 1000 total continuations from (grandparent, predecessor).
+	b := ngramBaseline(grandparent, predecessor, []fingerprint.Fingerprint{common, uncommon, rare}, []int{900, 90, 10})
+
+	cfg := anomaly.DefaultConfig()
+	cfg.NGramRarityWeight = 0.8
+	cfg.NGramWeight = 0.8
+
+	scoreFor := func(dest fingerprint.Fingerprint) anomaly.Anomaly {
+		eventTime := b.LastFingerprintTime.Add(time.Second)
+		feat := features.Features{Stable: dest.Stable, Volatile: features.VolatileFeatures{Timestamp: eventTime}}
+		return anomaly.Score(feat, dest, b, cfg)
+	}
+
+	rarityValue := func(a anomaly.Anomaly) float64 {
+		for _, c := range a.Contributors {
+			if c.Name == "ngram_rarity" {
+				return c.Value
+			}
+		}
+		return -1
+	}
+
+	commonAnomaly, uncommonAnomaly, rareAnomaly, unseenAnomaly := scoreFor(common), scoreFor(uncommon), scoreFor(rare), scoreFor(unseen)
+	commonRarity, uncommonRarity, rareRarity := rarityValue(commonAnomaly), rarityValue(uncommonAnomaly), rarityValue(rareAnomaly)
+
+	if commonRarity < 0 || uncommonRarity < 0 || rareRarity < 0 {
+		t.Fatalf("expected ngram_rarity on all three seen 3-grams: common=%v uncommon=%v rare=%v", commonRarity, uncommonRarity, rareRarity)
+	}
+	if !(commonRarity < uncommonRarity && uncommonRarity < rareRarity) {
+		t.Fatalf("rarity ordering violated: common=%v, uncommon=%v, rare=%v — want common < uncommon < rare", commonRarity, uncommonRarity, rareRarity)
+	}
+
+	if hasSignal(unseenAnomaly.Contributors, "ngram_rarity") {
+		t.Error("unseen 3-gram carried ngram_rarity, want it to carry only ngram_deviation")
+	}
+	if !hasSignal(unseenAnomaly.Contributors, "ngram_deviation") {
+		t.Error("unseen 3-gram did not carry ngram_deviation")
+	}
+	if hasSignal(commonAnomaly.Contributors, "ngram_deviation") {
+		t.Error("common (seen) 3-gram carried ngram_deviation, want only ngram_rarity")
+	}
+}
+
+// TestScoreNGramRarityColdStart mirrors TestScoreTransitionRarityColdStart
+// one level up: below MinNGramObservations, ngram_rarity does not fire
+// at all, regardless of distribution.
+func TestScoreNGramRarityColdStart(t *testing.T) {
+	grandparent := fingerprint.Compute(stable("auth-service"))
+	predecessor := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "read_customer", TargetName: "customer-db", Environment: "production",
+	})
+	destA := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "a", TargetName: "customer-db", Environment: "production",
+	})
+	destB := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "b", TargetName: "customer-db", Environment: "production",
+	})
+
+	cfg := anomaly.DefaultConfig()
+	cfg.NGramRarityWeight = 0.8
+	const minSupport = 20
+	cfg.MinNGramObservations = minSupport
+
+	tests := []struct {
+		name          string
+		totalOutgoing int
+		wantFire      bool
+	}{
+		{"zero observations", 0, false},
+		{"one observation", 1, false},
+		{"minSupport - 1", minSupport - 1, false},
+		{"minSupport exactly", minSupport, true},
+		{"minSupport + 1", minSupport + 1, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var b baseline.Baseline
+			if tt.totalOutgoing == 0 {
+				b = baseline.New(testKey)
+			} else if tt.totalOutgoing == 1 {
+				b = ngramBaseline(grandparent, predecessor, []fingerprint.Fingerprint{destB}, []int{1})
+			} else {
+				b = ngramBaseline(grandparent, predecessor, []fingerprint.Fingerprint{destA, destB}, []int{tt.totalOutgoing - 1, 1})
+			}
+
+			eventTime := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+			if !b.LastFingerprintTime.IsZero() {
+				eventTime = b.LastFingerprintTime.Add(time.Second)
+			}
+			feat := features.Features{Stable: destB.Stable, Volatile: features.VolatileFeatures{Timestamp: eventTime}}
+			got := anomaly.Score(feat, destB, b, cfg)
+
+			fired := hasSignal(got.Contributors, "ngram_rarity")
+			if fired != tt.wantFire {
+				t.Errorf("ngram_rarity fired = %v, want %v (totalOutgoing=%d, minSupport=%d)", fired, tt.wantFire, tt.totalOutgoing, minSupport)
+			}
+		})
+	}
+}
+
+// TestScoreMatchesDocumentedFormulaForNGramRarity reproduces the exact
+// frequency/rarity arithmetic, mirroring
+// TestScoreMatchesDocumentedFormulaForTransitionRarity one level up.
+func TestScoreMatchesDocumentedFormulaForNGramRarity(t *testing.T) {
+	grandparent := fingerprint.Compute(stable("auth-service"))
+	predecessor := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "read_customer", TargetName: "customer-db", Environment: "production",
+	})
+	common := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "common", TargetName: "customer-db", Environment: "production",
+	})
+	rare := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "rare", TargetName: "customer-db", Environment: "production",
+	})
+
+	// 96 + 4 = 100 total; rare's frequency is exactly 4/100 = 0.04.
+	b := ngramBaseline(grandparent, predecessor, []fingerprint.Fingerprint{common, rare}, []int{96, 4})
+
+	cfg := anomaly.DefaultConfig()
+	cfg.NGramRarityWeight = 0.5
+
+	eventTime := b.LastFingerprintTime.Add(time.Second)
+	feat := features.Features{Stable: rare.Stable, Volatile: features.VolatileFeatures{Timestamp: eventTime}}
+	got := anomaly.Score(feat, rare, b, cfg)
+
+	wantFrequency := 4.0 / 100.0
+	wantValue := 1 - wantFrequency // 0.96
+
+	var gotValue float64
+	found := false
+	for _, c := range got.Contributors {
+		if c.Name == "ngram_rarity" {
+			gotValue = c.Value
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Contributors = %+v, want ngram_rarity", got.Contributors)
+	}
+	if diff := gotValue - wantValue; diff > 1e-9 || diff < -1e-9 {
+		t.Fatalf("ngram_rarity Value = %v, want %v (1 - 4/100)", gotValue, wantValue)
+	}
+
+	// rare's own Count is 4 (< MinObservations=20), so categorical_novelty
+	// also genuinely fires here — accounted for explicitly, mirroring
+	// TestScoreMatchesDocumentedFormulaForTransitionRarity's own approach.
+	familiarity := min(4.0/float64(cfg.MinObservations), 1)
+	noveltyContribution := (1 - familiarity) * cfg.NoveltyWeight
+	rarityContribution := wantValue * cfg.NGramRarityWeight
+	wantScore := 1 - (1-noveltyContribution)*(1-rarityContribution)
+	if diff := got.Score - wantScore; diff > 1e-9 || diff < -1e-9 {
+		t.Fatalf("Score = %v, want %v (documented noisy-OR formula)", got.Score, wantScore)
+	}
+}
+
+// TestScoreNGramRarityNeverExceedsBounds mirrors
+// TestScoreTransitionRarityNeverExceedsBounds one level up: across a
+// range of totals, ngram_rarity's Value must always land in [0,1] —
+// never negative, never >1, never NaN, never Inf.
+func TestScoreNGramRarityNeverExceedsBounds(t *testing.T) {
+	grandparent := fingerprint.Compute(stable("auth-service"))
+	predecessor := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "read_customer", TargetName: "customer-db", Environment: "production",
+	})
+	cfg := anomaly.DefaultConfig()
+	cfg.NGramRarityWeight = 1.0
+	cfg.MinNGramObservations = 1
+
+	for _, total := range []int{1, 2, 5, 20, 1000} {
+		dest := fingerprint.Compute(features.StableFeatures{
+			ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+			OperationName: fmt.Sprintf("dest-%d", total), TargetName: "customer-db", Environment: "production",
+		})
+		b := ngramBaseline(grandparent, predecessor, []fingerprint.Fingerprint{dest}, []int{total})
+
+		eventTime := b.LastFingerprintTime.Add(time.Second)
+		feat := features.Features{Stable: dest.Stable, Volatile: features.VolatileFeatures{Timestamp: eventTime}}
+		got := anomaly.Score(feat, dest, b, cfg)
+
+		for _, c := range got.Contributors {
+			if c.Name != "ngram_rarity" {
+				continue
+			}
+			if math.IsNaN(c.Value) || math.IsInf(c.Value, 0) {
+				t.Errorf("total=%d: ngram_rarity Value = %v, want a finite number", total, c.Value)
+			}
+			if c.Value < 0 || c.Value > 1 {
+				t.Errorf("total=%d: ngram_rarity Value = %v, want in [0,1]", total, c.Value)
+			}
+		}
+	}
+}
+
+// TestScoreCombinedSequenceSignalsRemainBounded is task 027 §27/§47's
+// own required proof: an event that is both a genuinely novel/rare
+// pairwise transition AND a genuinely novel/rare 3-gram (which happens
+// whenever the final pairwise hop itself has never been observed — see
+// transitionSignal/ngramDeviationSignal's own doc comments) can fire
+// transition_deviation and ngram_deviation simultaneously. combine()'s
+// noisy-OR is not redesigned by this task (per its own explicit
+// instruction) — this test only proves the existing formula keeps the
+// combined result finite and within [0,1] even when every sequence
+// signal fires at once, the same guarantee every other multi-signal
+// combination in this package already has by construction (see
+// combine()'s own clamp on each contribution).
+func TestScoreCombinedSequenceSignalsRemainBounded(t *testing.T) {
+	grandparent := fingerprint.Compute(stable("auth-service"))
+	predecessor := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "read_customer", TargetName: "customer-db", Environment: "production",
+	})
+	novelDest := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "delete_customer", TargetName: "customer-db", Environment: "production",
+	})
+
+	// A predecessor with real outgoing-transition history (so
+	// transition_rarity/ngram_rarity's minimum-support gates are
+	// irrelevant here — this scenario exercises the *deviation*
+	// signals, both of which fire on count==0 regardless of support),
+	// but never observed leading into novelDest at all, at either the
+	// pairwise or 3-gram level.
+	otherDest := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "other", TargetName: "customer-db", Environment: "production",
+	})
+	b := ngramBaseline(grandparent, predecessor, []fingerprint.Fingerprint{otherDest}, []int{30})
+
+	cfg := anomaly.DefaultConfig()
+	cfg.TransitionWeight = 1.0
+	cfg.TransitionRarityWeight = 1.0
+	cfg.NGramWeight = 1.0
+	cfg.NGramRarityWeight = 1.0
+	cfg.NoveltyWeight = 1.0
+	cfg.SensitiveTargetFloor = map[string]float64{"customer-db": 0.9}
+
+	eventTime := b.LastFingerprintTime.Add(time.Second)
+	feat := features.Features{Stable: novelDest.Stable, Volatile: features.VolatileFeatures{Timestamp: eventTime}}
+	got := anomaly.Score(feat, novelDest, b, cfg)
+
+	if !hasSignal(got.Contributors, "transition_deviation") {
+		t.Errorf("Contributors = %+v, want transition_deviation to also fire (setup check)", got.Contributors)
+	}
+	if !hasSignal(got.Contributors, "ngram_deviation") {
+		t.Errorf("Contributors = %+v, want ngram_deviation to also fire (setup check)", got.Contributors)
+	}
+	if math.IsNaN(got.Score) || math.IsInf(got.Score, 0) {
+		t.Fatalf("Score = %v with every sequence signal firing at once, want a finite number", got.Score)
+	}
+	if got.Score < 0 || got.Score > 1 {
+		t.Fatalf("Score = %v with every sequence signal firing at once, want in [0,1]", got.Score)
+	}
+}
+
 func hasSignal(signals []anomaly.Signal, name string) bool {
 	for _, s := range signals {
 		if s.Name == name {

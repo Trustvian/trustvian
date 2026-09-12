@@ -74,6 +74,15 @@ func BenchmarkScoreTransitionDeviation(b *testing.B) {
 	unseenPredecessor := fingerprint.Compute(stable("unseen-predecessor"))
 	bl = bl.Observe(unseenPredecessor, features.VolatileFeatures{}, now)
 	now = now.Add(time.Second)
+	// This benchmark's own loop leaves bl.PreviousFingerprintID
+	// populated (task 027 added the field; it now shifts on every
+	// valid advance, including this one) — which would also make
+	// ngram_deviation fire here, measuring a cost this benchmark was
+	// never meant to isolate (it predates task 027 by two tasks; see
+	// BenchmarkScoreNGramDeviation for that signal's own dedicated
+	// benchmark). Clearing it keeps this benchmark measuring exactly
+	// what its own doc comment says: transitionSignal's cost alone.
+	bl.PreviousFingerprintID = ""
 
 	feat := features.Features{Stable: stable("payment-db"), Volatile: features.VolatileFeatures{Timestamp: now}}
 	cfg := anomaly.DefaultConfig()
@@ -128,6 +137,99 @@ func BenchmarkScoreTransitionRarity(b *testing.B) {
 	feat := features.Features{Stable: stable("payment-db"), Volatile: features.VolatileFeatures{Timestamp: now}}
 	cfg := anomaly.DefaultConfig()
 	cfg.TransitionRarityWeight = 0.7
+
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = anomaly.Score(feat, fp, bl, cfg)
+	}
+}
+
+// BenchmarkScoreNGramDeviation measures task 027's own added cost on a
+// mature, otherwise-unremarkable fingerprint whose TrigramCounts map
+// holds a realistic number of distinct (grandparent,predecessor) pairs
+// (near maxTrigramPredecessors) — the worst case for the map lookup
+// ngramDeviationSignal performs, mirroring
+// BenchmarkScoreTransitionDeviation one level up. Compare against it
+// directly to see this task's own added cost on top of the task
+// 025/026 foundation.
+func BenchmarkScoreNGramDeviation(b *testing.B) {
+	fp := fingerprint.Compute(stable("payment-db"))
+	bl := baseline.New(testKey)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	predecessor := fingerprint.Compute(stable("predecessor"))
+	for i := range 60 { // near maxTrigramPredecessors (64), without exceeding it
+		grandparent := fingerprint.Compute(stable(fmt.Sprintf("grandparent-%d", i)))
+		bl = bl.Observe(grandparent, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+		bl = bl.Observe(predecessor, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+		bl = bl.Observe(fp, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+	}
+	// The (grandparent, predecessor) pair for the event under test:
+	// never before observed leading to fp, so ngram_deviation actually
+	// fires.
+	unseenGrandparent := fingerprint.Compute(stable("unseen-grandparent"))
+	bl = bl.Observe(unseenGrandparent, features.VolatileFeatures{}, now)
+	now = now.Add(time.Second)
+	bl = bl.Observe(predecessor, features.VolatileFeatures{}, now)
+	now = now.Add(time.Second)
+
+	feat := features.Features{Stable: stable("payment-db"), Volatile: features.VolatileFeatures{Timestamp: now}}
+	cfg := anomaly.DefaultConfig()
+	cfg.NGramWeight = 0.7
+
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = anomaly.Score(feat, fp, bl, cfg)
+	}
+}
+
+// BenchmarkScoreNGramRarity measures ngramRaritySignal's own cost in
+// the worst case where it actually fires (a rare-but-seen 3-gram, past
+// MinNGramObservations, so Detail's fmt.Sprintf runs), mirroring
+// BenchmarkScoreTransitionRarity one level up.
+func BenchmarkScoreNGramRarity(b *testing.B) {
+	fp := fingerprint.Compute(stable("payment-db"))
+	bl := baseline.New(testKey)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	grandparent := fingerprint.Compute(stable("grandparent"))
+	predecessor := fingerprint.Compute(stable("predecessor"))
+	// (grandparent, predecessor) leads to 50 distinct filler
+	// destinations (the common case) and only twice to fp, so
+	// (grandparent,predecessor)->fp is rare but not unseen:
+	// TrigramContinuationTotal clears MinNGramObservations (20) while
+	// frequency(fp | grandparent, predecessor) stays low, so the rarity
+	// signal fires instead of degenerating to Value == 0.
+	for i := range 50 {
+		filler := fingerprint.Compute(stable(fmt.Sprintf("filler-%d", i)))
+		bl = bl.Observe(grandparent, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+		bl = bl.Observe(predecessor, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+		bl = bl.Observe(filler, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+	}
+	for range 2 {
+		bl = bl.Observe(grandparent, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+		bl = bl.Observe(predecessor, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+		bl = bl.Observe(fp, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+	}
+	// Two final, unpaired observations (grandparent, then predecessor):
+	// without them, the history window would not be positioned at
+	// (grandparent, predecessor) for the Score call below — see
+	// ngramBaseline's identical technique in anomaly_test.go.
+	bl = bl.Observe(grandparent, features.VolatileFeatures{}, now)
+	now = now.Add(time.Second)
+	bl = bl.Observe(predecessor, features.VolatileFeatures{}, now)
+	now = now.Add(time.Second)
+
+	feat := features.Features{Stable: stable("payment-db"), Volatile: features.VolatileFeatures{Timestamp: now}}
+	cfg := anomaly.DefaultConfig()
+	cfg.NGramRarityWeight = 0.7
 
 	b.ReportAllocs()
 	for b.Loop() {

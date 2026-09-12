@@ -58,6 +58,39 @@ actually depend on.
   unchanged (`456 B/op, 17 allocs/op`), though its latency grows by a
   small, reported (not hidden) amount — see
   [docs/PERFORMANCE.md § v0.6 task 026](docs/PERFORMANCE.md#v06-task-026-transition-rarity).
+- **Bounded n-gram Detection**
+  ([task 027](docs/tasks/027-bounded-ngram-detection.md)) — two new,
+  opt-in anomaly signals, `ngram_deviation`/`ngram_rarity`, extending
+  order-awareness one step further back than tasks 025/026: given a
+  3-gram `A -> B -> C`, has this exact (grandparent, predecessor) pair
+  ever led to this destination before, and if so, how commonly? A
+  fixed 3-gram only — no configurable `n`, no Markov model.
+  `internal/baseline.Baseline` gains one new scalar,
+  `PreviousFingerprintID`; `FingerprintStats` gains two new,
+  *independently* bounded (64-entry each) maps, `TrigramCounts`
+  (destination-keyed by a `(grandparent, predecessor)` pair via the
+  new `baseline.TrigramKey` type) and `TrigramContinuationTotal`
+  (predecessor-keyed by grandparent) — see [ADR
+  0012](docs/adr/0012-bounded-trigram-behavioral-context.md) for why a
+  scalar cannot answer a 3-gram's denominator, and for a genuine
+  correctness subtlety this task's own review caught:
+  `TrigramContinuationTotal`'s cardinality does not inherit
+  `PredecessorCounts`'s existing bound "for free" and needed its own.
+  `internal/anomaly.Config` gains `NGramWeight`, `MinNGramObservations`
+  (defaults to `20`, a *separate* field from
+  `MinTransitionObservations` — the two gate statistically different
+  denominators), and `NGramRarityWeight` (both signal weights default
+  to `0`, the same "ships opt-in" precedent every other signal weight
+  in this package already set). Proven, end-to-end, to add genuine
+  information beyond tasks 025/026: both pairwise hops of a sequence
+  can be independently familiar while the complete 3-gram has never
+  occurred, and `ngram_deviation` still detects it (see
+  `TestScoreNGramDeviationDetectsNovelTrigramDespiteFamiliarPairwiseTransitions`).
+  Existing `v0.5`/task-025/026 callers see byte-for-byte unchanged
+  `Score` output; `Engine.Analyze`'s allocation profile stays unchanged
+  (`456 B/op, 17 allocs/op`), though its latency grows by a small,
+  reported (not hidden) amount — see
+  [docs/PERFORMANCE.md § v0.6 task 027](docs/PERFORMANCE.md#v06-task-027-bounded-ngram-detection).
 
 ## v0.5.0 — Policy & Configuration
 

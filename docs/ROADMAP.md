@@ -213,12 +213,13 @@ milestones exist to close:
 
 **Next up:** with `v0.1`–`v0.5.0` shipped (see [Release readiness —
 v0.5.0](#release-readiness--v050) for the tag/dependency verification),
-`v0.6` — Behavioral Detection Depth is now in progress: its first two
-tasks, [025 Sequence Analysis
-Foundation](tasks/025-sequence-analysis-foundation.md) and [026
-Transition Rarity](tasks/026-transition-rarity.md), are done (see the
-milestone section below); n-gram behavioral detection is named as the
-next illustrative slice, not yet started. The rest of this roadmap's
+`v0.6` — Behavioral Detection Depth is now in progress: its first
+three tasks, [025 Sequence Analysis
+Foundation](tasks/025-sequence-analysis-foundation.md), [026
+Transition Rarity](tasks/026-transition-rarity.md), and [027 Bounded
+n-gram Detection](tasks/027-bounded-ngram-detection.md), are done (see
+the milestone section below); Markov transition scoring is named as
+the next illustrative slice, not yet started. The rest of this roadmap's
 remaining work (the rest of `v0.6` through `v1.0` Production-Ready OSS,
 defined below) charts the
 path to a complete, standalone, production-usable OSS product — see
@@ -814,18 +815,21 @@ has run:
    github.com/Trustvian/trustvian` reports `v0.5.0`; `processor/`'s
    full quality gate (`go build`/`go vet`/`go test -race ./...`) passes
    with no `go.work` involved.
-5. **Remaining:** publish GitHub release notes from the
-   `CHANGELOG.md § v0.5.0` entry — a communications step, not a
-   functional one.
+5. ~~Publish GitHub release notes from the `CHANGELOG.md § v0.5.0`
+   entry.~~ **Done** — `gh release list` shows `v0.5.0` ("Policy &
+   Configuration") published and marked `Latest` on GitHub.
+
+Nothing remains outstanding for this release.
 
 ## v0.6 — Behavioral Detection Depth
 
 **Status: in progress.** [Task 025](tasks/025-sequence-analysis-foundation.md)
-(Sequence Analysis Foundation) and [task
-026](tasks/026-transition-rarity.md) (Transition Rarity) are done; the
-next illustrative slice is n-gram behavioral detection (see "Not yet
-done" below) — not yet started, not yet scoped. The rest of the
-milestone below remains unscoped, per this roadmap's own "small
+(Sequence Analysis Foundation), [task
+026](tasks/026-transition-rarity.md) (Transition Rarity), and [task
+027](tasks/027-bounded-ngram-detection.md) (Bounded n-gram Detection)
+are done; the next illustrative slice is Markov transition scoring (see
+"Not yet done" below) — not yet started, not yet scoped. The rest of
+the milestone below remains unscoped, per this roadmap's own "small
 vertical slices" principle.
 
 **Objective.** OSS detection should not stop at individual-event
@@ -835,8 +839,9 @@ OSS capability — the one item this document's prior "Future research"
 section named that a production-usable OSS product genuinely needs
 before `v1.0`, per this roadmap's now-explicit product boundary.
 
-**Scope** (task files [025](tasks/025-sequence-analysis-foundation.md)
-and [026](tasks/026-transition-rarity.md) for the slices done so far;
+**Scope** (task files [025](tasks/025-sequence-analysis-foundation.md),
+[026](tasks/026-transition-rarity.md), and
+[027](tasks/027-bounded-ngram-detection.md) for the slices done so far;
 the rest remain unscoped and unnumbered until each is actually picked
 up — illustrative names only below):
 
@@ -893,6 +898,41 @@ up — illustrative names only below):
   Analysis § Transition rarity](../sequence-analysis.md#transition-rarity-v06-task-026)
   and [task 026](tasks/026-transition-rarity.md) for benchmarks and the
   complete test list.
+- **027 Bounded n-gram Detection — done.** Extends order-awareness one
+  step further back: given a 3-gram `A -> B -> C`, has this exact
+  (grandparent, predecessor) pair ever led to this destination before,
+  and if so, how commonly? Two new signals, `ngram_deviation`/
+  `ngram_rarity` (opt-in via `Config.NGramWeight`/
+  `Config.NGramRarityWeight`, both defaulting to `0`), mirroring tasks
+  025/026's own binary-then-graded pattern one level up. A fixed
+  3-gram only — no configurable `n`, no Markov model (per the task's
+  own explicit non-goals). `Baseline` gains exactly one more scalar,
+  `PreviousFingerprintID`; `FingerprintStats` gains two new,
+  *independently* bounded maps, `TrigramCounts` (destination-keyed by
+  a `(grandparent, predecessor)` pair) and `TrigramContinuationTotal`
+  (predecessor-keyed by grandparent) — a scalar (as
+  `OutgoingTransitionTotal` is for the 2-gram case) cannot answer a
+  3-gram's denominator, since a single fingerprint can be the
+  "predecessor" half of many distinct pairs; see [ADR
+  0012](adr/0012-bounded-trigram-behavioral-context.md) for the full
+  orientation proof and for a genuine correctness subtlety this task's
+  own review caught: `TrigramContinuationTotal`'s cardinality is *not*
+  automatically bounded by `PredecessorCounts`'s existing cap, and
+  needed its own explicit, independent bound. Zero changes to
+  `engine.go`, `internal/store`, `internal/policy`, `internal/trust`,
+  `alert`, `config`, the CLI, or `processor/` — identical reuse
+  discipline to tasks 025/026. Proven end-to-end through the real,
+  gated `Analyze`+`Observe` loop:
+  `TestAnalyzeNGramEndToEnd` (see [engine_test.go](../engine_test.go)),
+  and — the task's own mandatory proof that this detector adds genuine
+  information beyond tasks 025/026 —
+  `TestScoreNGramDeviationDetectsNovelTrigramDespiteFamiliarPairwiseTransitions`
+  (see `internal/anomaly/anomaly_test.go`): both individual pairwise
+  hops familiar, complete 3-gram never observed,
+  `ngram_deviation` still fires. See [Sequence Analysis § Bounded
+  3-gram detection](../sequence-analysis.md#bounded-3-gram-detection-v06-task-027)
+  and [task 027](tasks/027-bounded-ngram-detection.md) for benchmarks
+  and the complete test list.
 - **Already covered by existing signals**, named here only to close
   the gap between this document's language and the original spec's
   ([`trustvian-project-spec.md` §
@@ -907,15 +947,15 @@ up — illustrative names only below):
   `time_pattern_deviation`, both already shipped).
 - **Not yet done — illustrative future slices, unscoped, no task
   numbers reserved:**
-  - *n-gram behavioral detection* (**next**) — generalizing
-    `LastFingerprintID` (one step) into a small, still explicitly
-    bounded ring buffer of the last N fingerprints (see [ADR
-    0010](adr/0010-bounded-process-local-sequence-state.md)'s
-    "Alternatives considered" for what this would need to change). Not
-    yet started, not yet scoped.
-  - *Markov transition scoring* — an actual `P(destination|predecessor)`
-    probability model over `PredecessorCounts`, once real traffic
-    justifies the added complexity task 025 deliberately deferred.
+  - *Markov transition scoring* (**next**) — an actual
+    `P(destination|predecessor)` probability model (and, potentially,
+    its 3-gram generalization over `TrigramCounts`/
+    `TrigramContinuationTotal`) with real smoothing, once real traffic
+    justifies the added complexity tasks 025–027 deliberately deferred
+    — see [ADR 0011](adr/0011-transition-rarity-statistic-and-orientation.md#why-markov-still-waits)
+    and [ADR 0012](adr/0012-bounded-trigram-behavioral-context.md#future-extension)
+    for what specifically remains missing. Not yet started, not yet
+    scoped.
   - *v0.6 stabilization / release gate* — mirroring [task
     024](tasks/024-v05-release-gate.md)'s shape for `v0.5`, once the
     milestone's feature slices are complete.
@@ -941,10 +981,13 @@ a separate, independent EWMA dimension
 ([task 017](tasks/017-baseline-time-patterns.md)'s own Non-Goals
 already established this) and stays in
 [Future research](#future-research) rather than being folded in here.
-No CLI/Collector/config-schema integration for `transition_deviation`
-or `transition_rarity` yet — see [task 025's](tasks/025-sequence-analysis-foundation.md#non-goals)
-and [task 026's](tasks/026-transition-rarity.md#non-goals) own
-Non-Goals sections.
+No CLI/Collector/config-schema integration for `transition_deviation`,
+`transition_rarity`, `ngram_deviation`, or `ngram_rarity` yet — see
+[task 025's](tasks/025-sequence-analysis-foundation.md#non-goals),
+[task 026's](tasks/026-transition-rarity.md#non-goals), and [task
+027's](tasks/027-bounded-ngram-detection.md#non-goals) own Non-Goals
+sections. No configurable n-gram length either — task 027 ships a
+fixed 3-gram only (see [ADR 0012](adr/0012-bounded-trigram-behavioral-context.md#why-3-grams-first-not-arbitrary-n)).
 
 **Dependencies.** `v0.1` (stable `Baseline`/`Anomaly` — a sequence
 signal reads a fingerprint's recent history the same way
@@ -952,12 +995,13 @@ signal reads a fingerprint's recent history the same way
 `v0.5`/`v0.7`.
 
 **Acceptance criteria.** See [task
-025](tasks/025-sequence-analysis-foundation.md)'s and [task
-026](tasks/026-transition-rarity.md)'s own Acceptance Criteria sections
-for the slices done so far — both fully met, verified by `go test
-./... -race -count=1` and `go test -bench=. -benchmem ./...` showing
-`BenchmarkEngineAnalyze`'s allocation profile unchanged across both
-tasks. The milestone as a whole remains incomplete: it is not done until the
+025](tasks/025-sequence-analysis-foundation.md)'s, [task
+026](tasks/026-transition-rarity.md)'s, and [task
+027](tasks/027-bounded-ngram-detection.md)'s own Acceptance Criteria
+sections for the slices done so far — all fully met, verified by `go
+test ./... -race -count=1` and `go test -bench=. -benchmem ./...`
+showing `BenchmarkEngineAnalyze`'s allocation profile unchanged across
+all three tasks. The milestone as a whole remains incomplete: it is not done until the
 remaining, still-unscoped slices above are picked up.
 
 ## v0.7 — AI Agent Behavioral Security

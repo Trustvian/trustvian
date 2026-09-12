@@ -53,3 +53,31 @@ func BenchmarkObserveTransition(b *testing.B) {
 		now = now.Add(time.Millisecond)
 	}
 }
+
+// BenchmarkObserveTrigram measures task 027's own added cost on top of
+// BenchmarkObserveTransition: a strictly-advancing clock cycling
+// through 3 distinct fingerprints, so every call (after the first two)
+// completes a valid 3-gram and exercises recordTrigram/
+// observeTrigramContinuation's copy-on-write, not just
+// recordPredecessor's — see docs/tasks/027-bounded-ngram-detection.md
+// § Benchmarks for the before/after comparison this measures against
+// BenchmarkObserveTransition.
+func BenchmarkObserveTrigram(b *testing.B) {
+	fpA, fpB, fpC := readFingerprint(), updateFingerprint(), deleteFingerprint() // defined in baseline_test.go
+	vol := features.VolatileFeatures{HasLatency: true, Latency: 10 * time.Millisecond}
+	bl := baseline.New(testKey)
+	now := time.Now()
+
+	b.ReportAllocs()
+	for i := 0; b.Loop(); i++ {
+		var fp = fpA
+		switch i % 3 {
+		case 1:
+			fp = fpB
+		case 2:
+			fp = fpC
+		}
+		bl = bl.Observe(fp, vol, now)
+		now = now.Add(time.Millisecond)
+	}
+}
