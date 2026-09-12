@@ -109,8 +109,29 @@ the real engine and confirms exactly one `Fingerprint` accumulates all
 independently familiar, then confirming
 `search → secret.read → external.post` still gets flagged as
 anomalous — with zero agent-specific detection code. See [ADR
-0014](docs/adr/0014-ai-agents-as-first-class-behavioral-actors.md) and
-[`docs/ROADMAP.md` §
+0014](docs/adr/0014-ai-agents-as-first-class-behavioral-actors.md).
+
+The next `v0.7` slice, [Approval-Aware Policy
+Semantics](docs/tasks/030-approval-aware-policy-semantics.md), gives
+`ApprovalStatus` its first real consumer — entirely inside `Policy`,
+with no new anomaly signal: `policy.Condition` gained an
+`ApprovalStatus` field, letting a `Rule`'s existing `Unless` mechanism
+express "this operation requires approval" (`Unless: &Condition{
+ApprovalStatus: ApprovalApproved }`) without any new Rule-level
+primitive. **Policy, not the event, is authoritative** — an event
+self-declaring `ApprovalNotRequired` cannot exempt itself from a
+configured requirement, and missing evidence (`ApprovalUnspecified`)
+fails closed to `BLOCK`, both proven by dedicated regression tests, not
+just documented. `ApprovalStatus` remains untrusted, self-reported
+evidence: Trustvian evaluates it, it does not verify its provenance,
+and it does not grant approval. Anomaly/Trust scoring is provably
+unaffected — an approval rule changes only `Decision`, never
+`Anomaly.Score` or `Trust.Score` for the identical underlying
+behavior. The mechanism is domain-generic, not coupled to
+`ActorTypeAIAgent`: the identical rule gates a `service` or `user`
+actor's matching operation the same way. See [ADR
+0015](docs/adr/0015-approval-as-policy-evidence-not-behavioral-anomaly.md)
+and [`docs/ROADMAP.md` §
 v0.7](docs/ROADMAP.md#v07--ai-agent-behavioral-security) for the full
 domain-model reasoning and current state.
 
@@ -124,9 +145,10 @@ alert sink (Slack/Teams/PagerDuty) — declarative *alert* configuration
 itself is
 now implemented (see above); wiring it into the CLI or the Collector
 processor is deliberately deferred, since neither has an alert-delivery
-flow yet for it to plug into — further AI-agent behavioral-detection
-scenarios beyond the foundation task above, a production-grade
-persistent store beyond `FileStore`, and
+flow yet for it to plug into — delegation behavioral semantics and
+combined agent-security-scenario validation beyond the two `v0.7`
+slices above, a production-grade persistent store beyond `FileStore`,
+and
 release/operational engineering (CI, Docker image, SBOM). See
 [`docs/ROADMAP.md`](docs/ROADMAP.md#the-oss--enterprise-product-boundary)
 for the explicit OSS/Control boundary and the full milestone sequence

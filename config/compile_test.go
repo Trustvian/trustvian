@@ -88,6 +88,7 @@ func TestCompileConditionTranslatesEveryField(t *testing.T) {
 				Environment:       "production",
 				MinRiskLevel:      "high",
 				Attributes:        map[string]string{"tool.category": "secrets"},
+				ApprovalStatus:    "approved",
 			},
 			Decision: "block",
 			Reason:   "test",
@@ -117,6 +118,47 @@ func TestCompileConditionTranslatesEveryField(t *testing.T) {
 	}
 	if when.Attributes["tool.category"] != "secrets" {
 		t.Errorf("Attributes[tool.category] = %q, want %q", when.Attributes["tool.category"], "secrets")
+	}
+	if string(when.ApprovalStatus) != "approved" {
+		t.Errorf("ApprovalStatus = %q, want %q", when.ApprovalStatus, "approved")
+	}
+}
+
+// TestCompileApprovalConditionViaUnless is task 030's end-to-end
+// compile-level proof of the canonical "requires approval" pattern:
+// When matches the operation, Unless matches ApprovalStatus: approved
+// — CompilePolicy must translate both halves faithfully, since the
+// Unless side is where the actual enforcement lives.
+func TestCompileApprovalConditionViaUnless(t *testing.T) {
+	cfg := config.PolicyConfig{
+		Version:         config.SchemaVersionV1,
+		DefaultDecision: "allow",
+		DefaultReason:   "no approval requirement configured",
+		Rules: []config.PolicyRule{{
+			Name: "shell-execute-requires-approval",
+			When: config.PolicyCondition{
+				OperationCategory: "tool",
+				TargetName:        "shell.execute",
+			},
+			Unless: &config.PolicyCondition{
+				ApprovalStatus: "approved",
+			},
+			Decision: "block",
+			Reason:   "shell.execute requires approval",
+		}},
+	}
+
+	p, err := config.CompilePolicy(cfg)
+	if err != nil {
+		t.Fatalf("CompilePolicy: %v", err)
+	}
+
+	rule := p.Rules[0]
+	if rule.Unless == nil {
+		t.Fatalf("Unless = nil, want a compiled Condition")
+	}
+	if string(rule.Unless.ApprovalStatus) != "approved" {
+		t.Errorf("Unless.ApprovalStatus = %q, want %q", rule.Unless.ApprovalStatus, "approved")
 	}
 }
 

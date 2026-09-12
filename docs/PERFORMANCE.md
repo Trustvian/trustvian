@@ -680,6 +680,39 @@ cost when unread; `Analyze`'s own logic is byte-for-byte unchanged) —
 the `features`/`fingerprint`-level numbers above are the load-bearing
 proof for this task's own overhead claim.
 
+### v0.7 task 030 (Approval-Aware Policy Semantics)
+
+Measured same environment (Go 1.27, darwin/arm64, Apple M3 Pro). This
+task adds one field to `policy.Condition`/`Input`, checked with one
+more string equality comparison in `Condition.Matches` — the identical
+shape every other `Condition` field already has, so the honest
+before/after comparison is `BenchmarkEvaluateMatch` (a matching rule
+with no approval condition) against a new benchmark for the equivalent
+approval-gated rule:
+
+| Benchmark | Result |
+|---|---:|
+| `BenchmarkEvaluateMatch` (`internal/policy`, no approval condition) | 31.10 ns/op, 0 B/op, 0 allocs/op |
+| `BenchmarkEvaluateApprovalCondition` (`internal/policy`, approval-gated rule) | 29.95 ns/op, 0 B/op, 0 allocs/op |
+| `BenchmarkEngineAnalyze` (root, before and after) | 456 B/op, 17 allocs/op — unchanged |
+| `BenchmarkCompilePolicy` (`config`, with an `approval_status` field present) | 365.9 ns/op, 480 B/op, 5 allocs/op |
+| `BenchmarkValidate` (`config`) | 239.7 ns/op, 48 B/op, 3 allocs/op |
+
+**Zero added allocation, confirmed by the matched pair.**
+`BenchmarkEvaluateApprovalCondition`'s `0 B/op, 0 allocs/op` matches
+`BenchmarkEvaluateMatch`'s exactly (the small ns/op difference is
+measurement noise, not a real per-run cost difference — both are a
+handful of struct-field comparisons with no allocation). `Engine.Analyze`
+itself was not expected to move and did not: `policy.Input`'s one new
+field is a plain assignment from an already-computed
+`ev.Context.ApprovalStatus`, not a new allocation path.
+`BenchmarkCompilePolicy`/`BenchmarkValidate` were re-run rather than
+diffed against a stored pre-task baseline (none exists at this
+granularity), but remain in the same low-allocation range every other
+`config` compile/validate path already occupies — consistent with
+adding one more `string` field to an existing struct literal, not a
+new code path.
+
 ## Reading the numbers
 
 **Session-to-session `ns/op` moved broadly; allocation counts didn't —

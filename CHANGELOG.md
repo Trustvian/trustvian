@@ -33,6 +33,26 @@ actually depend on.
   `Anomaly` type. Existing `v0.1`–`v0.6` callers are unaffected:
   `BenchmarkEngineAnalyze`'s allocation profile is unchanged. See [ADR
   0014](docs/adr/0014-ai-agents-as-first-class-behavioral-actors.md).
+- **Approval-Aware Policy Semantics**
+  ([task 030](docs/tasks/030-approval-aware-policy-semantics.md)) —
+  `ApprovalStatus` gains its first real consumer, entirely inside
+  `internal/policy`: `policy.Input`/`Condition` and
+  `config.PolicyCondition` each gain an `ApprovalStatus` field (config
+  key `approval_status`), letting a `Policy` rule require approval for
+  an operation via the existing `Unless` mechanism
+  (`Unless: &Condition{ApprovalStatus: Approved}`) — no new Rule-level
+  primitive, no new anomaly signal. Fail-safe by construction, proven
+  by test: an event self-declaring `ApprovalNotRequired` cannot
+  override a `Policy` rule that requires approval, and missing
+  evidence (`ApprovalUnspecified`) fails closed to `BLOCK` rather than
+  silently passing. `Anomaly.Score`/`Trust.Score`/`Fingerprint.ID` are
+  provably unaffected by `ApprovalStatus` — only `Decision` differs.
+  The mechanism is domain-generic, not coupled to `ActorTypeAIAgent`.
+  `ApprovalStatus` remains untrusted, self-reported evidence: this
+  task adds no cryptographic verification of its provenance. No new
+  package, no new pipeline stage, no new dependency; CLI and the OTel
+  Collector processor require zero code changes. See [ADR
+  0015](docs/adr/0015-approval-as-policy-evidence-not-behavioral-anomaly.md).
 
 ## v0.6.0 — Behavioral Detection Depth
 

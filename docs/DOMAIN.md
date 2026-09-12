@@ -624,17 +624,42 @@ not** — the central design question this task answers explicitly:
   (zero value) / `NotRequired` / `Required` (a requirement flagged
   with no decision recorded yet — functionally *pending*) / `Approved`
   / `Denied`) records a per-event fact, not a workflow state —
-  Trustvian does not manage an approval process. Follows
-  `OperationDirection`'s own existing precedent exactly: a typed,
-  optional field, not yet read by `features.Extract` or by
-  `policy.Condition` (which currently matches only
-  `Event.Attributes`, not `Event.Context` — there is no way to write
-  a `Policy` rule against approval state today), reserved for a future
-  signal or `Policy` condition to consume once one has a concrete
-  design. **Untrusted input**: a producer's own event asserting
-  `Approved` is not verified against any authorization system — see
+  Trustvian does not manage an approval process. Never read by
+  `features.Extract` — it does not affect `Fingerprint`/`baseline.Key`
+  identity or `Anomaly`/`Trust` scoring (proven by
+  `TestAnalyzeApprovalPolicyBehavioralScoreIndependence`), only
+  `Decision`.
+
+  **`v0.7` task 030 gave it its first real consumer:** `policy.Input`/
+  `Condition` (and `config.PolicyCondition`) each gained an
+  `ApprovalStatus` field, an equality match identical in kind to every
+  other `Condition` field. This is the same "typed but optional, no
+  default assumed" precedent `OperationDirection` established — the
+  field waited for a concrete consumer before one was built. See
+  [docs/policy-guide.md § an operation that requires
+  approval](policy-guide.md#example-an-operation-that-requires-approval)
+  for the worked example and [ADR
+  0015](adr/0015-approval-as-policy-evidence-not-behavioral-anomaly.md)
+  for why this belongs to `policy`, never `anomaly`.
+
+  **Approval *state* vs. approval *evidence trust* — two different
+  questions.** *State* is what `ApprovalStatus`'s five values encode
+  (was approval required, what was the outcome) — task 030 makes
+  `Policy` able to read and act on this state. *Evidence trust* is a
+  separate question this task deliberately does **not** answer:
+  whether a given `ApprovalStatus` value can be believed. `Approved`
+  is evidence the event producer supplied, not proof Trustvian
+  verified — an AI agent's own event self-declaring `Approved` is
+  evaluated exactly as-is, with no cryptographic check, no OAuth/IAM
+  call, and no coupling to `Actor.IdentityConfidence` (a deliberately
+  independent signal — see ADR 0015). **Policy owns the requirement,
+  not the event**: an event self-declaring `ApprovalNotRequired`
+  cannot exempt itself from a `Policy` rule that requires `Approved` —
+  proven by
+  `TestEvaluateApprovalPolicyAuthorityEventCannotOverridePolicy`. See
   [docs/SECURITY.md § AI Agent behavioral security](SECURITY.md)'s
-  "Approval self-assertion" entry.
+  "Approval self-assertion" entry for the full trust-boundary
+  writeup.
 - **Agent identity is `Actor.ID`, never model/provider metadata.** A
   model name (`"gpt-5"`) is not behavioral identity — two agents built
   on the same model are different actors; the same agent migrating

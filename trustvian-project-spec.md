@@ -604,11 +604,37 @@ Trustvian understands, as of task 014:
 - Agent-to-agent communication and delegation (`Context.DelegatedFrom`,
   a single hop)
 
-Not yet built, and not this task's job: agent behavioral *detection
+**Task 030 — Approval-Aware Policy Semantics — is also done.**
+[ADR 0015](docs/adr/0015-approval-as-policy-evidence-not-behavioral-anomaly.md)
+gave `ApprovalStatus` its first real consumer, entirely inside
+`internal/policy`: a `Policy` rule can now require approval for a
+given operation (`Unless: &Condition{ApprovalStatus: Approved}`),
+with **Policy, never the event, deciding whether approval is
+required** — an event self-declaring `ApprovalNotRequired` cannot
+exempt itself from a configured requirement, and missing evidence
+fails closed to `BLOCK`. This settled the question this section
+previously left open:
+
+- **Implemented:** approval-aware deterministic policy evaluation —
+  "is this operation authorized," expressed as ordinary `Policy` data,
+  provably independent of behavioral (`Anomaly`/`Trust`) scoring, and
+  domain-generic (not coupled to `ActorTypeAIAgent`).
+- **Not implemented, and not this project's job:** an approval
+  workflow, an approval request/notification flow, approval
+  persistence, a human-approval UI, or approval granting of any kind.
+  `ApprovalStatus` also remains untrusted, self-reported evidence — no
+  cryptographic verification of its provenance exists; Trustvian
+  evaluates the evidence an integration supplies, it does not
+  authenticate where that evidence came from.
+
+Not yet built, and not either task's job: agent behavioral *detection
 scenarios* beyond proving reuse of existing signals (a later, unscoped
-`v0.7` slice), a delegation graph, and any declarative
-(YAML/CLI/Collector) configuration surface for agent-specific
-behavior (none was needed — no new detector weight was added).
+`v0.7` slice), delegation-aware detection (`DelegatedFrom` remains
+context-only, unaffected by task 030), a delegation graph, and any
+declarative (YAML/CLI/Collector) configuration surface for
+agent-specific behavior beyond the generic `approval_status` condition
+field task 030 already added (the existing `PolicyConfig`/YAML/CLI/
+Collector path already carries it — no separate surface was needed).
 
 **MCP.** Trustvian's read/query surface may eventually be exposed to AI
 agents and developer tooling via MCP

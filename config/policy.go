@@ -105,9 +105,9 @@ type PolicyRule struct {
 // policy.Condition's. It intentionally exposes only the matching
 // dimensions policy.Condition already supports today
 // (ActorType, OperationCategory, TargetName, Environment,
-// MinRiskLevel, Attributes) — it does not invent new matchable
-// dimensions (e.g. a numeric anomaly-score or trust-score threshold)
-// that the underlying engine cannot yet evaluate; extending
+// MinRiskLevel, Attributes, ApprovalStatus) — it does not invent new
+// matchable dimensions (e.g. a numeric anomaly-score or trust-score
+// threshold) that the underlying engine cannot yet evaluate; extending
 // policy.Condition itself is a separate, future decision, not
 // something this configuration layer should get ahead of.
 type PolicyCondition struct {
@@ -136,4 +136,15 @@ type PolicyCondition struct {
 	// Attributes, if non-empty, requires every key to be present with
 	// a matching value — identical to policy.Condition.Attributes.
 	Attributes map[string]string `yaml:"attributes,omitempty"`
+
+	// ApprovalStatus, if set, must be one of the recognized
+	// event.ApprovalStatus values ("not_required", "required",
+	// "approved", "denied") and requires the event's approval evidence
+	// to equal it exactly — identical to
+	// policy.Condition.ApprovalStatus. Pair this with Unless to express
+	// "this operation requires approval": When matches the operation,
+	// Unless matches ApprovalStatus: "approved", so the rule fires for
+	// every other approval state — see
+	// docs/tasks/030-approval-aware-policy-semantics.md.
+	ApprovalStatus string `yaml:"approval_status,omitempty"`
 }

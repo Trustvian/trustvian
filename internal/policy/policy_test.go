@@ -137,6 +137,149 @@ func TestConditionMatchesAttributes(t *testing.T) {
 	}
 }
 
+func TestConditionMatchesApprovalStatus(t *testing.T) {
+	tests := []struct {
+		name string
+		cond policy.Condition
+		in   policy.Input
+		want bool
+	}{
+		{"empty condition matches any approval state", policy.Condition{}, policy.Input{ApprovalStatus: event.ApprovalDenied}, true},
+		{"approved matches approved", policy.Condition{ApprovalStatus: event.ApprovalApproved}, policy.Input{ApprovalStatus: event.ApprovalApproved}, true},
+		{"approved mismatches denied", policy.Condition{ApprovalStatus: event.ApprovalApproved}, policy.Input{ApprovalStatus: event.ApprovalDenied}, false},
+		{"approved mismatches unspecified", policy.Condition{ApprovalStatus: event.ApprovalApproved}, policy.Input{ApprovalStatus: event.ApprovalUnspecified}, false},
+		{"approved mismatches not_required", policy.Condition{ApprovalStatus: event.ApprovalApproved}, policy.Input{ApprovalStatus: event.ApprovalNotRequired}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cond.Matches(tt.in); got != tt.want {
+				t.Errorf("Matches() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// approvalRequiredPolicy is task 030's canonical example: an operation
+// that requires approval is expressed entirely in Policy, via the
+// existing Unless mechanism — no new Rule-level primitive. The rule
+// fires (denying) for every ApprovalStatus except Approved, which is
+// exactly what makes the Policy — never the event — authoritative over
+// whether approval is required. See
+// docs/tasks/030-approval-aware-policy-semantics.md's Approval Matrix.
+func approvalRequiredPolicy() policy.Policy {
+	return policy.Policy{
+		Rules: []policy.Rule{
+			{
+				Name: "shell-execute-requires-approval",
+				When: policy.Condition{OperationCategory: event.OperationCategoryTool, TargetName: "shell.execute"},
+				Unless: &policy.Condition{
+					ApprovalStatus: event.ApprovalApproved,
+				},
+				Action: policy.DecisionBlock,
+				Reason: "shell.execute requires approval; approval evidence was not Approved",
+			},
+		},
+		DefaultAction: policy.DecisionAllow,
+		DefaultReason: "no approval requirement configured for this operation",
+	}
+}
+
+func approvalInput(status event.ApprovalStatus) policy.Input {
+	return policy.Input{
+		Stable: features.StableFeatures{
+			ActorType:         event.ActorTypeAIAgent,
+			OperationCategory: event.OperationCategoryTool,
+			OperationName:     "shell.execute",
+			TargetName:        "shell.execute",
+		},
+		ApprovalStatus: status,
+	}
+}
+
+// TestEvaluateApprovalRequiredExampleMatrix is task 030's mandatory
+// approval matrix test (§18/§32 of the task brief): for a Policy that
+// requires approval for one operation, every ApprovalStatus value must
+// produce the documented, tested outcome — Approved is the only value
+// that satisfies the requirement; everything else, including
+// NotRequired and Unspecified, fails closed to BLOCK.
+func TestEvaluateApprovalRequiredExampleMatrix(t *testing.T) {
+	p := approvalRequiredPolicy()
+
+	tests := []struct {
+		status event.ApprovalStatus
+		want   policy.Decision
+	}{
+		{event.ApprovalApproved, policy.DecisionAllow},
+		{event.ApprovalDenied, policy.DecisionBlock},
+		{event.ApprovalRequired, policy.DecisionBlock},
+		{event.ApprovalUnspecified, policy.DecisionBlock},
+		{event.ApprovalNotRequired, policy.DecisionBlock},
+	}
+	for _, tt := range tests {
+		name := string(tt.status)
+		if name == "" {
+			name = "unspecified"
+		}
+		t.Run(name, func(t *testing.T) {
+			got := p.Evaluate(approvalInput(tt.status))
+			if got.Decision != tt.want {
+				t.Errorf("ApprovalStatus=%q: Decision = %q, want %q", tt.status, got.Decision, tt.want)
+			}
+		})
+	}
+}
+
+// TestEvaluateApprovalPolicyAuthorityEventCannotOverridePolicy is task
+// 030's mandatory policy-authority regression (§10/§33 of the task
+// brief): an event self-declaring ApprovalNotRequired must NOT be able
+// to override a Policy that requires approval for this operation. The
+// evaluated actor does not control whether its own operation requires
+// approval — only Policy does.
+func TestEvaluateApprovalPolicyAuthorityEventCannotOverridePolicy(t *testing.T) {
+	p := approvalRequiredPolicy()
+
+	got := p.Evaluate(approvalInput(event.ApprovalNotRequired))
+	if got.Decision != policy.DecisionBlock {
+		t.Fatalf("Decision = %q, want %q — an event claiming ApprovalNotRequired must not override a Policy that requires approval", got.Decision, policy.DecisionBlock)
+	}
+}
+
+// TestEvaluateApprovalFailSafeOnMissingEvidence is task 030's mandatory
+// fail-safe regression (§19/§34 of the task brief): missing approval
+// evidence (ApprovalUnspecified — "not recorded") must fail closed to
+// BLOCK, the same as an explicit Denied, not silently pass as if
+// approval were unnecessary.
+func TestEvaluateApprovalFailSafeOnMissingEvidence(t *testing.T) {
+	p := approvalRequiredPolicy()
+
+	got := p.Evaluate(approvalInput(event.ApprovalUnspecified))
+	if got.Decision != policy.DecisionBlock {
+		t.Fatalf("Decision = %q, want %q — missing approval evidence must fail closed, not silently pass", got.Decision, policy.DecisionBlock)
+	}
+}
+
+// TestEvaluateNoApprovalRuleConfiguredIsUnaffectedByApprovalStatus is
+// task 030's mandatory backward-compatibility regression (§15/§35 of
+// the task brief): a Policy with no approval-aware rule at all must
+// behave exactly as before regardless of ApprovalStatus — approval
+// context must never become an implicit, global policy on its own.
+func TestEvaluateNoApprovalRuleConfiguredIsUnaffectedByApprovalStatus(t *testing.T) {
+	p := policy.Policy{
+		DefaultAction: policy.DecisionObserveOnly,
+		DefaultReason: "no rules configured",
+	}
+
+	for _, status := range []event.ApprovalStatus{
+		event.ApprovalUnspecified, event.ApprovalNotRequired,
+		event.ApprovalRequired, event.ApprovalApproved, event.ApprovalDenied,
+	} {
+		got := p.Evaluate(approvalInput(status))
+		if got.Decision != policy.DecisionObserveOnly {
+			t.Errorf("ApprovalStatus=%q with no approval rule configured: Decision = %q, want %q (approval context alone must not become an implicit policy)", status, got.Decision, policy.DecisionObserveOnly)
+		}
+	}
+}
+
 func TestEvaluateToolCategorySecretsExample(t *testing.T) {
 	p := policy.Policy{
 		Rules: []policy.Rule{
