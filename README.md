@@ -47,18 +47,27 @@ Alerts](#configuring-alerts) below and [ADR
 0009](docs/adr/0009-alert-config-is-a-separate-document.md)). See
 [Configuring a Policy](#configuring-a-policy) below.
 
-**`v0.6` — Behavioral Detection Depth is in progress.** Its first
-task, [Sequence Analysis
-Foundation](docs/tasks/025-sequence-analysis-foundation.md), is done:
-a new, opt-in `transition_deviation` anomaly signal answers whether
+**`v0.6` — Behavioral Detection Depth is in progress.** Its first two
+tasks are done: [Sequence Analysis
+Foundation](docs/tasks/025-sequence-analysis-foundation.md) added a
+new, opt-in `transition_deviation` anomaly signal that answers whether
 the immediately preceding action has ever led to this one before, for
 a given actor (e.g. an actor whose normal path is `read -> update`
-producing a signal on a never-seen `read -> delete`) — deterministic,
-no ML, no new public API, reusing the existing `Baseline`/`Store`
-infrastructure rather than a parallel one (see [Sequence
+producing a signal on a never-seen `read -> delete`); [Transition
+Rarity](docs/tasks/026-transition-rarity.md) then evolved that binary
+seen/unseen signal into a graded `transition_rarity` measure — common,
+uncommon, or rare, for transitions that *have* been seen — computed as
+an empirical relative frequency, deliberately never called a
+"probability" (see [ADR
+0011](docs/adr/0011-transition-rarity-statistic-and-orientation.md)
+for why, and for the orientation question — `P(destination|predecessor)`
+vs. `P(predecessor|destination)` — this task had to answer correctly
+before writing any code). Both signals are deterministic, no ML, no new
+public API, reusing the existing `Baseline`/`Store` infrastructure
+rather than a parallel one (see [Sequence
 Analysis](docs/sequence-analysis.md) and [ADR
 0010](docs/adr/0010-bounded-process-local-sequence-state.md)).
-Existing `v0.5` callers are unaffected: the signal defaults to a zero
+Existing `v0.5` callers are unaffected: both signals default to a zero
 weight and `BenchmarkEngineAnalyze`'s allocation profile is unchanged.
 n-gram/Markov modeling remain unscoped future work — see
 [`docs/ROADMAP.md` § v0.6](docs/ROADMAP.md#v06--behavioral-detection-depth).

@@ -154,10 +154,58 @@ transition against in the first place, and wiring it into the
 Collector processor is separate, later work once a real consumer needs
 it.
 
+## Transition rarity (`v0.6` task 026)
+
+`transition_deviation` above answers seen vs. never seen. It cannot
+distinguish a transition that happens 40% of the time from one that has
+happened twice out of two thousand — both are simply "seen."
+`transition_rarity` ([task 026](tasks/026-transition-rarity.md),
+[ADR 0011](adr/0011-transition-rarity-statistic-and-orientation.md))
+closes that gap with a graded measure, still without a Markov model:
+
+```
+frequency(A -> B) = PredecessorCounts_B[A] / OutgoingTransitionTotal_A
+rarity(A -> B)     = 1 - frequency(A -> B)
+```
+
+- **The orientation question, answered up front.** `PredecessorCounts`
+  (task 025) lives on the *destination* and naturally supports
+  `P(predecessor | destination)` — not the question a transition
+  detector actually needs, `P(destination | predecessor)`. Reading it
+  as if it answered the second would be silently wrong. See [ADR 0011 §
+  The orientation problem](adr/0011-transition-rarity-statistic-and-orientation.md#the-orientation-problem)
+  for the full proof. The fix is one new scalar,
+  `FingerprintStats.OutgoingTransitionTotal`, living on the
+  *predecessor's* own stats — giving an O(1) computation of the correct
+  statistic, no scan of `Baseline.Fingerprints` required.
+- **Naming.** Called *frequency*/*rarity*, never *probability* — an
+  unsmoothed empirical ratio, not a Markov model (see ADR 0011 § Why
+  Markov still waits).
+- **Minimum support.** `transition_rarity` only fires once
+  `OutgoingTransitionTotal_A >= Config.MinTransitionObservations`
+  (default `20`) — below that, a low frequency is evidence of too
+  little data, not evidence of rarity, the identical cold-start
+  philosophy `frequency_deviation` already applies to
+  `IntervalObservations == 0`.
+- **Mutually exclusive with `transition_deviation`, by construction.**
+  `transition_deviation` fires exactly when `PredecessorCounts_B[A] ==
+  0`; `transition_rarity` is only evaluated when that count is `> 0`. A
+  transition is either never seen, or seen-and-possibly-rare — never
+  both.
+- **Activation** is the identical `WithAnomalyConfig` pattern:
+
+  ```go
+  cfg := anomaly.DefaultConfig()
+  cfg.TransitionRarityWeight = 0.7 // opt-in: defaults to 0
+  ```
+
 ## What's next
 
-`docs/ROADMAP.md` § v0.6 lists the planned progression beyond this
-foundation (transition/rarity scoring, n-gram detection, Markov
-transition probabilities) — none of it is implemented yet. This
-document describes what exists today, not what's planned; it will be
-updated as each slice actually ships, not before.
+`docs/ROADMAP.md` § v0.6 lists the remaining, unscoped progression
+beyond this foundation and transition rarity — n-gram detection
+(generalizing `LastFingerprintID` into a small, bounded ring buffer)
+and Markov transition probabilities (a full `P(*|A)` row over the same
+`OutgoingTransitionTotal`/`PredecessorCounts` counters, with smoothing)
+— neither is implemented yet. This document describes what exists
+today, not what's planned; it will be updated as each slice actually
+ships, not before.

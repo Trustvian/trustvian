@@ -37,6 +37,7 @@ here, not moved or rewritten.
 | Configuration-input validation | `TestValidateRejectsUnsupportedVersion`, `TestValidateRejectsInvalidDefaultDecision`, `TestValidateRejectsInvalidRuleDecision`, `TestValidateRejectsInvalidActorType`, `TestValidateRejectsInvalidOperationCategory`, `TestValidateRejectsInvalidRiskLevel`, `TestValidateRejectsDuplicateRuleName`, `TestValidateRejectsEmptyRuleName`, `TestValidateRejectsTooManyRules`, `TestValidateRejectsOverlongName` in [`config/validate_test.go`](../config/validate_test.go); `TestLoadRejectsUnknownTopLevelField`, `TestLoadRejectsUnknownNestedField`, `TestLoadRejectsDuplicateYAMLKeys`, `TestLoadFileRejectsOversizedFile`, `TestLoadRejectsEmptyInput`, `TestLoadDoesNotPanicOnArbitraryInput`, `FuzzLoad` in [`config/load_test.go`](../config/load_test.go)/[`config/fuzz_test.go`](../config/fuzz_test.go) |
 | Alert configuration-input validation | `TestValidateAlertConfigRejectsUnsupportedVersion`, `TestValidateAlertConfigRejectsInvalidSeverity`, `TestValidateAlertConfigRejectsInvalidDecision`, `TestValidateAlertConfigRejectsInvalidRiskLevel`, `TestValidateAlertConfigRejectsInvalidActorType`, `TestValidateAlertConfigRejectsInvalidTargetCategory`, `TestValidateAlertConfigRejectsInvalidMinAnomalyScore`, `TestValidateAlertConfigRejectsInvalidMaxTrustScore`, `TestValidateAlertConfigRejectsDuplicateRuleName`, `TestValidateAlertConfigRejectsEmptyRuleName`, `TestValidateAlertConfigRejectsTooManyRules` in [`config/alert_test.go`](../config/alert_test.go); `TestLoadAlertsRejectsUnknownField`, `TestLoadAlertsRejectsDuplicateYAMLKeys`, `TestLoadAlertsFileRejectsOversizedFile`, `TestLoadAlertsRejectsEmptyInput`, `FuzzLoadAlerts` in [`config/alert_load_test.go`](../config/alert_load_test.go) |
 | Sequence state (memory bounds, ordering, cross-actor isolation) | `TestBaselineObservePredecessorCountsIsBounded`, `TestBaselineObserveOutOfOrderEventDoesNotRecordOrCorruptTransition`, `TestBaselineObservePredecessorCountsIsImmutable` in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestInMemoryObserveConcurrentTransitionTracking` in [`internal/store/store_test.go`](../internal/store/store_test.go); `TestDefaultConfigTransitionWeightIsOptIn`, `TestScoreTransitionDeviation` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeTransitionDeviationEndToEnd` in [`engine_test.go`](../engine_test.go) |
+| Transition rarity — cold start, counter overflow, poisoning, actor isolation (`v0.6` task 026) | `TestBaselineObserveManyDistinctTransitionsStayBounded`, `TestBaselineObserveOutgoingTransitionTotalIsImmutable` in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestScoreTransitionRarityColdStart`, `TestScoreTransitionRarityNeverExceedsBounds`, `TestDefaultConfigTransitionRarityWeightIsOptIn` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeTransitionRarityCrossActorIsolation`, `TestAnalyzeTransitionRarityScoresBeforeLearning`, `TestObserveTransitionRarityLearnsOnlyFromEligibleDecisions` in [`engine_test.go`](../engine_test.go) |
 
 ## Threats considered
 
@@ -265,6 +266,59 @@ these follow from:
   defaults to `0` (proven by `TestDefaultConfigTransitionWeightIsOptIn`),
   the identical "ships opt-in" mechanism `FrequencyWeight`/
   `TimePatternWeight` already established.
+
+**`v0.6` task 026 (`transition_rarity`) extends this same threat model
+with one new counter, `FingerprintStats.OutgoingTransitionTotal`, and
+inherits every mitigation above unchanged rather than needing new ones:**
+
+- **No new cardinality dimension.** `OutgoingTransitionTotal` is one
+  `uint64` scalar added to the existing `FingerprintStats` entry — it
+  does not add a map, and the pre-existing `maxPredecessors = 64` bound
+  on `PredecessorCounts` is completely unaffected. An attacker varying
+  the previous action on every call gains nothing new to exhaust beyond
+  what task 025's own bound already closes.
+- **Counter overflow.** `OutgoingTransitionTotal++` is a plain,
+  unguarded increment — the same choice `FingerprintStats.Count` already
+  made — deliberately not saturating: reaching `2^64` through legitimate
+  per-event increments is not a realistic concern for any deployment's
+  actual lifetime, and adding saturation logic for only this one field
+  while every sibling `uint64` counter in the same struct lacks it would
+  be an inconsistent special case, not a genuine safety improvement. See
+  [ADR 0011 § Consequences](adr/0011-transition-rarity-statistic-and-orientation.md#consequences).
+- **Cold-start / insufficient-sample uncertainty.** A frequency computed
+  from a handful of observations is evidence of too little data, not
+  evidence of rarity — `transition_rarity` does not fire at all below
+  `OutgoingTransitionTotal_A >= Config.MinTransitionObservations`
+  (default `20`, matching `MinObservations`'s own precedent), the
+  identical "insufficient history is not evidence" stance
+  `frequency_deviation`'s `IntervalObservations == 0` gate already
+  takes. Proven by the cold-start table in
+  `TestScoreTransitionRarityColdStart`. Below the gate, an attacker
+  cannot force a misleadingly extreme rarity reading by keeping a
+  predecessor's outgoing-transition count artificially low.
+- **Baseline-poisoning resistance, inherited, not rebuilt.** Repeating a
+  transition that gets `BLOCK`ed never grows
+  `OutgoingTransitionTotal`/`PredecessorCounts`, for the same reason
+  task 025's own counters are already immune: `Engine.Observe`'s
+  pre-existing `eligibleForLearning` gate (see [Baseline
+  poisoning](#baseline-poisoning) below) only learns from `ALLOW`/
+  `OBSERVE_ONLY`/`ALERT` decisions, and this gate is upstream of *every*
+  `Baseline.Observe` call, including the new counter's — task 026 added
+  no new learning path for an attacker to target. Proven by
+  `TestObserveTransitionRarityLearnsOnlyFromEligibleDecisions`.
+- **Actor/environment isolation, inherited.** `OutgoingTransitionTotal`
+  lives inside the same `baseline.Key{ActorID, Environment}`-scoped
+  `FingerprintStats` every other learned field already uses — no new
+  code path crosses actors. Proven by
+  `TestAnalyzeTransitionRarityCrossActorIsolation`.
+- **Unseen vs. rare stay distinguishable.** `transition_deviation` and
+  `transition_rarity` are mutually exclusive by construction
+  (`count == 0` vs. `count > 0`), so an operator (or an automated
+  policy) can never mistake "this has genuinely never happened" for
+  "this happens, just rarely" — the two carry materially different
+  security implications and are never collapsed into one signal. See
+  [ADR 0011 § Preserving the unseen/rare
+  distinction](adr/0011-transition-rarity-statistic-and-orientation.md#preserving-the-unseenrare-distinction).
 
 ### Malicious agents / privilege escalation
 

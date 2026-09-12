@@ -213,9 +213,12 @@ milestones exist to close:
 
 **Next up:** with `v0.1`–`v0.5.0` shipped (see [Release readiness —
 v0.5.0](#release-readiness--v050) for the tag/dependency verification),
-`v0.6` — Behavioral Detection Depth is now in progress: its first task,
-[025 Sequence Analysis Foundation](tasks/025-sequence-analysis-foundation.md),
-is done (see the milestone section below); the rest of this roadmap's
+`v0.6` — Behavioral Detection Depth is now in progress: its first two
+tasks, [025 Sequence Analysis
+Foundation](tasks/025-sequence-analysis-foundation.md) and [026
+Transition Rarity](tasks/026-transition-rarity.md), are done (see the
+milestone section below); n-gram behavioral detection is named as the
+next illustrative slice, not yet started. The rest of this roadmap's
 remaining work (the rest of `v0.6` through `v1.0` Production-Ready OSS,
 defined below) charts the
 path to a complete, standalone, production-usable OSS product — see
@@ -818,9 +821,12 @@ has run:
 ## v0.6 — Behavioral Detection Depth
 
 **Status: in progress.** [Task 025](tasks/025-sequence-analysis-foundation.md)
-(Sequence Analysis Foundation) is done; the rest of the milestone below
-remains unscoped, per this roadmap's own "small vertical slices"
-principle.
+(Sequence Analysis Foundation) and [task
+026](tasks/026-transition-rarity.md) (Transition Rarity) are done; the
+next illustrative slice is n-gram behavioral detection (see "Not yet
+done" below) — not yet started, not yet scoped. The rest of the
+milestone below remains unscoped, per this roadmap's own "small
+vertical slices" principle.
 
 **Objective.** OSS detection should not stop at individual-event
 anomaly signals. Promote sequence-aware detection from
@@ -829,9 +835,10 @@ OSS capability — the one item this document's prior "Future research"
 section named that a production-usable OSS product genuinely needs
 before `v1.0`, per this roadmap's now-explicit product boundary.
 
-**Scope** (task file [025](tasks/025-sequence-analysis-foundation.md)
-for the slice done so far; the rest remain unscoped and unnumbered
-until each is actually picked up — illustrative names only below):
+**Scope** (task files [025](tasks/025-sequence-analysis-foundation.md)
+and [026](tasks/026-transition-rarity.md) for the slices done so far;
+the rest remain unscoped and unnumbered until each is actually picked
+up — illustrative names only below):
 
 - **025 Sequence Analysis Foundation — done.** `internal/baseline.Baseline`
   gains `LastFingerprintID`/`LastFingerprintTime` (an actor's most
@@ -858,6 +865,34 @@ until each is actually picked up — illustrative names only below):
   Analysis](../sequence-analysis.md) for the full design and [task
   025](tasks/025-sequence-analysis-foundation.md) for benchmarks and
   the complete test list.
+- **026 Transition Rarity — done.** Evolves task 025's binary
+  `transition_deviation` (seen vs. never seen) into a graded measure for
+  transitions that *have* been seen: a new signal, `transition_rarity`
+  (opt-in via `Config.TransitionRarityWeight`, defaulting to `0`),
+  computes `1 - (PredecessorCounts_B[A] / OutgoingTransitionTotal_A)` —
+  an empirical relative frequency, deliberately never called a
+  "probability." `FingerprintStats` gains exactly one new scalar,
+  `OutgoingTransitionTotal` (no new map, no new cardinality dimension):
+  `PredecessorCounts` alone (task 025) is destination-oriented and
+  answers `P(predecessor|destination)`, not the
+  `P(destination|predecessor)` a transition detector actually needs —
+  resolving that orientation question correctly, before writing any
+  code, is this task's central contribution. See [ADR
+  0011](adr/0011-transition-rarity-statistic-and-orientation.md) for
+  the full proof. Gated on a minimum-support threshold
+  (`Config.MinTransitionObservations`, default `20`) below which the
+  signal does not fire — a tiny sample is evidence of insufficient data,
+  not evidence of rarity. `transition_deviation` and `transition_rarity`
+  remain mutually exclusive by construction (never both fire for the
+  same transition). Zero changes to `engine.go`, `internal/store`,
+  `internal/policy`, `internal/trust`, `alert`, `config`, the CLI, or
+  `processor/` — identical reuse discipline to task 025. Proven
+  end-to-end through the real, gated `Analyze`+`Observe` loop:
+  `TestAnalyzeTransitionRarityEndToEnd` (see
+  [engine_test.go](../engine_test.go)). See [Sequence
+  Analysis § Transition rarity](../sequence-analysis.md#transition-rarity-v06-task-026)
+  and [task 026](tasks/026-transition-rarity.md) for benchmarks and the
+  complete test list.
 - **Already covered by existing signals**, named here only to close
   the gap between this document's language and the original spec's
   ([`trustvian-project-spec.md` §
@@ -872,15 +907,12 @@ until each is actually picked up — illustrative names only below):
   `time_pattern_deviation`, both already shipped).
 - **Not yet done — illustrative future slices, unscoped, no task
   numbers reserved:**
-  - *Transition rarity/deviation scoring* — task 025's
-    `transition_deviation` is binary (seen vs. never seen); a future
-    slice could add a frequency-based "rare, not merely unseen"
-    threshold, still without a probability model.
-  - *n-gram behavioral detection* — generalizing
+  - *n-gram behavioral detection* (**next**) — generalizing
     `LastFingerprintID` (one step) into a small, still explicitly
     bounded ring buffer of the last N fingerprints (see [ADR
     0010](adr/0010-bounded-process-local-sequence-state.md)'s
-    "Alternatives considered" for what this would need to change).
+    "Alternatives considered" for what this would need to change). Not
+    yet started, not yet scoped.
   - *Markov transition scoring* — an actual `P(destination|predecessor)`
     probability model over `PredecessorCounts`, once real traffic
     justifies the added complexity task 025 deliberately deferred.
@@ -910,7 +942,9 @@ a separate, independent EWMA dimension
 already established this) and stays in
 [Future research](#future-research) rather than being folded in here.
 No CLI/Collector/config-schema integration for `transition_deviation`
-yet — see [task 025's own Non-Goals](tasks/025-sequence-analysis-foundation.md#non-goals).
+or `transition_rarity` yet — see [task 025's](tasks/025-sequence-analysis-foundation.md#non-goals)
+and [task 026's](tasks/026-transition-rarity.md#non-goals) own
+Non-Goals sections.
 
 **Dependencies.** `v0.1` (stable `Baseline`/`Anomaly` — a sequence
 signal reads a fingerprint's recent history the same way
@@ -918,11 +952,12 @@ signal reads a fingerprint's recent history the same way
 `v0.5`/`v0.7`.
 
 **Acceptance criteria.** See [task
-025](tasks/025-sequence-analysis-foundation.md)'s own Acceptance
-Criteria section for the slice done so far — fully met, verified by
-`go test ./... -race -count=1` and `go test -bench=. -benchmem
-./...` showing `BenchmarkEngineAnalyze`'s allocation profile unchanged.
-The milestone as a whole remains incomplete: it is not done until the
+025](tasks/025-sequence-analysis-foundation.md)'s and [task
+026](tasks/026-transition-rarity.md)'s own Acceptance Criteria sections
+for the slices done so far — both fully met, verified by `go test
+./... -race -count=1` and `go test -bench=. -benchmem ./...` showing
+`BenchmarkEngineAnalyze`'s allocation profile unchanged across both
+tasks. The milestone as a whole remains incomplete: it is not done until the
 remaining, still-unscoped slices above are picked up.
 
 ## v0.7 — AI Agent Behavioral Security

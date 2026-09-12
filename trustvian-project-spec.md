@@ -202,14 +202,26 @@ Order matters. Trustvian should support sequence-based anomaly detection.
 milestone** (see [`docs/ROADMAP.md` §
 v0.6](docs/ROADMAP.md#v06--behavioral-detection-depth) for the current,
 accurate state — this is not yet a release, only implementation
-progress). `internal/anomaly`'s new `transition_deviation` signal
-answers the narrowest possible version of this section's goal: has the
-immediately preceding action ever led to this one before, for this
-actor (`E(n-1) -> E(n)`, deterministic, no probability model yet) — see
+progress). `internal/anomaly` has two signals here, deliberately kept
+distinct rather than collapsed into one: `transition_deviation`
+answers the narrowest possible version of this section's goal — has
+the immediately preceding action ever led to this one before, for this
+actor (`E(n-1) -> E(n)`, seen vs. never seen, deterministic) — while
+`transition_novelty` in this sense is that same "never seen before"
+case, and `transition_rarity` is a separate, graded question that only
+applies once a transition *has* been seen at least once: how common is
+it, expressed as an empirical relative frequency (never a
+"probability" — no Markov model, no smoothing), gated on a
+minimum-support threshold so a tiny sample is never mistaken for
+genuine rarity. The two never fire on the same transition — a
+transition is either novel (never seen) or, if seen, has a rarity
+reading; it is never both. See
 [`docs/sequence-analysis.md`](docs/sequence-analysis.md) for the full
-design and [ADR
+design, [ADR
 0010](docs/adr/0010-bounded-process-local-sequence-state.md) for why
-it needed no new public type or storage abstraction. The n-gram/Markov
+this needed no new public type or storage abstraction, and [ADR
+0011](docs/adr/0011-transition-rarity-statistic-and-orientation.md) for
+the rarity statistic's exact definition and orientation. The n-gram/Markov
 algorithms this section names below remain scoped-but-not-yet-built
 `v0.6` work; graph-based analysis and ML-based sequence models remain
 research only, and — per [`docs/ROADMAP.md`](docs/ROADMAP.md)'s
