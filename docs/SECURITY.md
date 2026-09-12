@@ -38,6 +38,7 @@ here, not moved or rewritten.
 | Alert configuration-input validation | `TestValidateAlertConfigRejectsUnsupportedVersion`, `TestValidateAlertConfigRejectsInvalidSeverity`, `TestValidateAlertConfigRejectsInvalidDecision`, `TestValidateAlertConfigRejectsInvalidRiskLevel`, `TestValidateAlertConfigRejectsInvalidActorType`, `TestValidateAlertConfigRejectsInvalidTargetCategory`, `TestValidateAlertConfigRejectsInvalidMinAnomalyScore`, `TestValidateAlertConfigRejectsInvalidMaxTrustScore`, `TestValidateAlertConfigRejectsDuplicateRuleName`, `TestValidateAlertConfigRejectsEmptyRuleName`, `TestValidateAlertConfigRejectsTooManyRules` in [`config/alert_test.go`](../config/alert_test.go); `TestLoadAlertsRejectsUnknownField`, `TestLoadAlertsRejectsDuplicateYAMLKeys`, `TestLoadAlertsFileRejectsOversizedFile`, `TestLoadAlertsRejectsEmptyInput`, `FuzzLoadAlerts` in [`config/alert_load_test.go`](../config/alert_load_test.go) |
 | Sequence state (memory bounds, ordering, cross-actor isolation) | `TestBaselineObservePredecessorCountsIsBounded`, `TestBaselineObserveOutOfOrderEventDoesNotRecordOrCorruptTransition`, `TestBaselineObservePredecessorCountsIsImmutable` in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestInMemoryObserveConcurrentTransitionTracking` in [`internal/store/store_test.go`](../internal/store/store_test.go); `TestDefaultConfigTransitionWeightIsOptIn`, `TestScoreTransitionDeviation` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeTransitionDeviationEndToEnd` in [`engine_test.go`](../engine_test.go) |
 | Transition rarity — cold start, counter overflow, poisoning, actor isolation (`v0.6` task 026) | `TestBaselineObserveManyDistinctTransitionsStayBounded`, `TestBaselineObserveOutgoingTransitionTotalIsImmutable` in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestScoreTransitionRarityColdStart`, `TestScoreTransitionRarityNeverExceedsBounds`, `TestDefaultConfigTransitionRarityWeightIsOptIn` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeTransitionRarityCrossActorIsolation`, `TestAnalyzeTransitionRarityScoresBeforeLearning`, `TestObserveTransitionRarityLearnsOnlyFromEligibleDecisions` in [`engine_test.go`](../engine_test.go) |
+| Bounded 3-gram detection — independent cardinality bounds, counter overflow, poisoning, actor isolation (`v0.6` task 027) | `TestBaselineObserveTrigramCountsIsBounded`, `TestBaselineObserveTrigramContinuationTotalIsBounded`, `TestInMemoryObserveConcurrentTrigramTracking` (`internal/store/store_test.go`), `TestFileStoreSurvivesRestartWithTrigramState` (`internal/store/file_test.go`) in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestScoreNGramRarityColdStart`, `TestScoreNGramRarityNeverExceedsBounds`, `TestDefaultConfigNGramWeightIsOptIn` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeNGramCrossActorIsolation`, `TestAnalyzeNGramScoresBeforeLearning`, `TestObserveNGramLearnsOnlyFromEligibleDecisions` in [`engine_test.go`](../engine_test.go) |
 
 ## Threats considered
 
@@ -319,6 +320,75 @@ inherits every mitigation above unchanged rather than needing new ones:**
   security implications and are never collapsed into one signal. See
   [ADR 0011 § Preserving the unseen/rare
   distinction](adr/0011-transition-rarity-statistic-and-orientation.md#preserving-the-unseenrare-distinction).
+
+**`v0.6` task 027 (`ngram_deviation`/`ngram_rarity`) extends this same
+threat model one step further back, with two new bounded maps and one
+new scalar, and again inherits every mitigation above rather than
+needing new ones:**
+
+- **Cardinality explosion, independently bounded — a genuine
+  correctness subtlety this task's own review caught.**
+  `TrigramCounts` (on the destination) and `TrigramContinuationTotal`
+  (on the immediate predecessor) each carry their own explicit
+  `maxTrigramPredecessors` (64) cap. It would be tempting to assume
+  `TrigramContinuationTotal`'s cardinality is bounded "for free" by
+  `PredecessorCounts`'s existing cap — it is not:
+  `Baseline.Observe`'s history-window shift
+  (`PreviousFingerprintID` advancing) happens unconditionally on every
+  valid advance, regardless of whether `recordPredecessor` actually
+  admitted the corresponding key into `PredecessorCounts` or rejected
+  it for being past *that* map's own bound. An attacker varying the
+  grandparent fingerprint on every call could otherwise grow either new
+  map without bound even while `PredecessorCounts` itself stays capped.
+  See [ADR 0012 § Why `TrigramContinuationTotal` needed its own
+  bound](adr/0012-bounded-trigram-behavioral-context.md#why-trigramcontinuationtotal-needed-its-own-bound-not-an-inherited-one),
+  proven by `TestBaselineObserveTrigramCountsIsBounded` and
+  `TestBaselineObserveTrigramContinuationTotalIsBounded`.
+- **Counter overflow.** Both new maps' counters use a plain, unguarded
+  increment (`recordTrigram`/`recordTrigramContinuation`), matching
+  `PredecessorCounts`/`OutgoingTransitionTotal`'s own established
+  precedent — deliberately not saturating, for the identical reason:
+  reaching `2^64` through legitimate per-event increments is not a
+  realistic concern for any deployment's actual lifetime, and a
+  special case for only these two counters would be inconsistent with
+  every sibling counter in the same struct.
+- **Cold-start / insufficient-sample uncertainty.** `ngram_rarity` does
+  not fire at all below
+  `TrigramContinuationTotal_B[A] >= Config.MinNGramObservations`
+  (default `20`) — the identical "insufficient history is not
+  evidence" stance `transition_rarity`'s own gate already takes, applied
+  one level up. Proven by the cold-start table in
+  `TestScoreNGramRarityColdStart`.
+- **Baseline-poisoning resistance, inherited, not rebuilt.** Repeating
+  a 3-gram that gets `BLOCK`ed never grows
+  `TrigramCounts`/`TrigramContinuationTotal`, for the identical reason
+  task 025/026's own counters are already immune — `Engine.Observe`'s
+  pre-existing `eligibleForLearning` gate sits upstream of *every*
+  `Baseline.Observe` call, including these two new maps'; task 027
+  added no new learning path for an attacker to target. Proven by
+  `TestObserveNGramLearnsOnlyFromEligibleDecisions`, using the exact
+  scenario this section's own threat model implies: a normal
+  `authenticate -> read -> update` path and a malicious, `BLOCK`ed
+  `authenticate -> export -> delete` path that 50 replayed attempts
+  never normalize.
+- **Actor/environment isolation, inherited.** `PreviousFingerprintID`
+  and both new maps live inside the same
+  `baseline.Key{ActorID, Environment}`-scoped `Baseline`/`FingerprintStats`
+  every other learned field already uses — no new code path crosses
+  actors. Proven by `TestAnalyzeNGramCrossActorIsolation`, which checks
+  not merely that no signal leaks but that a fresh actor's identical
+  3-gram reads as *maximally* novel (`Value == 1`), the precise
+  condition that would be violated by any leakage from another actor's
+  history.
+- **Unseen vs. rare stay distinguishable, one level up.**
+  `ngram_deviation` and `ngram_rarity` are mutually exclusive by
+  construction, for the identical reason
+  `transition_deviation`/`transition_rarity` already are.
+- **History-retention scope, unchanged.** `PreviousFingerprintID` is a
+  single `Fingerprint.ID` string (already-hashed, stable-feature
+  identifier), not a growing window — no more raw history is retained
+  per actor than task 025 already introduced, just one more fixed
+  pointer.
 
 ### Malicious agents / privilege escalation
 

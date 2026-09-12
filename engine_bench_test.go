@@ -78,6 +78,35 @@ func BenchmarkEngineAnalyzeTransitionRarity(b *testing.B) {
 	}
 }
 
+// BenchmarkEngineAnalyzeNGram measures the same steady-state pipeline
+// as BenchmarkEngineAnalyze, but with task 027's ngram_deviation/
+// ngram_rarity signals enabled (NGramWeight, NGramRarityWeight > 0).
+// warmUpEngine's 30 repeated self-transitions also form a familiar
+// self-referential 3-gram after the first two, so both new signals
+// compute on every steady-state call rather than short-circuiting on
+// the cold-start gate — mirroring
+// BenchmarkEngineAnalyzeTransitionRarity's own reuse of warmUpEngine
+// one level up. Compare against BenchmarkEngineAnalyze (both weights
+// default to 0, i.e. the task 026 baseline) to see these signals' own
+// added cost through the full pipeline.
+func BenchmarkEngineAnalyzeNGram(b *testing.B) {
+	cfg := anomaly.DefaultConfig()
+	cfg.NGramWeight = 0.7
+	cfg.NGramRarityWeight = 0.7
+	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()), trustvian.WithAnomalyConfig(cfg))
+	ctx := context.Background()
+
+	lastWarmUp := warmUpEngine(b, engine, ctx)
+	steadyStateTS := lastWarmUp.Add(time.Second)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := engine.Analyze(ctx, paymentEventAt(10, "steady-state", steadyStateTS)); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 // BenchmarkEngineAnalyzeParallel measures the same steady-state pipeline
 // under concurrent calls from multiple goroutines, since Analyze is the
 // primary hot path and Engine is documented as safe for concurrent use.

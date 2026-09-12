@@ -221,12 +221,29 @@ design, [ADR
 0010](docs/adr/0010-bounded-process-local-sequence-state.md) for why
 this needed no new public type or storage abstraction, and [ADR
 0011](docs/adr/0011-transition-rarity-statistic-and-orientation.md) for
-the rarity statistic's exact definition and orientation. The n-gram/Markov
-algorithms this section names below remain scoped-but-not-yet-built
-`v0.6` work; graph-based analysis and ML-based sequence models remain
-research only, and — per [`docs/ROADMAP.md`](docs/ROADMAP.md)'s
-explicit product boundary — ML must never become a dependency of the
-core detection path.
+the rarity statistic's exact definition and orientation.
+
+A third, higher-order pair — `ngram_deviation`/`ngram_rarity` — extends
+the identical novelty/rarity split one step further back: given a
+fixed 3-gram `A -> B -> C`, has this exact (grandparent, predecessor)
+pair ever led to this destination before, and if so, how commonly?
+This is genuinely new information the two pairwise signals above
+cannot express on their own: `A -> B` and `B -> C` can each be
+independently familiar while the complete sequence has never occurred.
+A fixed 3-gram only — no configurable sequence length, no Markov model
+— see [ADR 0012](docs/adr/0012-bounded-trigram-behavioral-context.md)
+for the design and for why a 3-gram's statistical denominator needed
+its own new bounded state, not a reuse of the pairwise case's.
+
+The n-gram/Markov algorithms this section names below remain
+scoped-but-not-yet-built `v0.6` work beyond the fixed 3-gram above
+(Markov transition scoring specifically; arbitrary-length n-grams are
+not planned as a distinct future slice — see ADR 0012's own "Future
+extension" section for why a further generalization, if ever needed,
+would extend the same design rather than replace it); graph-based
+analysis and ML-based sequence models remain research only, and — per
+[`docs/ROADMAP.md`](docs/ROADMAP.md)'s explicit product boundary — ML
+must never become a dependency of the core detection path.
 
 Potential future algorithms:
 

@@ -47,7 +47,7 @@ Alerts](#configuring-alerts) below and [ADR
 0009](docs/adr/0009-alert-config-is-a-separate-document.md)). See
 [Configuring a Policy](#configuring-a-policy) below.
 
-**`v0.6` — Behavioral Detection Depth is in progress.** Its first two
+**`v0.6` — Behavioral Detection Depth is in progress.** Its first three
 tasks are done: [Sequence Analysis
 Foundation](docs/tasks/025-sequence-analysis-foundation.md) added a
 new, opt-in `transition_deviation` anomaly signal that answers whether
@@ -62,14 +62,22 @@ an empirical relative frequency, deliberately never called a
 0011](docs/adr/0011-transition-rarity-statistic-and-orientation.md)
 for why, and for the orientation question — `P(destination|predecessor)`
 vs. `P(predecessor|destination)` — this task had to answer correctly
-before writing any code). Both signals are deterministic, no ML, no new
-public API, reusing the existing `Baseline`/`Store` infrastructure
-rather than a parallel one (see [Sequence
-Analysis](docs/sequence-analysis.md) and [ADR
+before writing any code); [Bounded n-gram
+Detection](docs/tasks/027-bounded-ngram-detection.md) then extended
+order-awareness one step further back — a fixed 3-gram, not a
+configurable `n` — with `ngram_deviation`/`ngram_rarity`, catching
+sequences where both individual pairwise hops (`A -> B` and `B -> C`)
+are independently familiar yet the complete sequence
+`A -> B -> C` has never occurred, information the pairwise signals
+above structurally cannot see (see [ADR
+0012](docs/adr/0012-bounded-trigram-behavioral-context.md)). All four
+signals are deterministic, no ML, no new public API, reusing the
+existing `Baseline`/`Store` infrastructure rather than a parallel one
+(see [Sequence Analysis](docs/sequence-analysis.md) and [ADR
 0010](docs/adr/0010-bounded-process-local-sequence-state.md)).
-Existing `v0.5` callers are unaffected: both signals default to a zero
-weight and `BenchmarkEngineAnalyze`'s allocation profile is unchanged.
-n-gram/Markov modeling remain unscoped future work — see
+Existing `v0.5` callers are unaffected: every new signal defaults to a
+zero weight and `BenchmarkEngineAnalyze`'s allocation profile is
+unchanged. Markov modeling remains unscoped future work — see
 [`docs/ROADMAP.md` § v0.6](docs/ROADMAP.md#v06--behavioral-detection-depth).
 
 **Trustvian OSS is meant to be a complete, standalone,

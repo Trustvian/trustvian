@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Trustvian/trustvian/event"
 	"github.com/Trustvian/trustvian/internal/baseline"
 	"github.com/Trustvian/trustvian/internal/features"
+	"github.com/Trustvian/trustvian/internal/fingerprint"
 	"github.com/Trustvian/trustvian/internal/store"
 )
 
@@ -174,6 +176,68 @@ func TestFileStoreSurvivesRestart(t *testing.T) {
 	}
 	if stats.LatencyObservations != 5 || stats.LatencyMeanDuration() != 20*time.Millisecond {
 		t.Fatalf("latency stats did not survive restart intact: %+v", stats)
+	}
+}
+
+// TestFileStoreSurvivesRestartWithTrigramState is the one genuinely new
+// persistence risk task 027 introduces: baseline.TrigramKey is a struct
+// (unlike every other map key this package has ever persisted, which
+// were plain strings) and needs encoding.TextMarshaler/TextUnmarshaler
+// for encoding/json to accept it as a map key at all. This proves the
+// full round trip through a real FileStore write-then-reopen cycle —
+// not just TrigramKey's own MarshalText/UnmarshalText in isolation
+// (see baseline_test.go's TestTrigramKeyTextRoundTrip) — actually
+// preserves TrigramCounts/TrigramContinuationTotal correctly.
+func TestFileStoreSurvivesRestartWithTrigramState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "baseline.json")
+	fpA := testFingerprint()
+	fpB := destinationFingerprint()
+	fpC := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryHTTP,
+		OperationName: "GET /export", TargetName: "payment-db", Environment: "production",
+	})
+	ctx := context.Background()
+
+	first, err := store.NewFileStore(path)
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+	now := time.Now()
+	for range 3 {
+		if _, err := first.Observe(ctx, testKey, fpA, features.VolatileFeatures{}, now); err != nil {
+			t.Fatalf("Observe(A) error = %v", err)
+		}
+		now = now.Add(time.Second)
+		if _, err := first.Observe(ctx, testKey, fpB, features.VolatileFeatures{}, now); err != nil {
+			t.Fatalf("Observe(B) error = %v", err)
+		}
+		now = now.Add(time.Second)
+		if _, err := first.Observe(ctx, testKey, fpC, features.VolatileFeatures{}, now); err != nil {
+			t.Fatalf("Observe(C) error = %v", err)
+		}
+		now = now.Add(time.Second)
+	}
+
+	// A fresh FileStore instance against the same file — simulating a
+	// process restart.
+	second, err := store.NewFileStore(path)
+	if err != nil {
+		t.Fatalf("NewFileStore() (restart) error = %v", err)
+	}
+	got, ok := second.Get(ctx, testKey)
+	if !ok {
+		t.Fatalf("Get() ok = false after restart")
+	}
+
+	key := baseline.TrigramKey{First: fpA.ID, Second: fpB.ID}
+	if gotCount := got.Fingerprints[fpC.ID].TrigramCounts[key]; gotCount != 3 {
+		t.Fatalf("TrigramCounts[{A,B}] for C after restart = %d, want 3", gotCount)
+	}
+	if gotTotal := got.Fingerprints[fpB.ID].TrigramContinuationTotal[fpA.ID]; gotTotal != 3 {
+		t.Fatalf("TrigramContinuationTotal[A] for B after restart = %d, want 3", gotTotal)
+	}
+	if got.PreviousFingerprintID != fpB.ID {
+		t.Fatalf("PreviousFingerprintID after restart = %q, want %q", got.PreviousFingerprintID, fpB.ID)
 	}
 }
 

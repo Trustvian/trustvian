@@ -132,6 +132,40 @@ type Config struct {
 	// docs/tasks/026-transition-rarity.md's Non-Goals.
 	TransitionRarityWeight float64
 
+	// NGramWeight defaults to 0, for the identical "ships opt-in"
+	// reason every other v0.6 signal weight does: a brand-new 3-gram
+	// signal needs real traffic to build up trigram history before
+	// "never seen this exact 3-gram before" is a trustworthy judgment.
+	// Existing v0.5/task-025/task-026 callers that construct a Config
+	// without setting this field (or via DefaultConfig) get
+	// byte-for-byte unchanged Score output: ngram_deviation is still
+	// computed and reported in Anomaly.Contributors, but contributes
+	// nothing to Score until an operator opts in. See
+	// docs/tasks/027-bounded-ngram-detection.md's Non-Goals.
+	NGramWeight float64
+
+	// MinNGramObservations is how many valid 3-gram completions a
+	// (grandparent, predecessor) pair must have recorded
+	// (baseline.FingerprintStats.TrigramContinuationTotal) before
+	// ngram_rarity is computed for it at all — the 3-gram analogue of
+	// MinTransitionObservations. Deliberately a *separate* config field
+	// from MinTransitionObservations, not a reuse: the two gate
+	// statistically different denominators (total outgoing transitions
+	// from a single fingerprint, vs. total 3-gram continuations from a
+	// specific two-fingerprint pair) that happen to share a
+	// numeric default for the same underlying reason
+	// (MinObservations's own default, 20, being a reasonable minimum
+	// resolution), not because they mean the same thing. Below this,
+	// ngram_rarity does not fire, full stop — not "fires weakly." See
+	// docs/adr/0012-bounded-trigram-behavioral-context.md § Minimum
+	// support.
+	MinNGramObservations uint64
+
+	// NGramRarityWeight defaults to 0, for the identical "ships opt-in"
+	// reason every other v0.6 signal weight does. See
+	// docs/tasks/027-bounded-ngram-detection.md's Non-Goals.
+	NGramRarityWeight float64
+
 	// SensitiveTargetFloor maps a Target name to a minimum anomaly
 	// contribution that always applies when that target is touched,
 	// regardless of how familiar the Baseline is with it. This is what
@@ -163,6 +197,9 @@ func DefaultConfig() Config {
 		TransitionWeight:          0,
 		MinTransitionObservations: 20,
 		TransitionRarityWeight:    0,
+		NGramWeight:               0,
+		MinNGramObservations:      20,
+		NGramRarityWeight:         0,
 		SensitiveTargetFloor:      map[string]float64{},
 	}
 }
@@ -266,11 +303,30 @@ func Score(feat features.Features, fp fingerprint.Fingerprint, bl baseline.Basel
 	// predecessor — see baseline.Baseline.Observe's identical guard on
 	// the write side, and docs/SECURITY.md § Sequence state for why.
 	if bl.LastFingerprintID != "" && feat.Volatile.Timestamp.After(bl.LastFingerprintTime) {
+		predStats := bl.Fingerprints[bl.LastFingerprintID]
 		if s := transitionSignal(bl.LastFingerprintID, stats, cfg); s.Value > 0 {
 			signals = append(signals, s)
 		}
-		if s := transitionRaritySignal(bl.LastFingerprintID, bl.Fingerprints[bl.LastFingerprintID], stats, cfg); s.Value > 0 {
+		if s := transitionRaritySignal(bl.LastFingerprintID, predStats, stats, cfg); s.Value > 0 {
 			signals = append(signals, s)
+		}
+
+		// A 3-gram needs one more fingerprint of history than a
+		// transition does: bl.PreviousFingerprintID == "" means this
+		// actor has fewer than two prior, validly-ordered observations
+		// (or every intervening advance was itself out-of-order) — not
+		// enough context for a 3-gram yet, exactly like
+		// bl.LastFingerprintID == "" means not enough context for a
+		// transition at all. See
+		// docs/adr/0012-bounded-trigram-behavioral-context.md § Cold
+		// start.
+		if bl.PreviousFingerprintID != "" {
+			if s := ngramDeviationSignal(bl.PreviousFingerprintID, bl.LastFingerprintID, stats, cfg); s.Value > 0 {
+				signals = append(signals, s)
+			}
+			if s := ngramRaritySignal(bl.PreviousFingerprintID, bl.LastFingerprintID, predStats, stats, cfg); s.Value > 0 {
+				signals = append(signals, s)
+			}
 		}
 	}
 
@@ -469,6 +525,86 @@ func transitionRaritySignal(predecessor string, predStats, destStats baseline.Fi
 
 	detail := fmt.Sprintf("transition observed %d/%d (%.2f%%) of this fingerprint's outgoing transitions", count, predStats.OutgoingTransitionTotal, frequency*100)
 	return Signal{Name: "transition_rarity", Value: value, Weight: cfg.TransitionRarityWeight, Detail: detail}
+}
+
+// ngramDeviationSignal reports whether the 3-gram
+// (grandparent -> predecessor -> this destination) has ever been
+// observed before, for this actor — the 3-gram analogue of
+// transitionSignal: binary seen/unseen, no frequency/rarity threshold.
+// destStats.TrigramCounts is read directly (nil-safe: a nil map read
+// returns the zero value), so an entirely unknown destination
+// fingerprint correctly reports maximal novelty too, exactly like
+// transitionSignal already does for PredecessorCounts.
+//
+// This deliberately does not compute a 3-gram probability or a
+// frequency-based "rare" threshold — see ngramRaritySignal for that,
+// the same seen/unseen-vs-seen-but-rare split task 025/026 already
+// established for 2-grams, generalized one level up. See
+// docs/adr/0012-bounded-trigram-behavioral-context.md.
+func ngramDeviationSignal(grandparent, predecessor string, destStats baseline.FingerprintStats, cfg Config) Signal {
+	key := baseline.TrigramKey{First: grandparent, Second: predecessor}
+	if destStats.TrigramCounts[key] > 0 {
+		return Signal{Name: "ngram_deviation", Weight: cfg.NGramWeight}
+	}
+	return Signal{
+		Name:   "ngram_deviation",
+		Value:  1,
+		Weight: cfg.NGramWeight,
+		Detail: fmt.Sprintf("behavioral sequence via fingerprints %s -> %s has never been observed leading to this one, for this actor", grandparent, predecessor),
+	}
+}
+
+// ngramRaritySignal reports how rare an already-seen 3-gram
+// (grandparent -> predecessor -> destStats) is, as an empirical
+// relative frequency — the 3-gram analogue of transitionRaritySignal.
+// See docs/adr/0012-bounded-trigram-behavioral-context.md for the full
+// statistical definition and, specifically, why
+// P(destination | grandparent, predecessor) — not some other
+// normalization destStats.TrigramCounts alone could be misread to give
+// — is the orientation computed here: predStats (the *predecessor*'s
+// own stats, i.e. the fingerprint one step back) holds
+// TrigramContinuationTotal[grandparent], the total number of valid
+// 3-gram completions that have followed this exact
+// (grandparent, predecessor) pair, to *any* destination — making
+// count/predStats.TrigramContinuationTotal[grandparent] a genuine
+// estimate of how often this specific destination follows that pair,
+// not how often that pair precedes this destination among the
+// destination's other 3-gram predecessors.
+//
+// Mutually exclusive with ngramDeviationSignal by construction, not
+// convention: this returns a zero-Value Signal whenever the 3-gram has
+// never been observed at all (count == 0) — ngramDeviationSignal
+// already reports that case, and collapsing the two would lose the
+// seen-but-rare vs. never-seen distinction task 026 already
+// established the precedent for preserving at the 2-gram level.
+//
+// Gated on predStats.TrigramContinuationTotal[grandparent] >=
+// cfg.MinNGramObservations: below that, a low frequency is more likely
+// a tiny-sample artifact than genuine rarity, so the signal does not
+// fire at all — not "fires weakly." The explicit zero-total check
+// guards division by zero even if a caller misconfigures
+// MinNGramObservations to 0.
+func ngramRaritySignal(grandparent, predecessor string, predStats, destStats baseline.FingerprintStats, cfg Config) Signal {
+	key := baseline.TrigramKey{First: grandparent, Second: predecessor}
+	count := destStats.TrigramCounts[key]
+	if count == 0 {
+		return Signal{Name: "ngram_rarity", Weight: cfg.NGramRarityWeight}
+	}
+	total := predStats.TrigramContinuationTotal[grandparent]
+	if total == 0 || total < cfg.MinNGramObservations {
+		return Signal{Name: "ngram_rarity", Weight: cfg.NGramRarityWeight}
+	}
+
+	frequency := float64(count) / float64(total)
+	// frequency is always in (0, 1] by construction, for the identical
+	// reason transitionRaritySignal's own frequency is — see there.
+	value := max(min(1-frequency, 1), 0)
+	if value == 0 {
+		return Signal{Name: "ngram_rarity", Weight: cfg.NGramRarityWeight}
+	}
+
+	detail := fmt.Sprintf("behavioral sequence %s -> %s -> (this fingerprint) observed %d/%d (%.2f%%) of this pair's continuations", grandparent, predecessor, count, total, frequency*100)
+	return Signal{Name: "ngram_rarity", Value: value, Weight: cfg.NGramRarityWeight, Detail: detail}
 }
 
 func errorSignal(known bool, stats baseline.FingerprintStats, cfg Config) Signal {

@@ -770,3 +770,347 @@ func TestBaselineObserveManyDistinctTransitionsStayBounded(t *testing.T) {
 		t.Fatalf("len(Fingerprints) = %d, want %d (unaffected by this task — Baseline.Fingerprints was already unbounded before it)", got, distinctPredecessors+1)
 	}
 }
+
+// --- Task 027: bounded 3-gram behavioral context ---
+
+// TestBaselineObserveTracksPreviousFingerprintIDWindow proves the
+// two-element history window shifts forward by exactly one fingerprint
+// on every valid advance. Note carefully what "insufficient history"
+// (task 027 §17's cold-start example) actually refers to: it is a
+// property of what state is *read* when scoring the Nth event — and
+// Analyze always reads the Baseline as it stood after the (N-1)th
+// Observe call. So after this test's 2nd raw Observe call, Previous is
+// already populated (fpAuth) — that is precisely the state a 3rd
+// Analyze call will read, which is what makes the 3rd event's 3-gram
+// complete. "Insufficient history" describes events #1 and #2
+// themselves (what gets *read* when scoring them: Previous=="" in
+// both cases — see TestBaselineObserveNoTrigramBeforeThirdObservation),
+// not the Baseline state immediately following any particular Observe
+// call.
+func TestBaselineObserveTracksPreviousFingerprintIDWindow(t *testing.T) {
+	fpAuth, fpRead, fpExport := authenticateFingerprint(), readFingerprint(), exportFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	b = b.Observe(fpAuth, features.VolatileFeatures{}, now)
+	if b.PreviousFingerprintID != "" {
+		t.Fatalf("after 1st observation: PreviousFingerprintID = %q, want \"\" (this actor's first-ever observation)", b.PreviousFingerprintID)
+	}
+	if b.LastFingerprintID != fpAuth.ID {
+		t.Fatalf("after 1st observation: LastFingerprintID = %q, want %q", b.LastFingerprintID, fpAuth.ID)
+	}
+
+	now = now.Add(time.Second)
+	b = b.Observe(fpRead, features.VolatileFeatures{}, now)
+	if b.PreviousFingerprintID != fpAuth.ID {
+		t.Fatalf("after 2nd observation: PreviousFingerprintID = %q, want %q (the window shifted: old Last becomes the new Previous)", b.PreviousFingerprintID, fpAuth.ID)
+	}
+	if b.LastFingerprintID != fpRead.ID {
+		t.Fatalf("after 2nd observation: LastFingerprintID = %q, want %q", b.LastFingerprintID, fpRead.ID)
+	}
+
+	now = now.Add(time.Second)
+	b = b.Observe(fpExport, features.VolatileFeatures{}, now)
+	if b.PreviousFingerprintID != fpRead.ID {
+		t.Fatalf("after 3rd observation: PreviousFingerprintID = %q, want %q (window shifted forward again)", b.PreviousFingerprintID, fpRead.ID)
+	}
+	if b.LastFingerprintID != fpExport.ID {
+		t.Fatalf("after 3rd observation: LastFingerprintID = %q, want %q", b.LastFingerprintID, fpExport.ID)
+	}
+}
+
+func TestBaselineObserveNoTrigramBeforeThirdObservation(t *testing.T) {
+	fpAuth, fpRead := authenticateFingerprint(), readFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	b = b.Observe(fpAuth, features.VolatileFeatures{}, now)
+	now = now.Add(time.Second)
+	b = b.Observe(fpRead, features.VolatileFeatures{}, now)
+
+	if got := b.Fingerprints[fpRead.ID].TrigramCounts; got != nil {
+		t.Fatalf("TrigramCounts after only 2 observations = %v, want nil (not enough history for a 3-gram yet)", got)
+	}
+	if got := b.Fingerprints[fpAuth.ID].TrigramContinuationTotal; got != nil {
+		t.Fatalf("TrigramContinuationTotal after only 2 observations = %v, want nil", got)
+	}
+}
+
+func TestBaselineObserveRecordsTrigram(t *testing.T) {
+	fpAuth, fpRead, fpExport := authenticateFingerprint(), readFingerprint(), exportFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	b = b.Observe(fpAuth, features.VolatileFeatures{}, now)
+	now = now.Add(time.Second)
+	b = b.Observe(fpRead, features.VolatileFeatures{}, now)
+	now = now.Add(time.Second)
+	b = b.Observe(fpExport, features.VolatileFeatures{}, now)
+
+	key := baseline.TrigramKey{First: fpAuth.ID, Second: fpRead.ID}
+	if got := b.Fingerprints[fpExport.ID].TrigramCounts[key]; got != 1 {
+		t.Fatalf("TrigramCounts[{auth,read}] for export = %d, want 1", got)
+	}
+	if got := b.Fingerprints[fpRead.ID].TrigramContinuationTotal[fpAuth.ID]; got != 1 {
+		t.Fatalf("TrigramContinuationTotal[auth] for read = %d, want 1", got)
+	}
+}
+
+func TestBaselineObserveRecordsRepeatedTrigram(t *testing.T) {
+	fpAuth, fpRead, fpExport := authenticateFingerprint(), readFingerprint(), exportFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	for range 5 {
+		b = b.Observe(fpAuth, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+		b = b.Observe(fpRead, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+		b = b.Observe(fpExport, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+	}
+
+	key := baseline.TrigramKey{First: fpAuth.ID, Second: fpRead.ID}
+	if got := b.Fingerprints[fpExport.ID].TrigramCounts[key]; got != 5 {
+		t.Fatalf("TrigramCounts[{auth,read}] for export = %d, want 5", got)
+	}
+	if got := b.Fingerprints[fpRead.ID].TrigramContinuationTotal[fpAuth.ID]; got != 5 {
+		t.Fatalf("TrigramContinuationTotal[auth] for read = %d, want 5", got)
+	}
+}
+
+// TestBaselineObserveRepeatedFingerprintTrigram proves A -> A -> A (and
+// A -> A -> B) are handled correctly: a fingerprint validly repeating
+// as its own predecessor and grandparent is not deduplicated or
+// special-cased away.
+func TestBaselineObserveRepeatedFingerprintTrigram(t *testing.T) {
+	fpA, fpB := readFingerprint(), updateFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	// A -> A -> A
+	for range 3 {
+		b = b.Observe(fpA, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+	}
+	selfKey := baseline.TrigramKey{First: fpA.ID, Second: fpA.ID}
+	if got := b.Fingerprints[fpA.ID].TrigramCounts[selfKey]; got != 1 {
+		t.Fatalf("A->A->A: TrigramCounts[{A,A}] for A = %d, want 1 (the 3rd observation is the only complete A,A->A 3-gram)", got)
+	}
+
+	// Continue: A -> A -> A -> B (the 4th observation completes a
+	// second, different 3-gram: A,A -> B).
+	b = b.Observe(fpB, features.VolatileFeatures{}, now)
+	abKey := baseline.TrigramKey{First: fpA.ID, Second: fpA.ID}
+	if got := b.Fingerprints[fpB.ID].TrigramCounts[abKey]; got != 1 {
+		t.Fatalf("A->A->A->B: TrigramCounts[{A,A}] for B = %d, want 1", got)
+	}
+	if got := b.Fingerprints[fpA.ID].TrigramContinuationTotal[fpA.ID]; got != 2 {
+		t.Fatalf("TrigramContinuationTotal[A] for A = %d, want 2 (A,A->A and A,A->B)", got)
+	}
+}
+
+// TestBaselineObserveOutOfOrderEventDoesNotRecordOrCorruptTrigram
+// mirrors TestBaselineObserveOutOfOrderEventDoesNotRecordOrCorruptTransition
+// one level up: a backdated event must not shift the
+// Previous/LastFingerprintID window, must not be scored as completing
+// a 3-gram, and must not corrupt what the *next* legitimate event's
+// 3-gram is measured against.
+func TestBaselineObserveOutOfOrderEventDoesNotRecordOrCorruptTrigram(t *testing.T) {
+	fpAuth, fpRead, fpExport, fpDelete := authenticateFingerprint(), readFingerprint(), exportFingerprint(), deleteFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	b = b.Observe(fpAuth, features.VolatileFeatures{}, now)
+	b = b.Observe(fpRead, features.VolatileFeatures{}, now.Add(2*time.Second))
+
+	// Backdated relative to fpRead's own arrival.
+	b = b.Observe(fpDelete, features.VolatileFeatures{}, now.Add(1*time.Second))
+
+	if b.PreviousFingerprintID != fpAuth.ID || b.LastFingerprintID != fpRead.ID {
+		t.Fatalf("out-of-order event corrupted the history window: Previous=%q, Last=%q, want Previous=%q, Last=%q",
+			b.PreviousFingerprintID, b.LastFingerprintID, fpAuth.ID, fpRead.ID)
+	}
+	if got := b.Fingerprints[fpDelete.ID].TrigramCounts; got != nil {
+		t.Fatalf("out-of-order delete recorded a 3-gram: %v, want nil", got)
+	}
+
+	// The next legitimate event must complete its 3-gram from
+	// (fpAuth, fpRead) — the real history — not from the out-of-order
+	// fpDelete.
+	b = b.Observe(fpExport, features.VolatileFeatures{}, now.Add(3*time.Second))
+	key := baseline.TrigramKey{First: fpAuth.ID, Second: fpRead.ID}
+	if got := b.Fingerprints[fpExport.ID].TrigramCounts[key]; got != 1 {
+		t.Fatalf("TrigramCounts[{auth,read}] for export = %d, want 1 (must follow the real history, not the out-of-order delete)", got)
+	}
+}
+
+// TestBaselineObserveEqualTimestampsDoNotAdvanceHistory pins down
+// deterministic behavior for equal timestamps (task 027 §23): the
+// existing ordering guard is now.After(LastFingerprintTime), which is
+// false for an equal timestamp, so an equal-timestamp event is treated
+// identically to an out-of-order one — deterministically, not as a
+// special/nondeterministic case.
+func TestBaselineObserveEqualTimestampsDoNotAdvanceHistory(t *testing.T) {
+	fpAuth, fpRead := authenticateFingerprint(), readFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	b = b.Observe(fpAuth, features.VolatileFeatures{}, now)
+	b = b.Observe(fpRead, features.VolatileFeatures{}, now) // same timestamp as fpAuth
+
+	if b.LastFingerprintID != fpAuth.ID {
+		t.Fatalf("LastFingerprintID = %q, want %q (an equal timestamp must not advance the window)", b.LastFingerprintID, fpAuth.ID)
+	}
+	if got := b.Fingerprints[fpRead.ID].PredecessorCounts; got != nil {
+		t.Fatalf("PredecessorCounts for the equal-timestamp event = %v, want nil", got)
+	}
+}
+
+// TestBaselineObserveTrigramCountsIsImmutable proves the copy-on-write
+// discipline TrigramCounts must uphold, mirroring
+// TestBaselineObservePredecessorCountsIsImmutable one level up.
+func TestBaselineObserveTrigramCountsIsImmutable(t *testing.T) {
+	fpAuth, fpRead, fpExport := authenticateFingerprint(), readFingerprint(), exportFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	b = b.Observe(fpAuth, features.VolatileFeatures{}, now)
+	b = b.Observe(fpRead, features.VolatileFeatures{}, now.Add(time.Second))
+	snapshot := b.Observe(fpExport, features.VolatileFeatures{}, now.Add(2*time.Second))
+
+	key := baseline.TrigramKey{First: fpAuth.ID, Second: fpRead.ID}
+	if got := snapshot.Fingerprints[fpExport.ID].TrigramCounts[key]; got != 1 {
+		t.Fatalf("snapshot TrigramCounts[{auth,read}] = %d, want 1", got)
+	}
+
+	// A further Observe on top of snapshot must not reach back and
+	// mutate snapshot's own TrigramCounts map.
+	_ = snapshot.Observe(fpExport, features.VolatileFeatures{}, now.Add(3*time.Second))
+	if got := snapshot.Fingerprints[fpExport.ID].TrigramCounts[key]; got != 1 {
+		t.Fatalf("a later Observe mutated an earlier snapshot's TrigramCounts: got %d, want 1", got)
+	}
+}
+
+// TestBaselineObserveTrigramContinuationTotalIsImmutable mirrors the
+// above for TrigramContinuationTotal.
+func TestBaselineObserveTrigramContinuationTotalIsImmutable(t *testing.T) {
+	fpAuth, fpRead, fpExport := authenticateFingerprint(), readFingerprint(), exportFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	b = b.Observe(fpAuth, features.VolatileFeatures{}, now)
+	b = b.Observe(fpRead, features.VolatileFeatures{}, now.Add(time.Second))
+	snapshot := b.Observe(fpExport, features.VolatileFeatures{}, now.Add(2*time.Second))
+
+	if got := snapshot.Fingerprints[fpRead.ID].TrigramContinuationTotal[fpAuth.ID]; got != 1 {
+		t.Fatalf("snapshot TrigramContinuationTotal[auth] = %d, want 1", got)
+	}
+
+	_ = snapshot.Observe(fpExport, features.VolatileFeatures{}, now.Add(3*time.Second))
+	if got := snapshot.Fingerprints[fpRead.ID].TrigramContinuationTotal[fpAuth.ID]; got != 1 {
+		t.Fatalf("a later Observe mutated an earlier snapshot's TrigramContinuationTotal: got %d, want 1", got)
+	}
+}
+
+// TestBaselineObserveTrigramCountsIsBounded proves TrigramCounts is
+// bounded independently of PredecessorCounts's own cap — see
+// maxTrigramPredecessors's doc comment for why this cannot be assumed
+// "for free." Many distinct (grandparent, predecessor) pairs, sharing
+// the same immediate predecessor (so PredecessorCounts itself stays
+// tiny — one entry), all feeding into one shared destination.
+func TestBaselineObserveTrigramCountsIsBounded(t *testing.T) {
+	fpDest := deleteFingerprint()
+	predecessor := updateFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	const overBound = 65
+	for i := range overBound {
+		grandparent := fingerprint.Compute(features.StableFeatures{
+			ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryHTTP,
+			OperationName: fmt.Sprintf("grandparent-%d", i), TargetName: "customer-db", Environment: "production",
+		})
+		b = b.Observe(grandparent, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+		b = b.Observe(predecessor, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+		b = b.Observe(fpDest, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+	}
+
+	if got := len(b.Fingerprints[fpDest.ID].TrigramCounts); got != 64 {
+		t.Fatalf("len(TrigramCounts) = %d, want 64 (bounded, one pair never tracked)", got)
+	}
+	// PredecessorCounts for the destination stays at exactly 1 (always
+	// the same immediate predecessor), proving TrigramCounts's bound is
+	// independent, not inherited.
+	if got := len(b.Fingerprints[fpDest.ID].PredecessorCounts); got != 1 {
+		t.Fatalf("len(PredecessorCounts) = %d, want 1 (same predecessor every time)", got)
+	}
+}
+
+// TestBaselineObserveTrigramContinuationTotalIsBounded mirrors the
+// above for TrigramContinuationTotal: many distinct grandparents,
+// sharing the same immediate predecessor, must not grow that
+// predecessor's TrigramContinuationTotal map without bound.
+func TestBaselineObserveTrigramContinuationTotalIsBounded(t *testing.T) {
+	predecessor := updateFingerprint()
+	dest := deleteFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	const overBound = 65
+	for i := range overBound {
+		grandparent := fingerprint.Compute(features.StableFeatures{
+			ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryHTTP,
+			OperationName: fmt.Sprintf("grandparent-%d", i), TargetName: "customer-db", Environment: "production",
+		})
+		b = b.Observe(grandparent, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+		b = b.Observe(predecessor, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+		b = b.Observe(dest, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+	}
+
+	if got := len(b.Fingerprints[predecessor.ID].TrigramContinuationTotal); got != 64 {
+		t.Fatalf("len(TrigramContinuationTotal) = %d, want 64 (bounded, one grandparent never tracked)", got)
+	}
+}
+
+// TestTrigramKeyTextRoundTrip proves baseline.TrigramKey's
+// MarshalText/UnmarshalText — needed purely so store.FileStore's
+// encoding/json-based persistence can use it as a map key — correctly
+// round-trips, including a value whose fields are themselves real
+// Fingerprint.ID hex strings.
+func TestTrigramKeyTextRoundTrip(t *testing.T) {
+	want := baseline.TrigramKey{First: authenticateFingerprint().ID, Second: readFingerprint().ID}
+
+	text, err := want.MarshalText()
+	if err != nil {
+		t.Fatalf("MarshalText() error = %v", err)
+	}
+
+	var got baseline.TrigramKey
+	if err := got.UnmarshalText(text); err != nil {
+		t.Fatalf("UnmarshalText(%q) error = %v", text, err)
+	}
+	if got != want {
+		t.Fatalf("round-tripped TrigramKey = %+v, want %+v", got, want)
+	}
+}
+
+func authenticateFingerprint() fingerprint.Fingerprint {
+	return fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryHTTP,
+		OperationName: "POST /authenticate", TargetName: "auth-service", Environment: "production",
+	})
+}
+
+func exportFingerprint() fingerprint.Fingerprint {
+	return fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryHTTP,
+		OperationName: "GET /customer/export", TargetName: "customer-db", Environment: "production",
+	})
+}

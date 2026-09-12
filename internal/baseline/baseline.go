@@ -13,8 +13,10 @@
 package baseline
 
 import (
+	"fmt"
 	"maps"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/Trustvian/trustvian/internal/features"
@@ -77,6 +79,84 @@ const hourActivityAlpha = 0.02
 // memory, matching the "bounded, not unlimited" mandate for any new
 // sequence-aware state (see docs/adr/0010-bounded-process-local-sequence-state.md).
 const maxPredecessors = 64
+
+// maxTrigramPredecessors independently bounds FingerprintStats.TrigramCounts
+// (distinct (First,Second) predecessor pairs tracked per destination)
+// and FingerprintStats.TrigramContinuationTotal (distinct First
+// grandparent entries tracked per immediate-predecessor fingerprint).
+//
+// This cannot simply inherit maxPredecessors's existing bound "for
+// free": every key ever added to either new map corresponds to some
+// distinct grandparent Fingerprint.ID that validly preceded a
+// *predecessor* fingerprint at some point in the actor's history — a
+// caller-controlled value (Fingerprint.ID derives from Event fields the
+// caller controls), and the set of *distinct grandparents* that have
+// ever led into one particular predecessor is not bounded by
+// PredecessorCounts's own cap on that predecessor's *own* incoming
+// entries (recordPredecessor's bound rejection still lets
+// Baseline.Observe's PreviousFingerprintID/LastFingerprintID shift
+// proceed — see Observe — so a grandparent can become "Previous" and
+// later drive a TrigramContinuationTotal/TrigramCounts update even on a
+// call where recordPredecessor itself rejected adding that same value
+// to PredecessorCounts for being past the cap). Both new maps need
+// their own explicit, independently-enforced bound for exactly the
+// resource-exhaustion reason maxPredecessors exists at all — see
+// docs/adr/0012-bounded-trigram-behavioral-context.md.
+//
+// 64 (matching maxPredecessors's own value) is reused deliberately, not
+// coincidentally: it is the same "generous for real traffic, trivial
+// worst-case memory" reasoning maxPredecessors already established,
+// applied to a structurally analogous bound rather than an
+// independently invented number.
+const maxTrigramPredecessors = 64
+
+// TrigramKey identifies the two-fingerprint predecessor pair leading
+// into one destination FingerprintStats' TrigramCounts entry — the
+// destination itself is implicit (whichever FingerprintStats.TrigramCounts
+// map holds this key), exactly like PredecessorCounts's single-predecessor
+// key already leaves its destination implicit. First is the fingerprint
+// two steps back in the actor's observed order (Baseline.PreviousFingerprintID
+// at the time this trigram was recorded); Second is the fingerprint one
+// step back (Baseline.LastFingerprintID) — see
+// docs/adr/0012-bounded-trigram-behavioral-context.md for why a
+// two-field comparable struct is used here instead of a delimited
+// string: constructing and comparing a TrigramKey value on the
+// anomaly-scoring hot path allocates nothing, where a
+// concatenated-string key would allocate on every single lookup.
+type TrigramKey struct {
+	First  string
+	Second string
+}
+
+// trigramKeySeparator joins TrigramKey's two fields for
+// store.FileStore's encoding/json-based persistence only — encoding/json
+// requires a map's key type to be a string/integer kind or implement
+// encoding.TextMarshaler; a plain struct key does not qualify on its
+// own. "|" is safe as a separator because Fingerprint.ID is always a
+// lowercase hex string (strconv.FormatUint(hash, 16) — see
+// internal/fingerprint.Compute), which structurally cannot contain "|".
+// This encoding is a persistence-format detail; TrigramKey's in-memory
+// identity (used for every map lookup/construction in
+// internal/anomaly) is the plain two-field struct, never this string.
+const trigramKeySeparator = "|"
+
+// MarshalText implements encoding.TextMarshaler, letting
+// encoding/json use TrigramKey as a map key (see trigramKeySeparator's
+// own doc comment for why this is needed at all).
+func (k TrigramKey) MarshalText() ([]byte, error) {
+	return []byte(k.First + trigramKeySeparator + k.Second), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler, the inverse of
+// MarshalText.
+func (k *TrigramKey) UnmarshalText(text []byte) error {
+	first, second, ok := strings.Cut(string(text), trigramKeySeparator)
+	if !ok {
+		return fmt.Errorf("baseline: invalid TrigramKey encoding %q", text)
+	}
+	k.First, k.Second = first, second
+	return nil
+}
 
 // Key scopes a Baseline to a single actor within a single deployment
 // environment. Scoping by environment from the start — even though the
@@ -183,6 +263,39 @@ type FingerprintStats struct {
 	// plain, unguarded increment (matching Count's own precedent) is
 	// used rather than a saturating counter.
 	OutgoingTransitionTotal uint64
+
+	// TrigramCounts records, for this destination Fingerprint, how many
+	// times each distinct (two-steps-back, one-step-back) predecessor
+	// pair has immediately preceded it — the 3-gram analogue of
+	// PredecessorCounts (task 025's 2-gram state), the minimum
+	// additional state ngram_deviation/ngram_rarity need (task 027) to
+	// evaluate a 3-gram without a full sequence-history structure. A nil
+	// map (the zero value, exactly like a persisted file written before
+	// this field existed) means "no 3-gram into this fingerprint
+	// observed yet" — the correct, safe cold-start default.
+	//
+	// Bounded at maxTrigramPredecessors distinct pairs, independently
+	// of PredecessorCounts's own bound — see maxTrigramPredecessors's
+	// doc comment and
+	// docs/adr/0012-bounded-trigram-behavioral-context.md for why one
+	// bound cannot be assumed to imply the other.
+	TrigramCounts map[TrigramKey]uint64
+
+	// TrigramContinuationTotal counts, for this Fingerprint acting as
+	// the *immediate* (one-step-back) predecessor of a 3-gram, how many
+	// valid 3-gram completions have followed each distinct
+	// two-steps-back grandparent Fingerprint.ID, to any destination —
+	// the 3-gram analogue of OutgoingTransitionTotal (task 026),
+	// keyed by grandparent because a single fingerprint can be the
+	// "Second" element of many distinct (grandparent, this) pairs, each
+	// needing its own continuation total; a plain scalar (as
+	// OutgoingTransitionTotal is) would silently answer the wrong
+	// question — see
+	// docs/adr/0012-bounded-trigram-behavioral-context.md for the full
+	// orientation proof, mirroring ADR 0011's for the 2-gram case.
+	// Bounded at maxTrigramPredecessors distinct grandparent entries,
+	// independently of PredecessorCounts's own bound.
+	TrigramContinuationTotal map[string]uint64
 }
 
 // recordPredecessor increments counts[predecessor], creating counts if
@@ -210,6 +323,44 @@ func recordPredecessor(counts map[string]uint64, predecessor string) map[string]
 	return next
 }
 
+// recordTrigram increments counts[key], with the identical
+// bounded-copy-on-write discipline recordPredecessor already
+// established — see recordPredecessor's own doc comment for why
+// neither in-place mutation nor unbounded growth is acceptable here.
+// Deliberately a second, independent function rather than a shared
+// generic helper with recordPredecessor: three small, near-identical
+// bounded-map functions (this, recordTrigramContinuation, and the
+// pre-existing recordPredecessor) are simpler to read and audit than a
+// generic abstraction introduced for exactly three call sites — see
+// CLAUDE.md's "three similar lines is better than a premature
+// abstraction."
+func recordTrigram(counts map[TrigramKey]uint64, key TrigramKey) map[TrigramKey]uint64 {
+	if _, tracked := counts[key]; !tracked && len(counts) >= maxTrigramPredecessors {
+		return counts
+	}
+
+	next := make(map[TrigramKey]uint64, len(counts)+1)
+	maps.Copy(next, counts)
+	next[key]++
+	return next
+}
+
+// recordTrigramContinuation increments counts[grandparent], with the
+// identical bounded-copy-on-write discipline recordPredecessor and
+// recordTrigram already establish. See maxTrigramPredecessors's own
+// doc comment for why this needs its own explicit bound rather than
+// inheriting one from PredecessorCounts's or TrigramCounts's.
+func recordTrigramContinuation(counts map[string]uint64, grandparent string) map[string]uint64 {
+	if _, tracked := counts[grandparent]; !tracked && len(counts) >= maxTrigramPredecessors {
+		return counts
+	}
+
+	next := make(map[string]uint64, len(counts)+1)
+	maps.Copy(next, counts)
+	next[grandparent]++
+	return next
+}
+
 // observeOutgoingTransition increments s.OutgoingTransitionTotal by
 // one, for a valid transition where s is the predecessor. A plain,
 // unguarded increment — matching Count's own existing precedent (see
@@ -217,6 +368,16 @@ func recordPredecessor(counts map[string]uint64, predecessor string) map[string]
 // "Consequences" for why this counter deliberately does not saturate).
 func (s FingerprintStats) observeOutgoingTransition() FingerprintStats {
 	s.OutgoingTransitionTotal++
+	return s
+}
+
+// observeTrigramContinuation records one valid 3-gram completion where
+// s is the *immediate* (one-step-back) predecessor and grandparent is
+// the two-steps-back fingerprint — the bounded, copy-on-write update to
+// TrigramContinuationTotal (see its own doc comment for why this is
+// keyed by grandparent rather than a plain scalar).
+func (s FingerprintStats) observeTrigramContinuation(grandparent string) FingerprintStats {
+	s.TrigramContinuationTotal = recordTrigramContinuation(s.TrigramContinuationTotal, grandparent)
 	return s
 }
 
@@ -257,10 +418,15 @@ func (s FingerprintStats) IsStale(now time.Time, maxAge time.Duration) bool {
 // preceded this observation for the same actor, or "" if there was
 // none (the actor's first-ever observation) or the ordering guard in
 // Baseline.Observe determined this observation does not validly follow
-// one (see there for why). observe itself performs no ordering check
-// of its own — by the time predecessor reaches here, that decision has
+// one (see there for why). grandparent is the Fingerprint.ID two steps
+// back — "" whenever predecessor is "" (no 2-gram, so no 3-gram either)
+// or when the actor has not yet produced a second-ever observation (a
+// valid 2-gram exists, but no 3-gram can complete from it yet — see
+// docs/adr/0012-bounded-trigram-behavioral-context.md's cold-start
+// section). observe itself performs no ordering check of its own — by
+// the time predecessor/grandparent reach here, that decision has
 // already been made once, by the one caller (Baseline.Observe).
-func (s FingerprintStats) observe(stable features.StableFeatures, vol features.VolatileFeatures, now time.Time, predecessor string) FingerprintStats {
+func (s FingerprintStats) observe(stable features.StableFeatures, vol features.VolatileFeatures, now time.Time, predecessor, grandparent string) FingerprintStats {
 	if s.Count == 0 {
 		s.FirstObserved = now
 	} else if now.After(s.LastObserved) {
@@ -351,6 +517,9 @@ func (s FingerprintStats) observe(stable features.StableFeatures, vol features.V
 
 	if predecessor != "" {
 		s.PredecessorCounts = recordPredecessor(s.PredecessorCounts, predecessor)
+		if grandparent != "" {
+			s.TrigramCounts = recordTrigram(s.TrigramCounts, TrigramKey{First: grandparent, Second: predecessor})
+		}
 	}
 
 	return s
@@ -392,6 +561,28 @@ type Baseline struct {
 	// that enforces this. Zero (time.Time{}) exactly when
 	// LastFingerprintID is "".
 	LastFingerprintTime time.Time
+
+	// PreviousFingerprintID is the Fingerprint.ID two steps back in this
+	// actor's observed order — together with LastFingerprintID, the
+	// minimal two-element history a 3-gram
+	// (PreviousFingerprintID -> LastFingerprintID -> the next
+	// Fingerprint.ID observed) is formed from. "" means no such
+	// fingerprint exists yet: either this actor has fewer than two
+	// prior observations, or every intervening advance was itself
+	// out-of-order (see Observe) — either way, the correct, safe
+	// "insufficient history for a 3-gram" default, not an error state.
+	//
+	// No separate PreviousFingerprintTime field exists: unlike
+	// LastFingerprintID (validated against the *current* observation's
+	// timestamp on every read, via LastFingerprintTime),
+	// PreviousFingerprintID's own ordering validity is established
+	// transitively, once, at the moment it is assigned (see Observe) —
+	// it only ever takes a value that was itself a validly-ordered
+	// LastFingerprintID at some earlier point, so re-validating it
+	// against a second timestamp on every subsequent read would be
+	// redundant. See
+	// docs/adr/0012-bounded-trigram-behavioral-context.md.
+	PreviousFingerprintID string
 }
 
 // New returns an empty Baseline for key, ready to be passed to Observe.
@@ -405,52 +596,68 @@ func New(key Key) Baseline {
 // caller already holds (e.g. from a prior Store.Get) remains a valid,
 // unaffected snapshot.
 //
-// This is also where LastFingerprintID/LastFingerprintTime advance,
-// under the same ordering guard FingerprintStats.observe already
-// applies to interval statistics: now must strictly follow
-// LastFingerprintTime for this observation to (a) be treated as a
-// valid transition *from* b.LastFingerprintID at all, and (b) become
-// the new predecessor for whatever observation follows it. An
+// This is also where LastFingerprintID/LastFingerprintTime (and, one
+// step further back, PreviousFingerprintID) advance, under the same
+// ordering guard FingerprintStats.observe already applies to interval
+// statistics: now must strictly follow LastFingerprintTime for this
+// observation to (a) be treated as a valid transition *from*
+// b.LastFingerprintID at all, (b) be treated as a valid 3-gram
+// completion from (b.PreviousFingerprintID, b.LastFingerprintID) when
+// the former is also non-empty, and (c) shift the two-element history
+// window forward (the old LastFingerprintID becomes the new
+// PreviousFingerprintID) for whatever observation follows it. An
 // out-of-order or backdated now is folded into fp's own
 // FingerprintStats (Count, etc.) as usual, but contributes no
-// transition information in either direction — exactly the same
-// "absence of information, not a misleading data point" stance
-// FingerprintStats.observe's own interval guard takes.
+// transition or 3-gram information in either direction, and does not
+// shift the history window — exactly the same "absence of information,
+// not a misleading data point" stance FingerprintStats.observe's own
+// interval guard takes, now extended coherently one step further back.
 func (b Baseline) Observe(fp fingerprint.Fingerprint, vol features.VolatileFeatures, now time.Time) Baseline {
+	advances := b.LastFingerprintID == "" || now.After(b.LastFingerprintTime)
 	validTransition := b.LastFingerprintID != "" && now.After(b.LastFingerprintTime)
 	predecessor := ""
+	grandparent := ""
 	if validTransition {
 		predecessor = b.LastFingerprintID
+		grandparent = b.PreviousFingerprintID
 	}
 
 	next := make(map[string]FingerprintStats, len(b.Fingerprints)+1)
 	maps.Copy(next, b.Fingerprints)
-	next[fp.ID] = next[fp.ID].observe(fp.Stable, vol, now, predecessor)
+	next[fp.ID] = next[fp.ID].observe(fp.Stable, vol, now, predecessor, grandparent)
 
-	// The predecessor's own OutgoingTransitionTotal advances
-	// separately from the destination update above — a different map
-	// entry, unless predecessor == fp.ID (a self-transition), in which
-	// case this reads the value the observe() call just wrote and
-	// applies this second update on top of it, so neither update is
-	// lost. See docs/adr/0011-transition-rarity-statistic-and-orientation.md
-	// for why this counter exists and lives on the predecessor's
-	// stats, not the destination's.
+	// The predecessor's own OutgoingTransitionTotal (and, when a
+	// grandparent exists, TrigramContinuationTotal) advance separately
+	// from the destination update above — a different map entry,
+	// unless predecessor == fp.ID (a self-transition), in which case
+	// this reads the value the observe() call just wrote and applies
+	// these further updates on top of it, so no update is lost. See
+	// docs/adr/0011-transition-rarity-statistic-and-orientation.md and
+	// docs/adr/0012-bounded-trigram-behavioral-context.md for why these
+	// counters exist and live on the predecessor's stats, not the
+	// destination's.
 	if predecessor != "" {
 		next[predecessor] = next[predecessor].observeOutgoingTransition()
+		if grandparent != "" {
+			next[predecessor] = next[predecessor].observeTrigramContinuation(grandparent)
+		}
 	}
 
 	lastFingerprintID := b.LastFingerprintID
 	lastFingerprintTime := b.LastFingerprintTime
-	if b.LastFingerprintID == "" || now.After(b.LastFingerprintTime) {
+	previousFingerprintID := b.PreviousFingerprintID
+	if advances {
+		previousFingerprintID = b.LastFingerprintID // "" on the actor's first-ever observation — correct
 		lastFingerprintID = fp.ID
 		lastFingerprintTime = now
 	}
 
 	return Baseline{
-		Key:                 b.Key,
-		Fingerprints:        next,
-		LastObserved:        now,
-		LastFingerprintID:   lastFingerprintID,
-		LastFingerprintTime: lastFingerprintTime,
+		Key:                   b.Key,
+		Fingerprints:          next,
+		LastObserved:          now,
+		LastFingerprintID:     lastFingerprintID,
+		LastFingerprintTime:   lastFingerprintTime,
+		PreviousFingerprintID: previousFingerprintID,
 	}
 }

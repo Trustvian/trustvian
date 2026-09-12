@@ -200,7 +200,7 @@ says to add only when needed, not speculatively.
 ## Anomaly
 
 `internal/anomaly.Score(Features, Fingerprint, Baseline, Config)
-Anomaly` combines up to eight independent signals via a **noisy-OR**
+Anomaly` combines up to ten independent signals via a **noisy-OR**
 combination — `score = 1 - Π(1 - value_i · weight_i)` — chosen
 specifically because a single severe signal should dominate the
 result, not be diluted by averaging against several unrelated benign
@@ -216,14 +216,17 @@ signals:
 | `time_pattern_deviation` | The event's UTC hour-of-day has historically accounted for a much smaller share of this fingerprint's traffic than a uniform 1/24 baseline would predict. Requires the fingerprint to be known and `FingerprintStats.TimePatternObservations >= Config.MinObservations`. **Contributes 0 to `Score` by default** — see below |
 | `transition_deviation` (`v0.6` task 025) | The immediately preceding fingerprint has never before led to this one, for this actor (`PredecessorCounts_B[A] == 0`). **Contributes 0 to `Score` by default** — see [Sequence-aware detection](#sequence-aware-detection) below |
 | `transition_rarity` (`v0.6` task 026) | The immediately preceding fingerprint *has* led to this one before, but rarely: `1 - (PredecessorCounts_B[A] / OutgoingTransitionTotal_A)`, gated on `OutgoingTransitionTotal_A >= Config.MinTransitionObservations`. Mutually exclusive with `transition_deviation` for the same transition. **Contributes 0 to `Score` by default** — see [Sequence-aware detection](#sequence-aware-detection) below |
+| `ngram_deviation` (`v0.6` task 027) | The 3-gram (the two fingerprints immediately preceding this one) has never before led to this one, for this actor (`TrigramCounts_C[{A,B}] == 0`). Requires both a predecessor and a grandparent fingerprint to exist. **Contributes 0 to `Score` by default** — see [Sequence-aware detection](#sequence-aware-detection) below |
+| `ngram_rarity` (`v0.6` task 027) | That same 3-gram *has* been observed before, but rarely: `1 - (TrigramCounts_C[{A,B}] / TrigramContinuationTotal_B[A])`, gated on `TrigramContinuationTotal_B[A] >= Config.MinNGramObservations`. Mutually exclusive with `ngram_deviation` for the same 3-gram. **Contributes 0 to `Score` by default** — see [Sequence-aware detection](#sequence-aware-detection) below |
 
-**Five of the eight ship inert.** `DefaultConfig()` leaves
+**Seven of the ten ship inert.** `DefaultConfig()` leaves
 `SensitiveTargetFloor` empty (so `sensitive_target` never fires until an
 operator names their sensitive destinations), and sets
-`FrequencyWeight`, `TimePatternWeight`, `TransitionWeight`, and
-`TransitionRarityWeight` all to `0` (so `frequency_deviation`,
-`time_pattern_deviation`, `transition_deviation`, and
-`transition_rarity` are all detected and reported in `Contributors`,
+`FrequencyWeight`, `TimePatternWeight`, `TransitionWeight`,
+`TransitionRarityWeight`, `NGramWeight`, and `NGramRarityWeight` all to
+`0` (so `frequency_deviation`, `time_pattern_deviation`,
+`transition_deviation`, `transition_rarity`, `ngram_deviation`, and
+`ngram_rarity` are all detected and reported in `Contributors`,
 but multiply to nothing inside the noisy-OR). In every case the
 mechanism is complete and tested; only the deployment-specific value that
 makes it count is left to the operator, because no default is correct
@@ -519,6 +522,29 @@ scoring path, no new pipeline stage.
   transition). Opt-in via `Config.TransitionRarityWeight` (defaults to
   `0`), the same precedent as every other signal weight in this
   package.
+- **Bounded 3-gram detection (`v0.6` task 027).** Two more signals,
+  `ngram_deviation`/`ngram_rarity`, extend order-awareness one step
+  further back: given a 3-gram `A -> B -> C`, has this exact
+  (grandparent, predecessor) pair ever led to this destination before,
+  and if so, how commonly? This is genuinely new information the
+  one-step signals above cannot express — `A -> B` and `B -> C` can
+  each be individually familiar while the complete sequence
+  `A -> B -> C` has never occurred (proven end-to-end by
+  `TestScoreNGramDeviationDetectsNovelTrigramDespiteFamiliarPairwiseTransitions`
+  in `internal/anomaly/anomaly_test.go`). `Baseline` gains exactly one
+  more scalar, `PreviousFingerprintID` (the fingerprint two steps
+  back); `FingerprintStats` gains two new, *independently* bounded maps
+  — `TrigramCounts` (on the destination, keyed by a `(grandparent,
+  predecessor)` pair) and `TrigramContinuationTotal` (on the immediate
+  predecessor, keyed by grandparent) — see
+  [ADR 0012](adr/0012-bounded-trigram-behavioral-context.md) for why a
+  scalar (as `OutgoingTransitionTotal` is for the 2-gram case) cannot
+  answer a 3-gram's denominator, and for why `TrigramContinuationTotal`
+  needed its own explicit bound rather than inheriting one from
+  `PredecessorCounts`. A fixed 3-gram only — no configurable `n`, no
+  Markov model. Both signal weights (`Config.NGramWeight`,
+  `Config.NGramRarityWeight`) default to `0`, the same precedent as
+  every prior signal weight in this package.
 
 This document describes the domain model as it exists today. Planned
 extensions to it (AI-agent session/delegation fields, further v0.6

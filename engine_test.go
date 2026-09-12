@@ -1041,6 +1041,386 @@ func TestObserveTransitionRarityLearnsOnlyFromEligibleDecisions(t *testing.T) {
 	}
 }
 
+// TestAnalyzeNGramEndToEnd is task 027's own central integration proof,
+// built entirely through the real, gated Analyze+Observe loop (per
+// .claude/rules/testing.md's "end-to-end tests are load-bearing"
+// convention), reproducing the task's own canonical example:
+// authenticate -> read_customer is a familiar pairwise transition (via
+// one warm-up path), read_customer -> export_customer is *also* a
+// familiar pairwise transition (via a *different* warm-up path), yet
+// the complete sequence authenticate -> read_customer -> export_customer
+// has never occurred — proving ngram_deviation detects this
+// higher-order novelty through the full
+// Event -> Engine -> Result -> Trust -> Policy -> Decision pipeline,
+// not just in isolated unit tests.
+func TestAnalyzeNGramEndToEnd(t *testing.T) {
+	ctx := context.Background()
+
+	actorEvent := func(id, operation string, ts time.Time) event.Event {
+		return event.Event{
+			ID:        id,
+			Timestamp: ts,
+			Actor:     event.Actor{ID: "svc-crm", Type: event.ActorTypeService, IdentityConfidence: 0.98},
+			Operation: event.Operation{Category: event.OperationCategoryDB, Name: operation},
+			Target:    event.Target{Name: "customer-db"},
+			Context:   event.Context{Environment: "production"},
+			Attributes: map[string]any{
+				"duration_ms": float64(5),
+			},
+		}
+	}
+
+	// Warm up with NGramWeight at its default (0) — the identical
+	// "ships opt-in" precedent every other v0.6 signal already
+	// established, applied here for a structural reason specific to
+	// this signal: unlike transition_rarity (gated by minimum support,
+	// so inert during early warm-up), ngram_deviation fires at full
+	// strength on the *first* occurrence of any genuinely new 3-gram —
+	// which is exactly what legitimate warm-up naturally produces.
+	// Enabling the weight during warm-up would make the signal under
+	// test BLOCK its own warm-up data (verified empirically: every
+	// warm-up step introducing a fresh predecessor scored RiskCritical
+	// and was excluded from learning), which is a warm-up-fixture
+	// artifact, not something about the underlying detector this test
+	// needs to prove. A shared store.Store lets two Engine instances
+	// (identical policy, differing only in NGramWeight) observe the
+	// same evolving Baseline: warmupEngine learns network the same way
+	// any deployment's real early traffic would, without NGramWeight
+	// paying its own opt-in cost during exactly that period; engine
+	// then scores the events actually under test with the signal
+	// enabled — the "operator raises the weight once calibrated"
+	// sequence this codebase already documents for every prior
+	// opt-in signal, just exercised across two Engine values sharing
+	// one Store rather than one Engine value whose Config field
+	// changes over time (which the immutable-Engine, functional-options
+	// design does not support, deliberately).
+	sharedStore := store.NewInMemory()
+	warmupEngine := trustvian.NewEngine(trustvian.WithStore(sharedStore), trustvian.WithPolicy(riskGatedPolicy()))
+
+	scoredCfg := anomaly.DefaultConfig()
+	scoredCfg.NGramWeight = 0.9
+	engine := trustvian.NewEngine(
+		trustvian.WithStore(sharedStore),
+		trustvian.WithPolicy(riskGatedPolicy()),
+		trustvian.WithAnomalyConfig(scoredCfg),
+	)
+
+	analyzeAndObserve := func(t *testing.T, id, operation string, ts time.Time) trustvian.Result {
+		t.Helper()
+		result, err := warmupEngine.Analyze(ctx, actorEvent(id, operation, ts))
+		if err != nil {
+			t.Fatalf("Analyze(%s) error = %v", operation, err)
+		}
+		if _, err := warmupEngine.Observe(ctx, result); err != nil {
+			t.Fatalf("Observe(%s) error = %v", operation, err)
+		}
+		return result
+	}
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	step := func() time.Time { now = now.Add(time.Second); return now }
+
+	// Familiarize authenticate -> read_customer, via
+	// authenticate -> read_customer -> other_end (never export_customer).
+	for i := range 20 {
+		analyzeAndObserve(t, fmt.Sprintf("auth-%d", i), "authenticate", step())
+		analyzeAndObserve(t, fmt.Sprintf("read-a-%d", i), "read_customer", step())
+		analyzeAndObserve(t, fmt.Sprintf("other-end-%d", i), "other_end", step())
+	}
+
+	// Familiarize read_customer -> export_customer, via
+	// other_start -> read_customer -> export_customer (never preceded
+	// by authenticate).
+	for i := range 20 {
+		analyzeAndObserve(t, fmt.Sprintf("other-start-%d", i), "other_start", step())
+		analyzeAndObserve(t, fmt.Sprintf("read-b-%d", i), "read_customer", step())
+		analyzeAndObserve(t, fmt.Sprintf("export-seed-%d", i), "export_customer", step())
+	}
+
+	// Position the real history window at (authenticate, read_customer).
+	analyzeAndObserve(t, "auth-final", "authenticate", step())
+	analyzeAndObserve(t, "read-final", "read_customer", step())
+
+	exportResult, err := engine.Analyze(ctx, actorEvent("export-final", "export_customer", step()))
+	if err != nil {
+		t.Fatalf("Analyze(export) error = %v", err)
+	}
+	if hasResultSignal(exportResult, "transition_deviation") {
+		t.Fatalf("Contributors = %+v, want no transition_deviation — read_customer->export_customer is a familiar pairwise transition", exportResult.Anomaly.Contributors)
+	}
+	if !hasResultSignal(exportResult, "ngram_deviation") {
+		t.Fatalf("Contributors = %+v, want ngram_deviation — the complete 3-gram authenticate->read_customer->export_customer was never observed", exportResult.Anomaly.Contributors)
+	}
+
+	// The alternative continuation actually trained for this exact
+	// window (authenticate, read_customer) -> other_end must show no
+	// such novelty, for comparison.
+	otherEndResult, err := engine.Analyze(ctx, actorEvent("other-end-check", "other_end", step()))
+	if err != nil {
+		t.Fatalf("Analyze(other_end) error = %v", err)
+	}
+	if hasResultSignal(otherEndResult, "ngram_deviation") {
+		t.Fatalf("Contributors = %+v, want no ngram_deviation — authenticate->read_customer->other_end has been observed 20 times", otherEndResult.Anomaly.Contributors)
+	}
+
+	if !exportResult.Trust.Risk.AtLeast(otherEndResult.Trust.Risk) {
+		t.Errorf("export path Risk = %q, other_end path Risk = %q — want the novel-3-gram path at least as risky", exportResult.Trust.Risk, otherEndResult.Trust.Risk)
+	}
+}
+
+// TestAnalyzeNGramCrossActorIsolation mirrors
+// TestAnalyzeTransitionRarityCrossActorIsolation one level up: one
+// actor's learned 3-gram history must never leak into a different
+// actor's scoring for the nominally identical sequence.
+func TestAnalyzeNGramCrossActorIsolation(t *testing.T) {
+	ctx := context.Background()
+
+	shape := func(actorID, operation string, ts time.Time) event.Event {
+		return event.Event{
+			ID:        actorID + "-" + operation + "-" + ts.String(),
+			Timestamp: ts,
+			Actor:     event.Actor{ID: actorID, Type: event.ActorTypeService, IdentityConfidence: 1},
+			Operation: event.Operation{Category: event.OperationCategoryDB, Name: operation},
+			Target:    event.Target{Name: "shared-db"},
+			Context:   event.Context{Environment: "production"},
+		}
+	}
+
+	// See TestAnalyzeNGramEndToEnd's own comment for why warm-up uses
+	// NGramWeight's default (0) and only the final scored call raises
+	// it, via a second Engine sharing the same Store.
+	sharedStore := store.NewInMemory()
+	warmupEngine := trustvian.NewEngine(trustvian.WithStore(sharedStore), trustvian.WithPolicy(riskGatedPolicy()))
+	scoredCfg := anomaly.DefaultConfig()
+	scoredCfg.NGramWeight = 0.9
+	engine := trustvian.NewEngine(
+		trustvian.WithStore(sharedStore),
+		trustvian.WithPolicy(riskGatedPolicy()),
+		trustvian.WithAnomalyConfig(scoredCfg),
+	)
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	step := func() time.Time { now = now.Add(time.Second); return now }
+
+	analyzeAndObserve := func(actorID, operation string) trustvian.Result {
+		r, err := warmupEngine.Analyze(ctx, shape(actorID, operation, step()))
+		if err != nil {
+			t.Fatalf("Analyze: %v", err)
+		}
+		if _, err := warmupEngine.Observe(ctx, r); err != nil {
+			t.Fatalf("Observe: %v", err)
+		}
+		return r
+	}
+
+	// actor-a: authenticate -> read -> update, trained 20 times.
+	for range 20 {
+		analyzeAndObserve("actor-a", "authenticate")
+		analyzeAndObserve("actor-a", "read")
+		analyzeAndObserve("actor-a", "update")
+	}
+
+	// actor-b has never been observed at all. Its own
+	// authenticate -> read -> update *is* genuinely novel for actor-b's
+	// own, fresh baseline — ngram_deviation firing here is correct, not
+	// a bug (a 3-gram cannot be non-novel until it has actually been
+	// observed for *this* actor). The isolation property this test
+	// actually proves is narrower and more precise: the signal's Value
+	// must read as *maximally* novel (1), not some intermediate value —
+	// which is only possible if actor-a's 20 real observations of the
+	// nominally identical sequence contributed nothing to actor-b's own
+	// TrigramCounts.
+	warmupR, err := warmupEngine.Analyze(ctx, shape("actor-b", "authenticate", step()))
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	warmupEngine.Observe(ctx, warmupR)
+	warmupR, err = warmupEngine.Analyze(ctx, shape("actor-b", "read", step()))
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	warmupEngine.Observe(ctx, warmupR)
+
+	rB, err := engine.Analyze(ctx, shape("actor-b", "update", step()))
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	var ngramValue float64
+	found := false
+	for _, c := range rB.Anomaly.Contributors {
+		if c.Name == "ngram_deviation" {
+			ngramValue, found = c.Value, true
+		}
+	}
+	if !found {
+		t.Fatalf("actor-b Contributors = %+v, want ngram_deviation (a genuinely novel 3-gram for actor-b's own baseline)", rB.Anomaly.Contributors)
+	}
+	if ngramValue != 1 {
+		t.Errorf("actor-b ngram_deviation Value = %v, want exactly 1 — anything less would mean actor-a's 20 observations leaked into actor-b's baseline", ngramValue)
+	}
+	if hasResultSignal(rB, "ngram_rarity") {
+		t.Errorf("actor-b Contributors = %+v, want no ngram_rarity (mutually exclusive with ngram_deviation)", rB.Anomaly.Contributors)
+	}
+}
+
+// TestAnalyzeNGramScoresBeforeLearning proves Analyze never mutates
+// TrigramCounts/TrigramContinuationTotal — the 3-gram analogue of
+// TestAnalyzeTransitionRarityScoresBeforeLearning. Calling Analyze many
+// times on the same novel 3-gram, without ever calling Observe, must
+// produce the exact same reading every time.
+func TestAnalyzeNGramScoresBeforeLearning(t *testing.T) {
+	ctx := context.Background()
+	anomalyCfg := anomaly.DefaultConfig()
+	anomalyCfg.NGramWeight = 0.9
+
+	engine := trustvian.NewEngine(trustvian.WithAnomalyConfig(anomalyCfg))
+
+	shape := func(operation string, ts time.Time) event.Event {
+		return event.Event{
+			ID:        operation + "-" + ts.String(),
+			Timestamp: ts,
+			Actor:     event.Actor{ID: "svc-ngram-only-learning", Type: event.ActorTypeService, IdentityConfidence: 1},
+			Operation: event.Operation{Category: event.OperationCategoryDB, Name: operation},
+			Target:    event.Target{Name: "order-db"},
+			Context:   event.Context{Environment: "production"},
+		}
+	}
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	step := func() time.Time { now = now.Add(time.Second); return now }
+
+	for range 3 {
+		r, err := engine.Analyze(ctx, shape("authenticate", step()))
+		if err != nil {
+			t.Fatalf("Analyze: %v", err)
+		}
+		engine.Observe(ctx, r)
+	}
+	r, err := engine.Analyze(ctx, shape("read", step()))
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	engine.Observe(ctx, r)
+
+	// Now Analyze the novel (authenticate, ..., read) -> delete 3-gram
+	// repeatedly, without ever calling Observe again.
+	eventTime := step()
+	var results []bool
+	for range 10 {
+		result, err := engine.Analyze(ctx, shape("delete", eventTime))
+		if err != nil {
+			t.Fatalf("Analyze() error = %v", err)
+		}
+		results = append(results, hasResultSignal(result, "ngram_deviation"))
+	}
+	for i, fired := range results {
+		if !fired {
+			t.Fatalf("call %d: ngram_deviation fired = false, want true (unchanged across repeated Analyze-only calls — Analyze must never learn)", i)
+		}
+	}
+}
+
+// TestObserveNGramLearnsOnlyFromEligibleDecisions is task 027's own
+// poisoning-guard regression test, using the exact scenario the task's
+// own brief names: a normal path (authenticate -> read -> update) and a
+// malicious path (authenticate -> export -> delete) that gets BLOCKed.
+// Repeatedly replaying the malicious sequence must never normalize it —
+// this is not new logic, it falls out entirely from Engine.Observe's
+// existing eligibleForLearning gate, which Baseline.Observe (and
+// therefore this task's new TrigramCounts/TrigramContinuationTotal
+// state) sits behind unconditionally; this test exists to prove that
+// inheritance held, not to add a new mechanism.
+func TestObserveNGramLearnsOnlyFromEligibleDecisions(t *testing.T) {
+	ctx := context.Background()
+	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()))
+
+	normalEvent := func(id, operation string, ts time.Time) event.Event {
+		return event.Event{
+			ID: id, Timestamp: ts,
+			Actor:     event.Actor{ID: "svc-ngram-poison-test", Type: event.ActorTypeService, IdentityConfidence: 0.98},
+			Operation: event.Operation{Category: event.OperationCategoryDB, Name: operation},
+			Target:    event.Target{Name: "customer-db"},
+			Context:   event.Context{Environment: "production"},
+		}
+	}
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Establish the history window at (authenticate, export) — the
+	// setup step before the malicious "delete" completes the 3-gram
+	// under test. "export" itself is unremarkable here (it is only the
+	// *final* delete step that is wildly anomalous).
+	r, err := engine.Analyze(ctx, normalEvent("auth-1", "authenticate", now))
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if _, err := engine.Observe(ctx, r); err != nil {
+		t.Fatalf("Observe: %v", err)
+	}
+	r, err = engine.Analyze(ctx, normalEvent("export-1", "export_customer", now.Add(time.Second)))
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if _, err := engine.Observe(ctx, r); err != nil {
+		t.Fatalf("Observe: %v", err)
+	}
+
+	// A wildly anomalous event, immediately following authenticate ->
+	// export_customer — the malicious 3-gram's completion.
+	blocked := event.Event{
+		ID:        "attack",
+		Timestamp: now.Add(2 * time.Second),
+		Actor:     event.Actor{ID: "svc-ngram-poison-test", Type: event.ActorTypeService, IdentityConfidence: 0.1},
+		Operation: event.Operation{Category: event.OperationCategoryExternal, Name: "POST /exfiltrate"},
+		Target:    event.Target{Name: "unknown-external-host"},
+		Context:   event.Context{Environment: "production"},
+	}
+	blockedResult, err := engine.Analyze(ctx, blocked)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if blockedResult.Decision != policy.DecisionBlock {
+		t.Fatalf("Decision = %q, want %q (test setup expects this event to be blocked)", blockedResult.Decision, policy.DecisionBlock)
+	}
+
+	// Repeat the BLOCKed 3-gram many times — an attacker trying to
+	// "train" authenticate -> export_customer -> attack into looking
+	// familiar.
+	for i := range 50 {
+		attempt := blocked
+		attempt.ID = fmt.Sprintf("attack-%d", i)
+		attempt.Timestamp = now.Add(time.Duration(i+3) * time.Second)
+		result, err := engine.Analyze(ctx, attempt)
+		if err != nil {
+			t.Fatalf("Analyze() attempt %d: error = %v", i, err)
+		}
+		if result.Decision != policy.DecisionBlock {
+			t.Fatalf("attempt %d: Decision = %q, want %q", i, result.Decision, policy.DecisionBlock)
+		}
+		learned, err := engine.Observe(ctx, result)
+		if err != nil {
+			t.Fatalf("Observe() attempt %d: error = %v", i, err)
+		}
+		if learned {
+			t.Fatalf("attempt %d: Observe() learned = true for a BLOCKed event, want false", i)
+		}
+	}
+
+	// The 3-gram must still read as entirely unseen: 50 repeated
+	// BLOCKed attempts must have contributed zero learned 3-gram
+	// observations.
+	recheck, err := engine.Analyze(ctx, blocked)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if !hasResultSignal(recheck, "ngram_deviation") {
+		t.Errorf("Contributors = %+v, want ngram_deviation still present (the 3-gram must still read as entirely unseen after 50 BLOCKed attempts)", recheck.Anomaly.Contributors)
+	}
+	if hasResultSignal(recheck, "ngram_rarity") {
+		t.Errorf("Contributors = %+v, want no ngram_rarity — a BLOCKed 3-gram must never accumulate enough learned observations to become \"rare but seen\"", recheck.Anomaly.Contributors)
+	}
+}
+
 func hasResultSignal(result trustvian.Result, name string) bool {
 	for _, c := range result.Anomaly.Contributors {
 		if c.Name == name {
