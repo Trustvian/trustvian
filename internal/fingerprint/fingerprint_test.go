@@ -135,3 +135,39 @@ func TestFingerprintIDIndependentOfEventIdentifiers(t *testing.T) {
 		t.Errorf("Fingerprint.ID changed when only Event.ID/TraceID/SpanID changed: %q vs %q", fp1.ID, fp2.ID)
 	}
 }
+
+// TestFingerprintIDIndependentOfAgentContext is task 014's (v0.7) own
+// extension of TestFingerprintIDIndependentOfEventIdentifiers: none of
+// SessionID, DelegatedFrom, or ApprovalStatus may affect Fingerprint
+// identity, for the identical reason TraceID/SpanID already don't — a
+// SessionID in particular is typically unique per conversation, and
+// folding it into the Fingerprint would give every session-scoped
+// actor a fresh, never-reused behavioral identity, defeating
+// cross-session behavioral profiling entirely. See
+// docs/adr/0014-ai-agents-as-first-class-behavioral-actors.md.
+func TestFingerprintIDIndependentOfAgentContext(t *testing.T) {
+	base := event.Event{
+		ID:        "evt-1",
+		Timestamp: time.Now(),
+		Actor:     event.Actor{ID: "customer-support-agent-42", Type: event.ActorTypeAIAgent, IdentityConfidence: 0.9},
+		Operation: event.Operation{Category: event.OperationCategoryTool, Name: "search"},
+		Target:    event.Target{Name: "knowledge-base"},
+		Context: event.Context{
+			Environment:    "production",
+			SessionID:      "session-1",
+			DelegatedFrom:  "orchestrator-agent",
+			ApprovalStatus: event.ApprovalNotRequired,
+		},
+	}
+	varied := base
+	varied.Context.SessionID = "session-2-completely-different"
+	varied.Context.DelegatedFrom = "a-different-orchestrator"
+	varied.Context.ApprovalStatus = event.ApprovalDenied
+
+	fp1 := fingerprint.Compute(features.Extract(base).Stable)
+	fp2 := fingerprint.Compute(features.Extract(varied).Stable)
+
+	if fp1.ID != fp2.ID {
+		t.Errorf("Fingerprint.ID changed when only SessionID/DelegatedFrom/ApprovalStatus changed: %q vs %q", fp1.ID, fp2.ID)
+	}
+}

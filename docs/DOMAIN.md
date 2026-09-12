@@ -30,7 +30,12 @@ full field reference.
   destination it is; like `Direction`, the zero value means
   unclassified and is never checked by `Validate()`.
 - **Context** — deployment `Environment` plus, when available, OTel
-  `TraceID`/`SpanID` for correlation.
+  `TraceID`/`SpanID` for correlation, and (`v0.7`) `SessionID`/
+  `DelegatedFrom`/`ApprovalStatus` for AI-agent session, delegation, and
+  approval context — see [AI Agent behavioral
+  context](#ai-agent-behavioral-context) below for which of these
+  affect `Fingerprint` identity (none of them, deliberately) and which
+  don't.
 - **Metadata (`Attributes`)** — an open `map[string]any`. Two keys
   carry defined meaning (`duration_ms`, `error` — see
   [Go SDK Guide](sdk-guide.md#the-event-type)); everything else passes
@@ -577,8 +582,83 @@ scoring path, no new pipeline stage.
   mandatory duplication analysis this task's own brief required before
   any code was written.
 
+## AI Agent behavioral context
+
+`v0.7` ([task 014](tasks/014-ai-agent.md), [ADR
+0014](adr/0014-ai-agents-as-first-class-behavioral-actors.md)) adds
+three optional `event.Context` fields for AI-agent session,
+delegation, and approval context. No new package, no new pipeline
+stage, no agent-specific `Fingerprint`/`Baseline`/`Anomaly` type — an
+AI agent is `Actor{Type: ActorTypeAIAgent}`, already representable
+since `v0.1`, flowing through the identical, unmodified pipeline.
+
+**What affects `Fingerprint` identity, and what deliberately does
+not** — the central design question this task answers explicitly:
+
+| Field | Affects `Fingerprint`? |
+|---|---|
+| `Actor.Type`, `Operation.Category`, `Operation.Name`, `Target.Name`, `Target.Category`, `Context.Environment` | **Yes** (pre-existing, unchanged) |
+| `Context.TraceID`, `Context.SpanID` | No (pre-existing) |
+| `Context.SessionID` | **No** (new, `v0.7`) |
+| `Context.DelegatedFrom` | **No** (new, `v0.7`) |
+| `Context.ApprovalStatus` | **No** (new, `v0.7`) |
+
+- **`SessionID`** groups events belonging to one bounded
+  interaction/session (e.g. one agent conversation). It must never
+  affect `Fingerprint`/`baseline.Key` identity: a session identifier is
+  typically unique per conversation, so folding it into behavioral
+  identity would give every session a fresh, never-reused Fingerprint
+  or Baseline, and the system would never accumulate enough
+  observations to learn anything — proven, not just asserted, by
+  `TestAnalyzeAgentSessionIDDoesNotExplodeBaseline`: 1,000 events with
+  1,000 distinct `SessionID` values and otherwise-identical behavior
+  accumulate into exactly one `Fingerprint` entry with `Count == 1000`.
+- **`DelegatedFrom`** carries the immediate parent `Actor.ID` for a
+  single agent-to-agent delegation hop (Agent A delegates to Agent B:
+  B's own `Event` carries `Actor.ID = B`, `DelegatedFrom = A`'s ID). A
+  single hop only — no delegation graph, no `DelegationID`, no depth
+  counter; no current consumer needs more than "who asked for this."
+  `TestAnalyzeAgentDelegationContextScoredIdentically` proves it has
+  zero scoring effect today.
+- **`ApprovalStatus`** (`event.ApprovalStatus`: `ApprovalUnspecified`
+  (zero value) / `NotRequired` / `Required` / `Approved` / `Denied`)
+  records a per-event fact, not a workflow state — Trustvian does not
+  manage an approval process. Follows `OperationDirection`'s own
+  existing precedent exactly: a typed, optional field, not yet read by
+  `features.Extract`, reserved for a future signal or `Policy`
+  condition to consume once one has a concrete design.
+- **Agent identity is `Actor.ID`, never model/provider metadata.** A
+  model name (`"gpt-5"`) is not behavioral identity — two agents built
+  on the same model are different actors; the same agent migrating
+  model versions is still the same actor. No field for model/provider
+  metadata is added; `Event.Attributes` already covers optional,
+  non-behavioral metadata a producer wants to carry (like
+  `duration_ms`), without risk of it being mistaken for identity.
+- **Tool calls and destinations reuse `Operation`/`Target` as-is.**
+  `Operation{Category: OperationCategoryTool, Name: "shell.execute"}`,
+  `Target{Name: "...", Category: TargetCategoryExternal}` — no `Tool`
+  or `AgentDestination` type exists. Tool identity must be a stable,
+  low-cardinality string (`"filesystem.read"`, `"secret.read"`) —
+  **never** raw prompt text, tool argument values, or free-form user
+  input, which would both explode Fingerprint cardinality and retain
+  sensitive data in behavioral state indefinitely. See
+  [docs/SECURITY.md § AI Agent behavioral security](SECURITY.md).
+- **No new detector — the existing signals already work, proven not
+  assumed.** `TestAnalyzeAgentToolNoveltyDetectedByExistingEngine`
+  shows the pre-existing `categorical_novelty`/`transition_deviation`
+  signals fire on an unexpected tool call. The task's own mandatory
+  critical test,
+  `TestAnalyzeAgentToolSequenceNoveltyDetectedByExistingEngine`,
+  mirrors [task 027](tasks/027-bounded-ngram-detection.md)'s own proof:
+  `search -> secret.read` and `secret.read -> external.post` are each
+  trained as familiar pairwise transitions via different contexts, the
+  complete `search -> secret.read -> external.post` sequence is never
+  trained as one continuous path, and the pre-existing `ngram_deviation`
+  signal (task 027, built with zero knowledge of AI agents) still
+  detects the higher-order novelty.
+
 This document describes the domain model as it exists today. Planned
-extensions to it (AI-agent session/delegation fields, further v0.6
-sequence detectors, and others) are scoped in [ROADMAP.md](ROADMAP.md)
-and [`tasks/`](tasks/) — each will update this document when it
-actually ships, not before.
+extensions to it (further v0.7 agent-behavioral-detection scenarios,
+further v0.6 sequence detectors, and others) are scoped in
+[ROADMAP.md](ROADMAP.md) and [`tasks/`](tasks/) — each will update
+this document when it actually ships, not before.

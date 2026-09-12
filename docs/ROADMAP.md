@@ -173,6 +173,35 @@ into `PolicyConfig` and not yet wired into the CLI or the Collector
 processor (neither has an alert-delivery flow for it to plug into yet
 — a deliberate scope boundary, not a gap).
 
+**`v0.6.0` — Behavioral Detection Depth is shipped.** All five of its
+tasks — [025](tasks/025-sequence-analysis-foundation.md),
+[026](tasks/026-transition-rarity.md),
+[027](tasks/027-bounded-ngram-detection.md),
+[028](tasks/028-markov-transition-scoring.md), and
+[029](tasks/029-v06-stabilization-release-gate.md) — are done in code,
+tests, and documentation, and the `v0.6.0` tag itself is published on
+`origin` (`gh release list` confirms the GitHub release, marked
+`Latest`). Four new, opt-in anomaly signals reuse the existing
+`Baseline`/`Store` architecture rather than a parallel one: pairwise
+`transition_deviation`/`transition_rarity` (has this exact predecessor
+ever led here before, and if so how commonly), bounded 3-gram
+`ngram_deviation`/`ngram_rarity` (the same question one step further
+back, over a fixed `(grandparent, predecessor)` pair — proven to add
+genuine information beyond the pairwise signals, not merely restate
+it), and `markov_surprisal` (an alternative, information-theoretic
+severity curve over the *identical* evidence `transition_rarity`
+already reads — proven mathematically to be a monotonic
+reparameterization, not independent evidence, and structurally
+prevented from double-counting alongside it — see [ADR
+0013](adr/0013-first-order-markov-surprisal-without-duplicate-evidence.md)).
+Every new signal defaults to a zero weight; existing `v0.5` callers see
+byte-for-byte unchanged `Score` output and `BenchmarkEngineAnalyze`
+allocation profile. `processor/go.mod` does not depend on `v0.6.0` —
+`v0.6` added zero public API surface (verified via `git diff
+v0.5.0..HEAD -- '*.go'`), so there is no functional reason to bump it,
+unlike `v0.3.0 -> v0.5.0`'s own bump (which was needed because `config`
+didn't exist in `v0.3.0`).
+
 What's **not** yet true, concretely — the gaps this roadmap's remaining
 milestones exist to close:
 
@@ -201,10 +230,16 @@ milestones exist to close:
   or `processor/` — deliberately, per task 023's own Non-Goals, not a
   gap analogous to the `processor/go.mod` release blocker above.
 - Sequence-aware detection (order, not just individual-event anomaly)
-  does not exist — see `v0.6` below.
+  is now implemented — see `v0.6` below, shipped. Arbitrary-length
+  n-grams and a full/higher-order Markov treatment (a transition
+  matrix, smoothing) remain unbuilt future work (see [ADR
+  0012](adr/0012-bounded-trigram-behavioral-context.md)'s and [ADR
+  0011](adr/0011-transition-rarity-statistic-and-orientation.md)'s own
+  "why X still waits" sections).
 - AI-agent event types work today only through the generic `Event`
   model (`ActorTypeAIAgent` + `OperationCategoryTool`) — no session,
-  delegation, or tool-sequence concepts exist (`v0.7`, below).
+  delegation, or tool-sequence concepts exist yet (`v0.7`, below, now
+  in progress).
 - No production-grade persistent `Store` beyond `FileStore`, no Docker
   deployment path (`v0.8`); no CI/CD, no release automation, no
   container image (`v0.9`).
@@ -215,19 +250,11 @@ milestones exist to close:
   [§ The OSS / Enterprise product boundary](#the-oss--enterprise-product-boundary)
   above).
 
-**Next up:** with `v0.1`–`v0.5.0` shipped (see [Release readiness —
-v0.5.0](#release-readiness--v050) for the tag/dependency verification),
-`v0.6` — Behavioral Detection Depth is now a **release candidate**: all
-five of its tasks, [025 Sequence Analysis
-Foundation](tasks/025-sequence-analysis-foundation.md), [026
-Transition Rarity](tasks/026-transition-rarity.md), [027 Bounded n-gram
-Detection](tasks/027-bounded-ngram-detection.md), [028 Markov
-Transition Scoring](tasks/028-markov-transition-scoring.md), and [029
-Stabilization & Release Gate](tasks/029-v06-stabilization-release-gate.md),
-are done (see the milestone section below), and task 029's own audit
-found no release blocker. Creating the `v0.6.0` tag and GitHub release
-remains an explicit human action, not yet taken. The rest of this roadmap's
-remaining work (the rest of `v0.6` through `v1.0` Production-Ready OSS,
+**Next up:** with `v0.1`–`v0.6.0` shipped (see [Release readiness —
+v0.5.0](#release-readiness--v050) for the tag/dependency verification
+pattern `v0.6.0` repeated), `v0.7` — AI Agent Behavioral Security is now
+in progress — see the `v0.7` milestone section below. The rest of this roadmap's
+remaining work (the rest of `v0.7` through `v1.0` Production-Ready OSS,
 defined below) charts the
 path to a complete, standalone, production-usable OSS product — see
 each milestone section for
@@ -830,21 +857,20 @@ Nothing remains outstanding for this release.
 
 ## v0.6 — Behavioral Detection Depth
 
-**Status: release candidate — stabilization complete.** [Task
-025](tasks/025-sequence-analysis-foundation.md) (Sequence Analysis
-Foundation), [task 026](tasks/026-transition-rarity.md) (Transition
-Rarity), [task 027](tasks/027-bounded-ngram-detection.md) (Bounded
-n-gram Detection), [task
+**`v0.6.0` is shipped.** [Task 025](tasks/025-sequence-analysis-foundation.md)
+(Sequence Analysis Foundation), [task 026](tasks/026-transition-rarity.md)
+(Transition Rarity), [task 027](tasks/027-bounded-ngram-detection.md)
+(Bounded n-gram Detection), [task
 028](tasks/028-markov-transition-scoring.md) (Markov Transition
 Scoring), and [task 029](tasks/029-v06-stabilization-release-gate.md)
 (Stabilization & Release Gate) are all done. Task 029's own audit found
 no release blocker — see its own Findings section for the full
 checklist (double-counting protection re-verified, state bounds
 confirmed, public API and dependencies confirmed unchanged since
-`v0.5.0`, one genuine documentation-drift item found and fixed). No
-`v0.6.0` tag has been created and no GitHub release has been published
-yet — those remain explicit human actions outside this milestone's own
-task scope. The rest of
+`v0.5.0`, one genuine documentation-drift item found and fixed). The
+`v0.6.0` tag is pushed to `origin` and its GitHub release ("Behavioral
+Detection Depth") is published and marked `Latest` — verified directly
+via `gh release list`, not assumed. The rest of
 the milestone below remains unscoped, per this roadmap's own "small
 vertical slices" principle.
 
@@ -1075,10 +1101,9 @@ Criteria sections — all fully met, verified by `go
 test ./... -race -count=1` and `go test -bench=. -benchmem ./...`
 showing `BenchmarkEngineAnalyze`'s allocation profile unchanged across
 all five tasks, and by task 029's own release-readiness audit finding
-no blocker. **The milestone's implementation is complete and
-release-ready** — `v0.6.0` itself (a real, tagged, published release)
-remains a separate, explicit human action, matching the same
-tag/GitHub-release step `v0.5.0`'s own gate ([task
+no blocker. **The milestone is shipped** — `v0.6.0` is a real, tagged,
+published release (`gh release list` shows it marked `Latest`),
+matching the same tag/GitHub-release step `v0.5.0`'s own gate ([task
 024](tasks/024-v05-release-gate.md)) required before that milestone
 could be called shipped.
 
@@ -1093,42 +1118,68 @@ remain "another behavioral source" through the same pipeline:
 Event → Features → Fingerprint → Baseline → Anomaly → Trust → Policy → Decision
 ```
 
-**Scope** (task file [014](tasks/014-ai-agent.md), not yet
-implemented — confirmed by checking `event/event.go` directly: no
-`SessionID`/`DelegatedFrom` field exists there today):
+**Task 014 — AI Agent Event/Context Foundation — is done.** [Task
+file 014](tasks/014-ai-agent.md) added three optional `Context`
+fields — `SessionID` (session grouping), `DelegatedFrom` (single-hop
+agent-to-agent delegation), and `ApprovalStatus` (a recorded
+human-approval fact, typed the same way `OperationDirection` already
+was: optional, unvalidated, not yet read by `features.Extract`) — and
+proved, rather than merely designed, the milestone's two central
+claims:
 
-- Optional new dimensions on `Event`/`Context` for session grouping and
-  agent-to-agent delegation.
-- Human-approval *workflow* semantics layered onto the existing
-  `REQUIRE_APPROVAL` decision (which already exists) rather than a new
-  decision type.
-- Agent-to-agent calls, tool calls, external destinations, file
-  access, database access, and secret access are all already
-  representable through the generic `Event`/`Actor`/`Target` model
-  (`ActorTypeAIAgent`, `OperationCategoryTool`,
-  `TargetCategoryExternal`/`Database`) — this milestone adds session
-  and delegation *correlation* fields, not new representational
-  capability the pipeline lacks.
-- Tool-sequence analysis explicitly stays out of this milestone — it's
-  `v0.6`'s sequence-deviation capability applied to
-  `Fingerprint.ID`-per-tool-call sequences, not a new, agent-specific
-  algorithm. An agent's tool-call sequence is scored by the *same*
-  sequence signal any other actor's operation sequence would be.
+- **Session identity never becomes behavioral identity.**
+  `TestAnalyzeAgentSessionIDDoesNotExplodeBaseline` runs 1000 events
+  with 1000 distinct `SessionID`s and identical behavior through the
+  real, gated `Engine.Analyze`/`Observe` loop and confirms exactly one
+  `Fingerprint` accumulates all 1000 observations — `SessionID` never
+  enters `baseline.Key` or `Fingerprint.Compute`.
+- **Tool-sequence analysis needs no new algorithm.**
+  `TestAnalyzeAgentToolSequenceNoveltyDetectedByExistingEngine` trains
+  `search → secret.read` and `secret.read → external.post` as
+  independently familiar via separate contexts, then shows `v0.6`'s
+  existing bounded 3-gram signal (`ngram_deviation`, task
+  [027](tasks/027-bounded-ngram-detection.md)) still flags
+  `search → secret.read → external.post` as anomalous — proving the
+  higher-order novelty is caught by the same signal any other actor's
+  operation sequence would use, with zero agent-specific code.
 
-**Non-goals.** No agent-specific `Fingerprint`/`Baseline`/`Anomaly`
-implementation — the same `internal/*` packages must keep working
-unchanged for agent-sourced events, proven by reusing existing tests
-against the extended `Event` shape, not writing parallel ones. No
-second security engine, no dedicated agent package beyond optional
-`Event` fields.
+Agent-to-agent calls, tool calls, external destinations, file access,
+database access, and secret access were all already representable
+through the generic `Event`/`Actor`/`Target` model
+(`ActorTypeAIAgent`, `OperationCategoryTool`,
+`TargetCategoryExternal`/`Database`) before this task — it added only
+the session/delegation/approval *correlation* fields, not new
+representational capability the pipeline lacked. See [ADR
+0014](adr/0014-ai-agents-as-first-class-behavioral-actors.md) for the
+full domain-model reasoning.
 
-**Dependencies.** `v0.1` (stable `Event`/public API — extending `Event`
-after `v0.1` ships means doing it in a backward-compatible way, adding
-optional fields only). Benefits from, but does not require, `v0.6`
-(tool-sequence analysis is more useful once sequence deviation exists,
-but session/delegation fields are independently useful without it).
+**Non-goals (held).** No agent-specific `Fingerprint`/`Baseline`/
+`Anomaly` implementation was introduced — the same `internal/*`
+packages kept working unchanged for agent-sourced events, proven by
+reusing existing signals against the extended `Event` shape rather
+than writing parallel ones. No second security engine, no dedicated
+agent package beyond the three optional `Context` fields.
+
+**Dependencies.** `v0.1` (stable `Event`/public API — extending
+`Event` after `v0.1` shipped meant doing it in a backward-compatible
+way, adding optional fields only). Benefited from `v0.6`'s
+sequence-deviation signal, which task 014 reused rather than
+duplicated.
 
 **Acceptance criteria.** See [014-ai-agent.md](tasks/014-ai-agent.md).
+
+**What's next (illustrative, unscoped — none of this is implemented
+or task-filed yet).** Task 014 is a foundation slice, not the whole
+milestone. Further `v0.7` work would continue from task **030**
+onward (**015** and **016** stay reserved for MCP and Control
+respectively, per the project's existing task-numbering scheme — they
+are not reusable for further agent-detection slices): a task to prove
+`ApprovalStatus`/`DelegatedFrom` against a concrete scenario once one
+exists (rather than only the context-independence tests task 014
+already wrote), and a `v0.7` stabilization/release-gate task mirroring
+[024](tasks/024-v05-release-gate.md)/[029](tasks/029-v06-stabilization-release-gate.md)'s
+shape. Each remains its own explicitly-scoped task file, written when
+that slice actually starts — not speculatively now.
 
 ## v0.8 — Production Runtime & Storage
 

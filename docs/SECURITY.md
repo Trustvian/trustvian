@@ -40,6 +40,7 @@ here, not moved or rewritten.
 | Transition rarity — cold start, counter overflow, poisoning, actor isolation (`v0.6` task 026) | `TestBaselineObserveManyDistinctTransitionsStayBounded`, `TestBaselineObserveOutgoingTransitionTotalIsImmutable` in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestScoreTransitionRarityColdStart`, `TestScoreTransitionRarityNeverExceedsBounds`, `TestDefaultConfigTransitionRarityWeightIsOptIn` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeTransitionRarityCrossActorIsolation`, `TestAnalyzeTransitionRarityScoresBeforeLearning`, `TestObserveTransitionRarityLearnsOnlyFromEligibleDecisions` in [`engine_test.go`](../engine_test.go) |
 | Bounded 3-gram detection — independent cardinality bounds, counter overflow, poisoning, actor isolation (`v0.6` task 027) | `TestBaselineObserveTrigramCountsIsBounded`, `TestBaselineObserveTrigramContinuationTotalIsBounded`, `TestInMemoryObserveConcurrentTrigramTracking` (`internal/store/store_test.go`), `TestFileStoreSurvivesRestartWithTrigramState` (`internal/store/file_test.go`) in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestScoreNGramRarityColdStart`, `TestScoreNGramRarityNeverExceedsBounds`, `TestDefaultConfigNGramWeightIsOptIn` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeNGramCrossActorIsolation`, `TestAnalyzeNGramScoresBeforeLearning`, `TestObserveNGramLearnsOnlyFromEligibleDecisions` in [`engine_test.go`](../engine_test.go) |
 | Markov surprisal — zero-probability safety, correlated-signal double-counting, poisoning, actor isolation (`v0.6` task 028) | `TestScoreMarkovSurprisalUnseenTransitionNeverFires`, `TestScoreMarkovSurprisalNeverExceedsBounds`, `TestScoreMarkovSurprisalColdStart`, `TestMarkovSurprisalIsMonotonicReparameterizationOfRarity`, `TestScoreMarkovAndTransitionRarityAreMutuallyExclusiveInScoring`, `TestScoreCombinedMarkovAndNGramSignalsRemainBounded` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeMarkovCrossActorIsolation`, `TestAnalyzeMarkovScoresBeforeLearning`, `TestObserveMarkovLearnsOnlyFromEligibleDecisions` in [`engine_test.go`](../engine_test.go) |
+| AI Agent behavioral context — session-ID cardinality, fingerprint independence, actor isolation, delegation (`v0.7` task 014) | `TestAnalyzeAgentSessionIDDoesNotExplodeBaseline`, `TestAnalyzeAgentToolNoveltyDetectedByExistingEngine`, `TestAnalyzeAgentToolSequenceNoveltyDetectedByExistingEngine`, `TestAnalyzeAgentCrossActorIsolation`, `TestAnalyzeAgentDelegationContextScoredIdentically` in [`engine_test.go`](../engine_test.go); `TestFingerprintIDIndependentOfAgentContext` in [`internal/fingerprint/fingerprint_test.go`](../internal/fingerprint/fingerprint_test.go); `TestEventValidateIgnoresAgentContextFields` in [`event/event_test.go`](../event/event_test.go) |
 
 ## Threats considered
 
@@ -807,6 +808,109 @@ explicitly out of scope for the same reason `docs/ARCHITECTURE.md`
 already draws this boundary for the rest of Trustvian: Trustvian is not
 itself a network-egress enforcement point, and real SSRF protection
 belongs at the deploying application's network layer.
+
+### AI Agent behavioral security
+
+`v0.7` ([task 014](tasks/014-ai-agent.md), [ADR
+0014](adr/0014-ai-agents-as-first-class-behavioral-actors.md))
+introduces no new state, no new pipeline stage, and no agent-specific
+detector — an AI agent is `Actor{Type: ActorTypeAIAgent}`, scored by
+the identical engine every other actor already uses. The threats below
+are organized around that fact: most are already covered by mechanisms
+this document already describes for actors in general, applied here to
+the AI-agent case specifically; a few are explicitly future work.
+
+- **High-cardinality session IDs (baseline/fingerprint exhaustion).**
+  **Status: implemented.** `Context.SessionID` never enters
+  `features.StableFeatures`, `Fingerprint`, or `baseline.Key` — an
+  attacker (or a legitimately chatty agent) generating an unbounded
+  number of distinct session IDs cannot create a corresponding number
+  of distinct behavioral identities or baselines this way, because
+  session identity and behavioral identity are structurally different
+  dimensions. Proven at scale, not just by omission:
+  `TestAnalyzeAgentSessionIDDoesNotExplodeBaseline` runs 1,000 events
+  with 1,000 distinct `SessionID` values and confirms exactly one
+  `Fingerprint` entry accumulates all 1,000 observations.
+- **Prompt/tool-argument data leakage into behavioral state.**
+  **Status: implemented, by construction.** Trustvian's `Event` model
+  has no field for raw prompt text, completion text, or tool argument
+  values, and this task adds none. Tool identity
+  (`Operation.Name`/`Target.Name`) is documented as required to be a
+  stable, low-cardinality string — never argument content — the
+  identical "no raw payload in fingerprint identity" principle this
+  document already applies to `Attributes` generally (see [Resource
+  exhaustion](#resource-exhaustion) above), restated explicitly for
+  AI-agent producers, who are the party most likely to have
+  prompt/argument data on hand to (mis)use this way. There is no
+  mechanism in this module that could retain such data even if a
+  careless producer put it in `Target.Name` — it would simply become
+  (and stay) part of that Fingerprint's identity, a data-hygiene
+  problem for the producer to avoid, not something this module
+  redacts after the fact.
+- **Agent identity spoofing / identity mismatch.** **Status: same
+  boundary as every other actor, not agent-specific.** `Actor.ID` +
+  `IdentityConfidence` are inputs Trustvian trusts, not something it
+  authenticates (see [`.claude/rules/security.md` § Identity is an
+  input, not a computation](../.claude/rules/security.md)) — an AI
+  agent is no different from a service or user actor in this respect.
+  Verifying the calling agent's real identity is the deploying
+  application's authentication layer's job, upstream of Trustvian.
+- **Delegation abuse** (an attacker forging `DelegatedFrom` to make an
+  unauthorized action appear delegated from a trusted agent).
+  **Status: recorded, not yet defended — future work, honestly
+  labeled.** `DelegatedFrom` is presently an unauthenticated,
+  self-reported field with zero scoring effect
+  (`TestAnalyzeAgentDelegationContextScoredIdentically` proves this
+  directly) — nothing in this task treats it as a trust signal, so
+  nothing can be tricked by a forged value *today*, but nothing
+  verifies it either. A future task that builds a delegation-aware
+  detector or `Policy` condition must treat `DelegatedFrom` as
+  unauthenticated input requiring its own verification, not as
+  something this task already secures.
+- **Tool abuse (unexpected/rare tool usage).** **Status: implemented,
+  via existing signals.** `categorical_novelty` and
+  `transition_deviation`/`transition_rarity` already flag a tool an
+  agent has never (or rarely) used — proven for the "never used" case
+  by `TestAnalyzeAgentToolNoveltyDetectedByExistingEngine`. No new
+  detector was built or is needed.
+- **External exfiltration path (a sensitive read followed by an
+  outbound call).** **Status: implemented, via existing `v0.6`
+  sequence signals — the task's own central proof.**
+  `TestAnalyzeAgentToolSequenceNoveltyDetectedByExistingEngine` shows
+  `ngram_deviation` (task 027) detecting exactly this shape:
+  `search -> secret.read -> external.post` flagged as novel even
+  though both individual hops (`search -> secret.read`,
+  `secret.read -> external.post`) are independently familiar. Marking
+  a specific destination as always-sensitive regardless of
+  familiarity is `anomaly.Config.SensitiveTargetFloor`'s existing job
+  (see [Malicious agents / privilege
+  escalation](#malicious-agents--privilege-escalation) above) —
+  unchanged, and already applicable to agent-sourced events with zero
+  modification.
+- **Baseline poisoning via repeated malicious tool-call sequences.**
+  **Status: implemented, inherited.** Every new field this task adds
+  is context-only and never mutates learned state on its own; the
+  existing `eligibleForLearning` gate ([Baseline
+  poisoning](#baseline-poisoning) above) already governs whether *any*
+  event — agent-sourced or not — is eligible to update a `Baseline`.
+  This task introduces no new learning path and therefore no new way
+  to bypass that gate.
+- **Rapid tool-call state exhaustion (an agent issuing tool calls far
+  faster than a human-driven actor would).** **Status: bounded by
+  existing, pre-agent mechanisms.** Every behavioral-state structure a
+  rapid-fire agent could grow (`PredecessorCounts`, `TrigramCounts`,
+  `TrigramContinuationTotal`) is already independently bounded at 64
+  entries (tasks 025/027) regardless of call *rate* — a fast agent
+  fills the same bounded structures faster, it does not grow them
+  larger. `frequency_deviation` (task 004) is the existing,
+  general-purpose signal for anomalously high call rates; no
+  agent-specific rate limiting exists or was added.
+- **Agent-to-agent graph analytics** (mapping delegation relationships
+  across many agents to find escalation or collusion patterns).
+  **Status: explicitly future work, not built.** `DelegatedFrom`
+  records one hop; no graph, no multi-hop traversal, no relationship
+  analytics exists. See [ADR 0014](adr/0014-ai-agents-as-first-class-behavioral-actors.md)'s
+  "Delegation: one hop, no graph" section.
 
 ## Explainability as a security property
 

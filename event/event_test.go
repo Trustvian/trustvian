@@ -240,3 +240,88 @@ func TestEventJSONOmitsUnsetOptionalFields(t *testing.T) {
 		}
 	}
 }
+
+// --- v0.7 task 014: AI Agent Event/Context Foundation ---
+
+// TestEventValidateIgnoresAgentContextFields proves the new optional
+// Context fields (SessionID, DelegatedFrom, ApprovalStatus) never make
+// an otherwise-valid Event fail Validate — mirroring
+// TestEventValidateIgnoresTargetCategory's own proof for TargetCategory.
+// Existing, pre-v0.7 valid Event values (with these fields unset) must
+// also remain valid — proven implicitly, since validEvent() itself
+// never sets them and already passes elsewhere in this file.
+func TestEventValidateIgnoresAgentContextFields(t *testing.T) {
+	e := validEvent()
+	e.Context.SessionID = "session-123"
+	e.Context.DelegatedFrom = "agent-parent"
+	e.Context.ApprovalStatus = event.ApprovalStatus("not-a-real-status")
+	if err := e.Validate(); err != nil {
+		t.Errorf("Validate() = %v, want nil — SessionID/DelegatedFrom/ApprovalStatus must not be checked", err)
+	}
+}
+
+func TestEventJSONRoundTripAgentContext(t *testing.T) {
+	original := event.Event{
+		ID:        "evt-agent-1",
+		Timestamp: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
+		Actor: event.Actor{
+			ID:                 "customer-support-agent-42",
+			Type:               event.ActorTypeAIAgent,
+			IdentityConfidence: 0.9,
+		},
+		Operation: event.Operation{
+			Category: event.OperationCategoryTool,
+			Name:     "search",
+		},
+		Target: event.Target{Name: "knowledge-base"},
+		Context: event.Context{
+			Environment:    "production",
+			SessionID:      "session-abc",
+			DelegatedFrom:  "orchestrator-agent",
+			ApprovalStatus: event.ApprovalRequired,
+		},
+	}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	var decoded event.Event
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	decoded.Timestamp = original.Timestamp
+
+	if !reflect.DeepEqual(decoded, original) {
+		t.Fatalf("round-tripped Event = %+v, want %+v", decoded, original)
+	}
+	if err := decoded.Validate(); err != nil {
+		t.Fatalf("round-tripped Event failed Validate(): %v", err)
+	}
+}
+
+// TestEventJSONOmitsUnsetAgentContextFields extends
+// TestEventJSONOmitsUnsetOptionalFields: the three new Context fields
+// must not appear in JSON output when unset, exactly like
+// TraceID/SpanID already don't.
+func TestEventJSONOmitsUnsetAgentContextFields(t *testing.T) {
+	e := event.Event{
+		ID:        "evt-1",
+		Timestamp: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
+		Actor:     event.Actor{ID: "svc-payment", Type: event.ActorTypeService},
+		Operation: event.Operation{Category: event.OperationCategoryHTTP, Name: "GET /health"},
+		Context:   event.Context{Environment: "production"}, // non-zero Context, so it does render, but without these fields
+	}
+
+	data, err := json.Marshal(e)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	for _, field := range []string{`"session_id"`, `"delegated_from"`, `"approval_status"`} {
+		if bytes.Contains(data, []byte(field)) {
+			t.Errorf("Marshal() output contains unset optional field %s: %s", field, data)
+		}
+	}
+}

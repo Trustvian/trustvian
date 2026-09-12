@@ -81,6 +81,20 @@ and `features.StableFeatures.TargetCategory` — a new field on existing
 types, not a new package or dependency edge, so no change to the
 pipeline shape or [dependency direction](#dependency-direction) below.
 
+**A human, a service, and an AI agent are all just `Actor.Type` values
+flowing into the exact same pipeline above** — never a second
+pipeline. `ActorTypeAIAgent` (`v0.1`) and, since `v0.7` ([task
+014](tasks/014-ai-agent.md), [ADR
+0014](adr/0014-ai-agents-as-first-class-behavioral-actors.md)),
+`event.Context`'s `SessionID`/`DelegatedFrom`/`ApprovalStatus` fields
+are additive `Event`/`Context` fields, not a parallel `AgentEngine`,
+`AgentAnomalyEngine`, or agent-specific `Fingerprint`/`Baseline`/
+`Anomaly` type. An AI agent's tool-call sequence is scored by the
+identical `internal/anomaly` signals (including every `v0.6` sequence
+signal) any other actor's operation sequence would be — proven, not
+merely asserted, by `TestAnalyzeAgentToolSequenceNoveltyDetectedByExistingEngine`
+in [`engine_test.go`](../engine_test.go).
+
 Every stage but `Baseline` is a pure function. `Baseline` is
 immutable-value-with-copy-on-write: `Baseline.Observe(...)` never
 mutates its receiver, it returns a new `Baseline`. Concurrency-safe
