@@ -43,6 +43,7 @@ here, not moved or rewritten.
 | AI Agent behavioral context — session-ID cardinality, fingerprint independence, actor isolation, delegation (`v0.7` task 014) | `TestAnalyzeAgentSessionIDDoesNotExplodeBaseline`, `TestAnalyzeAgentToolNoveltyDetectedByExistingEngine`, `TestAnalyzeAgentToolSequenceNoveltyDetectedByExistingEngine`, `TestAnalyzeAgentCrossActorIsolation`, `TestAnalyzeAgentDelegationContextScoredIdentically` in [`engine_test.go`](../engine_test.go); `TestFingerprintIDIndependentOfAgentContext` in [`internal/fingerprint/fingerprint_test.go`](../internal/fingerprint/fingerprint_test.go); `TestEventValidateIgnoresAgentContextFields` in [`event/event_test.go`](../event/event_test.go) |
 | Approval-aware policy — policy authority over the requirement, fail-closed missing evidence, backward compatibility, behavioral independence, non-agent genericity (`v0.7` task 030) | `TestEvaluateApprovalRequiredExampleMatrix`, `TestEvaluateApprovalPolicyAuthorityEventCannotOverridePolicy`, `TestEvaluateApprovalFailSafeOnMissingEvidence`, `TestEvaluateNoApprovalRuleConfiguredIsUnaffectedByApprovalStatus` in [`internal/policy/policy_test.go`](../internal/policy/policy_test.go); `TestAnalyzeAgentApprovalPolicyAllowsApprovedDeniesUnapproved`, `TestAnalyzeApprovalPolicyBehavioralScoreIndependence`, `TestAnalyzeApprovalPolicyGenericNotHardCodedToAIAgent` in [`engine_test.go`](../engine_test.go); `TestValidateRejectsUnknownApprovalStatusDoesNotSilentlyMapToApproved` in [`config/validate_test.go`](../config/validate_test.go) |
 | Delegation behavioral semantics — novelty detection, cardinality bound, poisoning protection, score-before-learn, actor isolation, approval independence, Fingerprint independence (`v0.7` task 031) | `TestAnalyzeDelegationNoveltyDetectedByExistingSignal`, `TestAnalyzeDelegationScoreBeforeLearn`, `TestAnalyzeDelegationPoisoningIneligibleEventsDoNotTrain`, `TestAnalyzeDelegationActorIsolation`, `TestAnalyzeDelegationMissingDelegationUnaffected`, `TestAnalyzeDelegationFingerprintStability`, `TestAnalyzeDelegationApprovalIndependence` in [`engine_test.go`](../engine_test.go); `TestBaselineObserveDelegatorCountsIsBounded`, `TestBaselineObserveMissingDelegationDoesNotUpdateDelegatorCounts` in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestScoreDelegationDeviation`, `TestScoreDelegationDeviationDoesNotAffectFingerprintOrStable` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go) |
+| Agent security scenario validation — five scenarios plus a combined case, no correlated-evidence explosion, identity-confidence independence (`v0.7` task 032) | `TestScenarioUnexpectedPrivilegedTool`, `TestScenarioSensitiveExfiltrationSequence`, `TestScenarioApprovalViolation`, `TestScenarioUnexpectedDelegator`, `TestScenarioExternalDestinationDrift`, `TestScenarioCombinedDelegationSequenceApproval`, `TestScenarioCombinedPoisoningRegression`, `TestScenarioIdentityConfidenceStaysIndependent`, `TestScenarioNoCorrelatedEvidenceExplosionUnderEveryWeight`, `TestScenarioSessionCardinalityRegression`, `TestScenarioNonAgentRegressionUnaffected` in [`scenario_test.go`](../scenario_test.go) |
 
 ## Threats considered
 
@@ -962,6 +963,34 @@ the AI-agent case specifically; a few are explicitly future work.
   records one hop; no graph, no multi-hop traversal, no relationship
   analytics exists. See [ADR 0014](adr/0014-ai-agents-as-first-class-behavioral-actors.md)'s
   "Delegation: one hop, no graph" section.
+
+### Agent security scenario matrix
+
+[Task 032](tasks/032-agent-security-scenario-validation.md) validated
+the mechanisms above in composition, against five representative
+scenarios plus one combined case — no new detector, no new mechanism.
+Each row's "Security limitation" is unchanged from that mechanism's
+own entry above; this table only summarizes which existing mechanism
+answers which scenario, and is honest about what each does *not*
+prove.
+
+| Scenario | Detection/Policy Mechanism | Security Limitation |
+|---|---|---|
+| Unexpected privileged tool | `categorical_novelty`/`transition_deviation` (existing anomaly) | Behavioral only — a familiar but genuinely malicious tool is not caught by novelty |
+| Sensitive read → external post sequence | `ngram_deviation` (bounded 3-gram, task 027) | Process-local, bounded history (64 entries) — not a full audit trail |
+| Missing/denied approval | `Policy`'s approval condition (task 030) | Evidence provenance is external; `ApprovalStatus` is unverified, self-reported input |
+| Unexpected delegator | `delegation_deviation` (task 031) | Provenance is not authenticated; familiar does not mean authorized, novel does not mean malicious |
+| External destination drift | `categorical_novelty` via `Target.Category` | Depends entirely on the producer supplying normalized, truthful target metadata |
+| Combined (delegation + sequence + approval) | all of the above, composed via noisy-OR + `Policy` | Same limitations as each row above, individually — composition adds no new guarantee beyond them |
+
+Task 032 also found, and documents rather than silently works around,
+a public-API gap: `anomaly.Config` has no `config`-package equivalent
+of `policy.Policy`'s `config.CompilePolicy` path, so an OSS consumer
+outside this module cannot enable the `delegation_deviation`/`v0.6`
+sequence signals through public API alone — only the approval
+mechanism (row 3) is demonstrable that way today. See
+[examples/ai-agent-security](../examples/ai-agent-security/)'s own
+README for the worked example and the gap's exact boundary.
 
 ## Explainability as a security property
 

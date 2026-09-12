@@ -76,6 +76,26 @@ actually depend on.
   parameter, no new dependency; `BenchmarkEngineAnalyzeDelegationAbsent`
   confirms zero added allocation when unused. See [ADR
   0016](docs/adr/0016-delegation-as-behavioral-evidence-not-provenance.md).
+- **Agent Security Scenario Validation**
+  ([task 032](docs/tasks/032-agent-security-scenario-validation.md)) —
+  validated combined agent-security scenarios (unexpected privileged
+  tool use, a sensitive read-then-external-post sequence, an approval
+  violation, an unexpected delegator, external-destination drift, and
+  one combined case exercising delegation, sequence, and approval
+  evidence together) using existing primitives only — this is a
+  validation and documentation task, not a new detection feature. No
+  new anomaly signal, `Policy` primitive, or pipeline stage. Adds
+  `scenario_test.go` (eleven new tests, including a combined poisoning
+  regression and a no-correlated-evidence-explosion audit under every
+  `v0.6`/`v0.7` signal weight at once) and a new, fully-public example,
+  [`examples/ai-agent-security`](examples/ai-agent-security/),
+  demonstrating task 030's approval mechanism end-to-end through
+  `config.PolicyConfig`/`CompilePolicy` alone — the first example in
+  that directory with a genuinely differentiated `ALLOW`/`BLOCK`
+  decision. Also surfaces, and documents rather than patches, a real
+  gap: `anomaly.Config` has no public-`config`-package equivalent of
+  `policy.Policy`'s path, so delegation/sequence signals remain
+  demonstrable only from inside this module today.
 
 ## v0.6.0 — Behavioral Detection Depth
 

@@ -654,12 +654,27 @@ to get wrong:
   the smallest meaningful behavioral evidence was the explicit target,
   not the ceiling.
 
-Not yet built, and not any of these three tasks' job: agent behavioral
-*detection scenarios* that combine approval and delegation evidence
-against realistic attack shapes (a later, unscoped `v0.7` slice), and
-delegation provenance verification (signed claims, a trusted
-orchestration layer, identity-provider evidence) — a distinct,
-genuinely future integration this project has not designed.
+**Task 032 — Agent Security Scenario Validation — is also done.** The
+three capabilities above are now validated **in combination**, not
+just individually: agent behavior, `v0.6` sequence analysis, delegation
+deviation, and approval-aware policy compose correctly against five
+representative scenarios (unexpected privileged tool, sensitive
+read-then-external-post sequence, approval violation, unexpected
+delegator, external-destination drift) plus one combined case — with
+zero new detectors and proven independence from double-counting. This
+task also surfaced, and documents rather than silently patches, a real
+gap: `anomaly.Config` has no public-`config`-package equivalent of
+`policy.Policy`'s `config.CompilePolicy` path (available since `v0.5`),
+so an OSS consumer outside this module cannot enable
+delegation/sequence signals through public API alone today — only
+task 030's approval mechanism is demonstrable that way (see
+[examples/ai-agent-security](examples/ai-agent-security/)).
+
+Not yet built, and not any of these four tasks' job: delegation
+provenance verification (signed claims, a trusted orchestration layer,
+identity-provider evidence) and a public configuration surface for
+`anomaly.Config` — both distinct, genuinely future work this project
+has not designed, only identified.
 
 **MCP.** Trustvian's read/query surface may eventually be exposed to AI
 agents and developer tooling via MCP
