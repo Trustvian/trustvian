@@ -168,6 +168,21 @@ type FingerprintStats struct {
 	// the conservative, safe direction to fail in — it never causes an
 	// already-legitimate, tracked transition to be silently forgotten.
 	PredecessorCounts map[string]uint64
+
+	// OutgoingTransitionTotal counts every valid transition where this
+	// Fingerprint was the *predecessor* — the number of times any
+	// destination fingerprint immediately followed it, regardless of
+	// which one. This is the denominator internal/anomaly's
+	// transition_rarity signal needs to estimate
+	// P(destination | this fingerprint) = PredecessorCounts_destination[this]
+	// / OutgoingTransitionTotal, without scanning every other
+	// FingerprintStats entry to compute it — see
+	// docs/adr/0011-transition-rarity-statistic-and-orientation.md for
+	// the full reasoning behind this specific field, its placement on
+	// the predecessor's own stats (not the destination's), and why a
+	// plain, unguarded increment (matching Count's own precedent) is
+	// used rather than a saturating counter.
+	OutgoingTransitionTotal uint64
 }
 
 // recordPredecessor increments counts[predecessor], creating counts if
@@ -193,6 +208,16 @@ func recordPredecessor(counts map[string]uint64, predecessor string) map[string]
 	maps.Copy(next, counts)
 	next[predecessor]++
 	return next
+}
+
+// observeOutgoingTransition increments s.OutgoingTransitionTotal by
+// one, for a valid transition where s is the predecessor. A plain,
+// unguarded increment — matching Count's own existing precedent (see
+// docs/adr/0011-transition-rarity-statistic-and-orientation.md's
+// "Consequences" for why this counter deliberately does not saturate).
+func (s FingerprintStats) observeOutgoingTransition() FingerprintStats {
+	s.OutgoingTransitionTotal++
+	return s
 }
 
 // LatencyMeanDuration returns LatencyMean as a time.Duration.
@@ -401,6 +426,18 @@ func (b Baseline) Observe(fp fingerprint.Fingerprint, vol features.VolatileFeatu
 	next := make(map[string]FingerprintStats, len(b.Fingerprints)+1)
 	maps.Copy(next, b.Fingerprints)
 	next[fp.ID] = next[fp.ID].observe(fp.Stable, vol, now, predecessor)
+
+	// The predecessor's own OutgoingTransitionTotal advances
+	// separately from the destination update above — a different map
+	// entry, unless predecessor == fp.ID (a self-transition), in which
+	// case this reads the value the observe() call just wrote and
+	// applies this second update on top of it, so neither update is
+	// lost. See docs/adr/0011-transition-rarity-statistic-and-orientation.md
+	// for why this counter exists and lives on the predecessor's
+	// stats, not the destination's.
+	if predecessor != "" {
+		next[predecessor] = next[predecessor].observeOutgoingTransition()
+	}
 
 	lastFingerprintID := b.LastFingerprintID
 	lastFingerprintTime := b.LastFingerprintTime

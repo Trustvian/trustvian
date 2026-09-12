@@ -1,6 +1,7 @@
 package anomaly_test
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -853,6 +854,272 @@ func TestScoreMatchesDocumentedNoisyOrFormulaWithTransitionSignal(t *testing.T) 
 
 	if diff := got.Score - want; diff > 1e-9 || diff < -1e-9 {
 		t.Fatalf("Score = %v, want %v (documented noisy-OR formula, including transition_deviation)", got.Score, want)
+	}
+}
+
+// transitionRarityBaseline builds a Baseline where predecessor
+// precedes each fingerprint in dests[i] exactly counts[i] times,
+// interleaved as predecessor -> dests[i] -> predecessor -> dests[i] ->
+// ... for each i in turn, so predecessor's own OutgoingTransitionTotal
+// and each dests[i]'s PredecessorCounts[predecessor.ID] end up with
+// exactly the requested counts, with no cross-contamination between
+// them. Ends with one final, unpaired observation of predecessor
+// itself, so the returned Baseline's LastFingerprintID is predecessor
+// — the caller can then score any dests[i] as the event under test and
+// have it correctly evaluated as a predecessor -> dests[i] transition,
+// not a dests[i] -> dests[i] self-transition (which is what the
+// baseline's LastFingerprintID would otherwise be, since the loop
+// above always observes a dest last).
+func transitionRarityBaseline(predecessor fingerprint.Fingerprint, dests []fingerprint.Fingerprint, counts []int) baseline.Baseline {
+	b := baseline.New(testKey)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i, dest := range dests {
+		for range counts[i] {
+			b = b.Observe(predecessor, features.VolatileFeatures{}, now)
+			now = now.Add(time.Second)
+			b = b.Observe(dest, features.VolatileFeatures{}, now)
+			now = now.Add(time.Second)
+		}
+	}
+	b = b.Observe(predecessor, features.VolatileFeatures{}, now)
+	return b
+}
+
+func TestDefaultConfigTransitionRarityWeightIsOptIn(t *testing.T) {
+	cfg := anomaly.DefaultConfig()
+	if cfg.TransitionRarityWeight != 0 {
+		t.Errorf("DefaultConfig().TransitionRarityWeight = %v, want 0 (opt-in, like every other v0.6 signal weight)", cfg.TransitionRarityWeight)
+	}
+	if cfg.MinTransitionObservations != 20 {
+		t.Errorf("DefaultConfig().MinTransitionObservations = %v, want 20 (matching MinObservations's own default)", cfg.MinTransitionObservations)
+	}
+}
+
+// TestScoreTransitionRarityOrdering is this task's own central
+// statistical-correctness test: common, uncommon, and rare transitions
+// from the same predecessor must produce strictly increasing rarity
+// values, and an unseen transition must not be scored by this signal
+// at all (transition_deviation, not transition_rarity, covers it).
+func TestScoreTransitionRarityOrdering(t *testing.T) {
+	predecessor := fingerprint.Compute(stable("read"))
+	common := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "common", TargetName: "customer-db", Environment: "production",
+	})
+	uncommon := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "uncommon", TargetName: "customer-db", Environment: "production",
+	})
+	rare := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "rare", TargetName: "customer-db", Environment: "production",
+	})
+	unseen := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "unseen", TargetName: "customer-db", Environment: "production",
+	})
+
+	// 900 + 90 + 10 = 1000 total outgoing transitions from predecessor.
+	b := transitionRarityBaseline(predecessor, []fingerprint.Fingerprint{common, uncommon, rare}, []int{900, 90, 10})
+
+	cfg := anomaly.DefaultConfig()
+	cfg.TransitionRarityWeight = 0.8
+	cfg.TransitionWeight = 0.8
+
+	scoreFor := func(dest fingerprint.Fingerprint) anomaly.Anomaly {
+		eventTime := b.LastFingerprintTime.Add(time.Second)
+		feat := features.Features{Stable: dest.Stable, Volatile: features.VolatileFeatures{Timestamp: eventTime}}
+		return anomaly.Score(feat, dest, b, cfg)
+	}
+
+	rarityValue := func(a anomaly.Anomaly) float64 {
+		for _, c := range a.Contributors {
+			if c.Name == "transition_rarity" {
+				return c.Value
+			}
+		}
+		return -1 // sentinel: not found
+	}
+
+	commonAnomaly := scoreFor(common)
+	uncommonAnomaly := scoreFor(uncommon)
+	rareAnomaly := scoreFor(rare)
+	unseenAnomaly := scoreFor(unseen)
+
+	commonRarity, uncommonRarity, rareRarity := rarityValue(commonAnomaly), rarityValue(uncommonAnomaly), rarityValue(rareAnomaly)
+
+	if commonRarity < 0 || uncommonRarity < 0 || rareRarity < 0 {
+		t.Fatalf("expected transition_rarity on all three seen transitions: common=%v uncommon=%v rare=%v", commonRarity, uncommonRarity, rareRarity)
+	}
+	if !(commonRarity < uncommonRarity && uncommonRarity < rareRarity) {
+		t.Fatalf("rarity ordering violated: common=%v, uncommon=%v, rare=%v — want common < uncommon < rare", commonRarity, uncommonRarity, rareRarity)
+	}
+
+	// The unseen transition must carry transition_deviation, not
+	// transition_rarity — the two are mutually exclusive.
+	if hasSignal(unseenAnomaly.Contributors, "transition_rarity") {
+		t.Error("unseen transition carried transition_rarity, want it to carry only transition_deviation")
+	}
+	if !hasSignal(unseenAnomaly.Contributors, "transition_deviation") {
+		t.Error("unseen transition did not carry transition_deviation")
+	}
+	if hasSignal(commonAnomaly.Contributors, "transition_deviation") {
+		t.Error("common (seen) transition carried transition_deviation, want only transition_rarity")
+	}
+}
+
+// TestScoreTransitionRarityColdStart proves the minimum-support gate:
+// below MinTransitionObservations, transition_rarity does not fire at
+// all, regardless of how the observed transitions are distributed.
+func TestScoreTransitionRarityColdStart(t *testing.T) {
+	predecessor := fingerprint.Compute(stable("read"))
+	destA := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "a", TargetName: "customer-db", Environment: "production",
+	})
+	destB := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "b", TargetName: "customer-db", Environment: "production",
+	})
+
+	cfg := anomaly.DefaultConfig()
+	cfg.TransitionRarityWeight = 0.8
+	const minSupport = 20
+	cfg.MinTransitionObservations = minSupport
+
+	tests := []struct {
+		name          string
+		totalOutgoing int
+		wantFire      bool
+	}{
+		{"zero observations", 0, false},
+		{"one observation", 1, false},
+		{"minSupport - 1", minSupport - 1, false},
+		{"minSupport exactly", minSupport, true},
+		{"minSupport + 1", minSupport + 1, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// destA absorbs all-but-one of the outgoing transitions;
+			// destB absorbs exactly one, so a nonzero, non-total
+			// frequency exists for destB whenever totalOutgoing > 0.
+			var b baseline.Baseline
+			if tt.totalOutgoing == 0 {
+				b = baseline.New(testKey)
+			} else if tt.totalOutgoing == 1 {
+				b = transitionRarityBaseline(predecessor, []fingerprint.Fingerprint{destB}, []int{1})
+			} else {
+				b = transitionRarityBaseline(predecessor, []fingerprint.Fingerprint{destA, destB}, []int{tt.totalOutgoing - 1, 1})
+			}
+
+			eventTime := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+			if !b.LastFingerprintTime.IsZero() {
+				eventTime = b.LastFingerprintTime.Add(time.Second)
+			}
+			feat := features.Features{Stable: destB.Stable, Volatile: features.VolatileFeatures{Timestamp: eventTime}}
+			got := anomaly.Score(feat, destB, b, cfg)
+
+			fired := hasSignal(got.Contributors, "transition_rarity")
+			if fired != tt.wantFire {
+				t.Errorf("transition_rarity fired = %v, want %v (totalOutgoing=%d, minSupport=%d)", fired, tt.wantFire, tt.totalOutgoing, minSupport)
+			}
+		})
+	}
+}
+
+// TestScoreMatchesDocumentedFormulaForTransitionRarity reproduces the
+// exact frequency/rarity arithmetic documented in
+// docs/adr/0011-transition-rarity-statistic-and-orientation.md —
+// "the score went up" is not enough for a security-relevant number.
+func TestScoreMatchesDocumentedFormulaForTransitionRarity(t *testing.T) {
+	predecessor := fingerprint.Compute(stable("read"))
+	common := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "common", TargetName: "customer-db", Environment: "production",
+	})
+	rare := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "rare", TargetName: "customer-db", Environment: "production",
+	})
+
+	// 96 + 4 = 100 total; rare's frequency is exactly 4/100 = 0.04.
+	b := transitionRarityBaseline(predecessor, []fingerprint.Fingerprint{common, rare}, []int{96, 4})
+
+	cfg := anomaly.DefaultConfig()
+	cfg.TransitionRarityWeight = 0.5
+
+	eventTime := b.LastFingerprintTime.Add(time.Second)
+	feat := features.Features{Stable: rare.Stable, Volatile: features.VolatileFeatures{Timestamp: eventTime}}
+	got := anomaly.Score(feat, rare, b, cfg)
+
+	wantFrequency := 4.0 / 100.0
+	wantValue := 1 - wantFrequency // 0.96
+
+	var gotValue float64
+	found := false
+	for _, c := range got.Contributors {
+		if c.Name == "transition_rarity" {
+			gotValue = c.Value
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Contributors = %+v, want transition_rarity", got.Contributors)
+	}
+	if diff := gotValue - wantValue; diff > 1e-9 || diff < -1e-9 {
+		t.Fatalf("transition_rarity Value = %v, want %v (1 - 4/100)", gotValue, wantValue)
+	}
+
+	// And the combined Score, via the documented noisy-OR formula —
+	// including categorical_novelty, which also genuinely fires here:
+	// rare's own Count is 4 (< MinObservations=20), so it is not yet
+	// fully mature as a fingerprint in its own right, independent of
+	// how rare the specific read->rare transition is. This mirrors
+	// TestScoreMatchesDocumentedNoisyOrFormulaWithFrequencySignal's own
+	// approach: account for a genuinely-firing categorical_novelty
+	// explicitly, rather than engineering it away.
+	familiarity := min(4.0/float64(cfg.MinObservations), 1)
+	noveltyContribution := (1 - familiarity) * cfg.NoveltyWeight
+	rarityContribution := wantValue * cfg.TransitionRarityWeight
+	wantScore := 1 - (1-noveltyContribution)*(1-rarityContribution)
+	if diff := got.Score - wantScore; diff > 1e-9 || diff < -1e-9 {
+		t.Fatalf("Score = %v, want %v (documented noisy-OR formula)", got.Score, wantScore)
+	}
+}
+
+// TestScoreTransitionRarityNeverExceedsBounds is the defensive-numeric
+// property test section 12 asks for: across a range of counts and
+// totals, transition_rarity's Value must always land in [0,1] — never
+// negative, never >1, never NaN, never Inf.
+func TestScoreTransitionRarityNeverExceedsBounds(t *testing.T) {
+	predecessor := fingerprint.Compute(stable("read"))
+	cfg := anomaly.DefaultConfig()
+	cfg.TransitionRarityWeight = 1.0
+	cfg.MinTransitionObservations = 1
+
+	for _, total := range []int{1, 2, 5, 20, 1000} {
+		dest := fingerprint.Compute(features.StableFeatures{
+			ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+			OperationName: fmt.Sprintf("dest-%d", total), TargetName: "customer-db", Environment: "production",
+		})
+		b := transitionRarityBaseline(predecessor, []fingerprint.Fingerprint{dest}, []int{total})
+
+		eventTime := b.LastFingerprintTime.Add(time.Second)
+		feat := features.Features{Stable: dest.Stable, Volatile: features.VolatileFeatures{Timestamp: eventTime}}
+		got := anomaly.Score(feat, dest, b, cfg)
+
+		for _, c := range got.Contributors {
+			if c.Name != "transition_rarity" {
+				continue
+			}
+			if math.IsNaN(c.Value) || math.IsInf(c.Value, 0) {
+				t.Errorf("total=%d: transition_rarity Value = %v, want a finite number", total, c.Value)
+			}
+			if c.Value < 0 || c.Value > 1 {
+				t.Errorf("total=%d: transition_rarity Value = %v, want in [0,1]", total, c.Value)
+			}
+		}
 	}
 }
 

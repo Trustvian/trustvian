@@ -611,3 +611,162 @@ func TestBaselineObservePredecessorCountsIsBounded(t *testing.T) {
 		t.Fatalf("len(PredecessorCounts) = %d, want 64 (bounded, one predecessor never tracked)", got)
 	}
 }
+
+func TestBaselineObserveTracksOutgoingTransitionTotal(t *testing.T) {
+	fpRead, fpUpdate, fpDelete := readFingerprint(), updateFingerprint(), deleteFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	// read -> update, read -> update, read -> delete: read is the
+	// predecessor in all three transitions of interest. Note that
+	// update also becomes a predecessor itself twice, implicitly,
+	// every time the sequence returns to read — this is real,
+	// correct behavior (update -> read is just as much a valid
+	// transition as read -> update), not a test artifact to avoid; the
+	// assertions below account for it explicitly rather than assuming
+	// update is never a predecessor.
+	b = b.Observe(fpRead, features.VolatileFeatures{}, now)
+	now = now.Add(time.Second)
+	b = b.Observe(fpUpdate, features.VolatileFeatures{}, now) // read -> update
+	now = now.Add(time.Second)
+	b = b.Observe(fpRead, features.VolatileFeatures{}, now) // update -> read
+	now = now.Add(time.Second)
+	b = b.Observe(fpUpdate, features.VolatileFeatures{}, now) // read -> update
+	now = now.Add(time.Second)
+	b = b.Observe(fpRead, features.VolatileFeatures{}, now) // update -> read
+	now = now.Add(time.Second)
+	b = b.Observe(fpDelete, features.VolatileFeatures{}, now) // read -> delete
+
+	if got := b.Fingerprints[fpRead.ID].OutgoingTransitionTotal; got != 3 {
+		t.Fatalf("read.OutgoingTransitionTotal = %d, want 3 (read -> update twice, read -> delete once)", got)
+	}
+	if got := b.Fingerprints[fpUpdate.ID].PredecessorCounts[fpRead.ID]; got != 2 {
+		t.Fatalf("PredecessorCounts[read] for update = %d, want 2", got)
+	}
+	if got := b.Fingerprints[fpDelete.ID].PredecessorCounts[fpRead.ID]; got != 1 {
+		t.Fatalf("PredecessorCounts[read] for delete = %d, want 1", got)
+	}
+	// update -> read happened twice, so update genuinely is a
+	// predecessor twice — not zero.
+	if got := b.Fingerprints[fpUpdate.ID].OutgoingTransitionTotal; got != 2 {
+		t.Fatalf("update.OutgoingTransitionTotal = %d, want 2 (update -> read happened twice)", got)
+	}
+	// delete was never a predecessor: it's the last event observed.
+	if got := b.Fingerprints[fpDelete.ID].OutgoingTransitionTotal; got != 0 {
+		t.Fatalf("delete.OutgoingTransitionTotal = %d, want 0 (delete is the last event; nothing follows it)", got)
+	}
+}
+
+func TestBaselineObserveOutgoingTransitionTotalSelfTransition(t *testing.T) {
+	fpRead := readFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	// read -> read -> read: two valid self-transitions.
+	for i := range 3 {
+		b = b.Observe(fpRead, features.VolatileFeatures{}, now.Add(time.Duration(i)*time.Second))
+	}
+
+	stats := b.Fingerprints[fpRead.ID]
+	if stats.OutgoingTransitionTotal != 2 {
+		t.Errorf("OutgoingTransitionTotal = %d, want 2", stats.OutgoingTransitionTotal)
+	}
+	if stats.PredecessorCounts[fpRead.ID] != 2 {
+		t.Errorf("PredecessorCounts[read] = %d, want 2", stats.PredecessorCounts[fpRead.ID])
+	}
+}
+
+func TestBaselineObserveOutOfOrderEventDoesNotIncrementOutgoingTotal(t *testing.T) {
+	fpRead, fpUpdate, fpDelete := readFingerprint(), updateFingerprint(), deleteFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	b = b.Observe(fpRead, features.VolatileFeatures{}, now)
+	b = b.Observe(fpUpdate, features.VolatileFeatures{}, now.Add(2*time.Second))
+
+	// Backdated relative to fpUpdate's own arrival: not a valid
+	// transition from fpUpdate.
+	b = b.Observe(fpDelete, features.VolatileFeatures{}, now.Add(1*time.Second))
+
+	if got := b.Fingerprints[fpUpdate.ID].OutgoingTransitionTotal; got != 0 {
+		t.Fatalf("update.OutgoingTransitionTotal = %d, want 0 (the out-of-order delete must not count as a valid outgoing transition from update)", got)
+	}
+}
+
+// TestBaselineObserveOutgoingTransitionTotalIsImmutable proves a later
+// Observe call never retroactively changes an earlier Baseline
+// snapshot's OutgoingTransitionTotal — the same guarantee
+// TestBaselineObservePredecessorCountsIsImmutable already proves for
+// PredecessorCounts, restated here for the new counter (a plain
+// uint64 field is copied by value on every struct assignment, so this
+// mainly documents the guarantee rather than catching a map-aliasing
+// bug the way the PredecessorCounts test did — see
+// observeOutgoingTransition's own doc comment).
+func TestBaselineObserveOutgoingTransitionTotalIsImmutable(t *testing.T) {
+	fpRead, fpUpdate := readFingerprint(), updateFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	b = b.Observe(fpRead, features.VolatileFeatures{}, now)
+	snapshot := b.Observe(fpUpdate, features.VolatileFeatures{}, now.Add(time.Second))
+
+	if got := snapshot.Fingerprints[fpRead.ID].OutgoingTransitionTotal; got != 1 {
+		t.Fatalf("snapshot read.OutgoingTransitionTotal = %d, want 1", got)
+	}
+
+	_ = snapshot.Observe(fpRead, features.VolatileFeatures{}, now.Add(2*time.Second))
+	if got := snapshot.Fingerprints[fpRead.ID].OutgoingTransitionTotal; got != 1 {
+		t.Fatalf("a later Observe mutated an earlier snapshot's OutgoingTransitionTotal: got %d, want 1", got)
+	}
+}
+
+// TestBaselineObserveManyDistinctTransitionsStayBounded is task 026's
+// own large-cardinality proof, mirroring
+// TestObserveUnboundedFingerprintsDoesNotPanic's shape (engine_test.go)
+// for the new counters specifically: 10,000 distinct predecessors, all
+// transitioning to one shared destination, must not panic, and the
+// destination's own PredecessorCounts must stay at exactly
+// maxPredecessors (64) — the bound established by task 025 is
+// unaffected by, and sufficient for, task 026's new
+// OutgoingTransitionTotal counter, which introduces no new
+// cardinality-sensitive structure of its own (it is one scalar per
+// existing FingerprintStats entry, not a new map).
+func TestBaselineObserveManyDistinctTransitionsStayBounded(t *testing.T) {
+	fpDest := deleteFingerprint()
+	b := baseline.New(testKey)
+	now := time.Now()
+
+	// 5,000 matches this codebase's existing scale precedent for this
+	// kind of test (TestObserveUnboundedFingerprintsDoesNotPanic in
+	// engine_test.go) — comfortably beyond maxPredecessors (64), and
+	// enough to prove boundedness, without the O(N^2) copy-on-write
+	// cost this style of test carries (see Baseline.Observe's own doc
+	// comment) making the suite unreasonably slow for a "10,000" figure
+	// that was illustrative in task 026's own brief, not a hard
+	// requirement.
+	const distinctPredecessors = 5000
+	for i := range distinctPredecessors {
+		pred := fingerprint.Compute(features.StableFeatures{
+			ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryHTTP,
+			OperationName: fmt.Sprintf("predecessor-%d", i), TargetName: "customer-db", Environment: "production",
+		})
+		b = b.Observe(pred, features.VolatileFeatures{}, now.Add(time.Duration(i)*time.Second))
+		b = b.Observe(fpDest, features.VolatileFeatures{}, now.Add(time.Duration(i)*time.Second+time.Millisecond))
+
+		// Every distinct predecessor's own OutgoingTransitionTotal is
+		// exactly 1, regardless of whether the destination's
+		// PredecessorCounts had room to track it — the destination-side
+		// cap (maxPredecessors) never suppresses the predecessor-side
+		// counter.
+		if got := b.Fingerprints[pred.ID].OutgoingTransitionTotal; got != 1 {
+			t.Fatalf("predecessor %d: OutgoingTransitionTotal = %d, want 1", i, got)
+		}
+	}
+
+	if got := len(b.Fingerprints[fpDest.ID].PredecessorCounts); got != 64 {
+		t.Fatalf("len(PredecessorCounts) = %d, want 64 (bounded even at %d distinct predecessors)", got, distinctPredecessors)
+	}
+	if got := len(b.Fingerprints); got != distinctPredecessors+1 {
+		t.Fatalf("len(Fingerprints) = %d, want %d (unaffected by this task — Baseline.Fingerprints was already unbounded before it)", got, distinctPredecessors+1)
+	}
+}

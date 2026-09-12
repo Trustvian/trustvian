@@ -6,6 +6,7 @@ import (
 	"time"
 
 	trustvian "github.com/Trustvian/trustvian"
+	"github.com/Trustvian/trustvian/internal/anomaly"
 )
 
 // warmUpEngine builds a mature, familiar baseline via 30 Analyze+Observe
@@ -38,6 +39,32 @@ func warmUpEngine(b *testing.B, engine *trustvian.Engine, ctx context.Context) t
 // its baseline exactly.
 func BenchmarkEngineAnalyze(b *testing.B) {
 	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()))
+	ctx := context.Background()
+
+	lastWarmUp := warmUpEngine(b, engine, ctx)
+	steadyStateTS := lastWarmUp.Add(time.Second)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := engine.Analyze(ctx, paymentEventAt(10, "steady-state", steadyStateTS)); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkEngineAnalyzeTransitionRarity measures the same steady-state
+// pipeline as BenchmarkEngineAnalyze, but with task 026's transition_rarity
+// signal enabled (TransitionRarityWeight > 0) and enough warm-up
+// observations for the predecessor to clear MinTransitionObservations, so
+// transitionRaritySignal actually computes on every call rather than
+// short-circuiting on the cold-start gate. Compare against
+// BenchmarkEngineAnalyze (task 026's signal weight defaults to 0, i.e. the
+// task 025 transition-foundation-only baseline) to see this signal's own
+// added cost through the full pipeline.
+func BenchmarkEngineAnalyzeTransitionRarity(b *testing.B) {
+	cfg := anomaly.DefaultConfig()
+	cfg.TransitionRarityWeight = 0.7
+	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()), trustvian.WithAnomalyConfig(cfg))
 	ctx := context.Background()
 
 	lastWarmUp := warmUpEngine(b, engine, ctx)

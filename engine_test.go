@@ -670,3 +670,382 @@ func TestAnalyzeTransitionDeviationEndToEnd(t *testing.T) {
 		}
 	}
 }
+
+// TestAnalyzeTransitionRarityEndToEnd is task 026's own central
+// integration proof: a real actor whose normal path (read -> update)
+// is common, and whose read -> delete path is rare-but-not-unseen
+// (both destinations independently mature via other predecessors, so
+// categorical_novelty/transition_deviation do not mask the rarity
+// signal specifically under test), built entirely through the real,
+// gated Analyze+Observe loop, flows all the way through Trust and
+// Policy to a stricter Decision than the common path receives.
+func TestAnalyzeTransitionRarityEndToEnd(t *testing.T) {
+	ctx := context.Background()
+	anomalyCfg := anomaly.DefaultConfig()
+	anomalyCfg.TransitionRarityWeight = 0.9
+	anomalyCfg.MinTransitionObservations = 20
+
+	actorEvent := func(id, operation string, ts time.Time) event.Event {
+		return event.Event{
+			ID:        id,
+			Timestamp: ts,
+			Actor:     event.Actor{ID: "svc-crm", Type: event.ActorTypeService, IdentityConfidence: 0.98},
+			Operation: event.Operation{Category: event.OperationCategoryDB, Name: operation},
+			Target:    event.Target{Name: "customer-db"},
+			Context:   event.Context{Environment: "production"},
+			Attributes: map[string]any{
+				"duration_ms": float64(5),
+			},
+		}
+	}
+
+	engine := trustvian.NewEngine(
+		trustvian.WithPolicy(riskGatedPolicy()),
+		trustvian.WithAnomalyConfig(anomalyCfg),
+	)
+
+	analyzeAndObserve := func(t *testing.T, id, operation string, ts time.Time) trustvian.Result {
+		t.Helper()
+		result, err := engine.Analyze(ctx, actorEvent(id, operation, ts))
+		if err != nil {
+			t.Fatalf("Analyze(%s) error = %v", operation, err)
+		}
+		if _, err := engine.Observe(ctx, result); err != nil {
+			t.Fatalf("Observe(%s) error = %v", operation, err)
+		}
+		return result
+	}
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	step := func() time.Time {
+		now = now.Add(time.Second)
+		return now
+	}
+
+	// Independently familiarize "delete" via authenticate -> delete,
+	// so it is not novel on its own — isolating rarity specifically.
+	for i := range 25 {
+		analyzeAndObserve(t, fmt.Sprintf("auth-%d", i), "authenticate", step())
+		analyzeAndObserve(t, fmt.Sprintf("delete-seed-%d", i), "DELETE customer", step())
+	}
+
+	// This actor's real distribution: read -> update 95 times (common),
+	// read -> delete 5 times (rare) — 100 total outgoing transitions
+	// from read, well past MinTransitionObservations.
+	for i := range 95 {
+		analyzeAndObserve(t, fmt.Sprintf("read-common-%d", i), "SELECT customer", step())
+		analyzeAndObserve(t, fmt.Sprintf("update-%d", i), "UPDATE customer", step())
+	}
+	for i := range 4 { // the 5th read->delete is the event under test
+		analyzeAndObserve(t, fmt.Sprintf("read-rare-%d", i), "SELECT customer", step())
+		analyzeAndObserve(t, fmt.Sprintf("delete-rare-%d", i), "DELETE customer", step())
+	}
+
+	// One more read, observed, as the real predecessor for the events
+	// actually under test.
+	analyzeAndObserve(t, "read-final", "SELECT customer", step())
+
+	rareResult, err := engine.Analyze(ctx, actorEvent("delete-final", "DELETE customer", step()))
+	if err != nil {
+		t.Fatalf("Analyze(rare delete) error = %v", err)
+	}
+	var rareRarity float64
+	foundRarity := false
+	for _, c := range rareResult.Anomaly.Contributors {
+		if c.Name == "transition_rarity" {
+			rareRarity = c.Value
+			foundRarity = true
+		}
+		if c.Name == "transition_deviation" {
+			t.Fatalf("Anomaly.Contributors = %+v, want no transition_deviation — read->delete has been observed (5/100), just rarely", rareResult.Anomaly.Contributors)
+		}
+	}
+	if !foundRarity {
+		t.Fatalf("Anomaly.Contributors = %+v, want transition_rarity for a ~5%% transition frequency", rareResult.Anomaly.Contributors)
+	}
+	// The exact count is not asserted here: riskGatedPolicy() means some
+	// warm-up observations may transiently score high enough to be
+	// BLOCKed/ineligible for learning (see eligibleForLearning), so the
+	// precise accumulated denominator is not deterministic from this
+	// test's own setup alone. The exact formula is proven, with a
+	// controlled fixture, by TestScoreMatchesDocumentedFormulaForTransitionRarity
+	// in internal/anomaly/anomaly_test.go — this test only needs the
+	// qualitative property that a ~1-in-20 transition reads as clearly
+	// rare.
+	if rareRarity < 0.5 {
+		t.Fatalf("transition_rarity Value = %v, want > 0.5 (a roughly 1-in-20 transition should read as clearly rare)", rareRarity)
+	}
+
+	// The common path, analyzed the same way, must carry a much lower
+	// (or absent) transition_rarity, and a strictly lower Trust.Score-derived
+	// risk than the rare path.
+	analyzeAndObserve(t, "read-final-2", "SELECT customer", step())
+	commonResult, err := engine.Analyze(ctx, actorEvent("update-common", "UPDATE customer", step()))
+	if err != nil {
+		t.Fatalf("Analyze(common update) error = %v", err)
+	}
+	var commonRarity float64
+	for _, c := range commonResult.Anomaly.Contributors {
+		if c.Name == "transition_rarity" {
+			commonRarity = c.Value
+		}
+	}
+	if commonRarity >= rareRarity {
+		t.Fatalf("common transition_rarity (%v) >= rare transition_rarity (%v), want strictly less", commonRarity, rareRarity)
+	}
+	if !rareResult.Trust.Risk.AtLeast(commonResult.Trust.Risk) {
+		t.Errorf("rare path Risk = %q, common path Risk = %q — want the rare path at least as risky", rareResult.Trust.Risk, commonResult.Trust.Risk)
+	}
+}
+
+// TestAnalyzeTransitionRarityCrossActorIsolation proves Actor A's
+// learned transition frequency never leaks into Actor B's scoring for
+// the nominally identical transition — the same isolation guarantee
+// TestAnalyzeCrossActorIsolation already proves for categorical
+// novelty, restated here for the new, actor-scoped
+// OutgoingTransitionTotal/PredecessorCounts state.
+func TestAnalyzeTransitionRarityCrossActorIsolation(t *testing.T) {
+	ctx := context.Background()
+	anomalyCfg := anomaly.DefaultConfig()
+	anomalyCfg.TransitionRarityWeight = 0.9
+	anomalyCfg.MinTransitionObservations = 20
+
+	engine := trustvian.NewEngine(
+		trustvian.WithPolicy(riskGatedPolicy()),
+		trustvian.WithAnomalyConfig(anomalyCfg),
+	)
+
+	shape := func(actorID, operation string, ts time.Time) event.Event {
+		return event.Event{
+			ID:        actorID + "-" + operation + "-" + ts.String(),
+			Timestamp: ts,
+			Actor:     event.Actor{ID: actorID, Type: event.ActorTypeService, IdentityConfidence: 1},
+			Operation: event.Operation{Category: event.OperationCategoryDB, Name: operation},
+			Target:    event.Target{Name: "shared-db"},
+			Context:   event.Context{Environment: "production"},
+		}
+	}
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	step := func() time.Time { now = now.Add(time.Second); return now }
+
+	// actor-a: read -> update is extremely common (30 times).
+	for range 30 {
+		r, err := engine.Analyze(ctx, shape("actor-a", "read", step()))
+		if err != nil {
+			t.Fatalf("Analyze: %v", err)
+		}
+		if _, err := engine.Observe(ctx, r); err != nil {
+			t.Fatalf("Observe: %v", err)
+		}
+		r, err = engine.Analyze(ctx, shape("actor-a", "update", step()))
+		if err != nil {
+			t.Fatalf("Analyze: %v", err)
+		}
+		if _, err := engine.Observe(ctx, r); err != nil {
+			t.Fatalf("Observe: %v", err)
+		}
+	}
+
+	// actor-b has never been observed at all — the identical
+	// read -> update transition, for actor-b, must show no rarity
+	// evidence (no predecessor exists yet for a fresh actor).
+	rB, err := engine.Analyze(ctx, shape("actor-b", "read", step()))
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if _, err := engine.Observe(ctx, rB); err != nil {
+		t.Fatalf("Observe: %v", err)
+	}
+	rB2, err := engine.Analyze(ctx, shape("actor-b", "update", step()))
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if hasResultSignal(rB2, "transition_rarity") {
+		t.Errorf("actor-b Contributors = %+v, want no transition_rarity — actor-a's 30 observations must not leak into actor-b's baseline", rB2.Anomaly.Contributors)
+	}
+}
+
+// TestAnalyzeTransitionRarityScoresBeforeLearning proves Analyze never
+// mutates OutgoingTransitionTotal/PredecessorCounts — the transition-
+// rarity analogue of TestAnalyzeIsReadOnly. Calling Analyze many times
+// on the same rare transition, without ever calling Observe, must
+// produce the exact same rarity reading every time.
+func TestAnalyzeTransitionRarityScoresBeforeLearning(t *testing.T) {
+	ctx := context.Background()
+	anomalyCfg := anomaly.DefaultConfig()
+	anomalyCfg.TransitionRarityWeight = 0.9
+	anomalyCfg.MinTransitionObservations = 20
+
+	engine := trustvian.NewEngine(trustvian.WithAnomalyConfig(anomalyCfg))
+
+	shape := func(operation string, ts time.Time) event.Event {
+		return event.Event{
+			ID:        operation + "-" + ts.String(),
+			Timestamp: ts,
+			Actor:     event.Actor{ID: "svc-order-only-learning", Type: event.ActorTypeService, IdentityConfidence: 1},
+			Operation: event.Operation{Category: event.OperationCategoryDB, Name: operation},
+			Target:    event.Target{Name: "order-db"},
+			Context:   event.Context{Environment: "production"},
+		}
+	}
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	step := func() time.Time { now = now.Add(time.Second); return now }
+
+	// Build a real 95/5 split via the gated loop, exactly as the main
+	// end-to-end test does.
+	for range 19 {
+		r, err := engine.Analyze(ctx, shape("read", step()))
+		if err != nil {
+			t.Fatalf("Analyze: %v", err)
+		}
+		engine.Observe(ctx, r)
+		r, err = engine.Analyze(ctx, shape("update", step()))
+		if err != nil {
+			t.Fatalf("Analyze: %v", err)
+		}
+		engine.Observe(ctx, r)
+	}
+	r, err := engine.Analyze(ctx, shape("read", step()))
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	engine.Observe(ctx, r)
+	r, err = engine.Analyze(ctx, shape("delete", step()))
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	engine.Observe(ctx, r)
+
+	r, err = engine.Analyze(ctx, shape("read", step()))
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	engine.Observe(ctx, r)
+
+	// Now Analyze the rare (read -> delete) transition repeatedly,
+	// without ever calling Observe again.
+	eventTime := step()
+	var firstRarity float64
+	for i := range 10 {
+		result, err := engine.Analyze(ctx, shape("delete", eventTime))
+		if err != nil {
+			t.Fatalf("Analyze() call %d: error = %v", i, err)
+		}
+		var rarity float64
+		found := false
+		for _, c := range result.Anomaly.Contributors {
+			if c.Name == "transition_rarity" {
+				rarity = c.Value
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("call %d: Contributors = %+v, want transition_rarity", i, result.Anomaly.Contributors)
+		}
+		if i == 0 {
+			firstRarity = rarity
+		} else if diff := rarity - firstRarity; diff > 1e-9 || diff < -1e-9 {
+			t.Fatalf("call %d: transition_rarity Value = %v, want %v (unchanged across repeated Analyze-only calls — Analyze must never learn)", i, rarity, firstRarity)
+		}
+	}
+}
+
+// TestObserveTransitionRarityLearnsOnlyFromEligibleDecisions is task
+// 026's own poisoning-guard regression test: an attacker repeating a
+// BLOCKed transition must never be able to inflate
+// OutgoingTransitionTotal/PredecessorCounts and "wear down" the
+// transition-rarity signal, mirroring
+// TestObserveLearnsOnlyFromEligibleDecisions's existing proof for the
+// rest of the baseline. This is not new logic — it falls out entirely
+// from Engine.Observe's existing eligibleForLearning gate, which
+// Baseline.Observe (and therefore this task's new counters) sits
+// behind unconditionally; this test exists to prove that inheritance
+// held, not to add a new mechanism.
+func TestObserveTransitionRarityLearnsOnlyFromEligibleDecisions(t *testing.T) {
+	ctx := context.Background()
+	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()))
+
+	readEvent := func(id string, ts time.Time) event.Event {
+		return event.Event{
+			ID: id, Timestamp: ts,
+			Actor:     event.Actor{ID: "svc-poison-test", Type: event.ActorTypeService, IdentityConfidence: 0.98},
+			Operation: event.Operation{Category: event.OperationCategoryDB, Name: "SELECT accounts"},
+			Target:    event.Target{Name: "accounts-db"},
+			Context:   event.Context{Environment: "production"},
+		}
+	}
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	r, err := engine.Analyze(ctx, readEvent("read-1", now))
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if _, err := engine.Observe(ctx, r); err != nil {
+		t.Fatalf("Observe: %v", err)
+	}
+
+	// A wildly anomalous event that should be BLOCKed, immediately
+	// following the read above.
+	blocked := event.Event{
+		ID:        "attack",
+		Timestamp: now.Add(time.Second),
+		Actor:     event.Actor{ID: "svc-poison-test", Type: event.ActorTypeService, IdentityConfidence: 0.1},
+		Operation: event.Operation{Category: event.OperationCategoryExternal, Name: "POST /exfiltrate"},
+		Target:    event.Target{Name: "unknown-external-host"},
+		Context:   event.Context{Environment: "production"},
+	}
+	blockedResult, err := engine.Analyze(ctx, blocked)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if blockedResult.Decision != policy.DecisionBlock {
+		t.Fatalf("Decision = %q, want %q (test setup expects this event to be blocked)", blockedResult.Decision, policy.DecisionBlock)
+	}
+
+	// Repeat the BLOCKed transition many times — an attacker trying to
+	// "train" read -> attack into looking common.
+	for i := range 50 {
+		attempt := blocked
+		attempt.ID = fmt.Sprintf("attack-%d", i)
+		attempt.Timestamp = now.Add(time.Duration(i+2) * time.Second)
+		result, err := engine.Analyze(ctx, attempt)
+		if err != nil {
+			t.Fatalf("Analyze() attempt %d: error = %v", i, err)
+		}
+		if result.Decision != policy.DecisionBlock {
+			t.Fatalf("attempt %d: Decision = %q, want %q", i, result.Decision, policy.DecisionBlock)
+		}
+		learned, err := engine.Observe(ctx, result)
+		if err != nil {
+			t.Fatalf("Observe() attempt %d: error = %v", i, err)
+		}
+		if learned {
+			t.Fatalf("attempt %d: Observe() learned = true for a BLOCKed event, want false", i)
+		}
+	}
+
+	// The read -> attack transition must still read as entirely
+	// unseen: 50 repeated BLOCKed attempts must have contributed zero
+	// transition observations.
+	recheck, err := engine.Analyze(ctx, blocked)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if !hasResultSignal(recheck, "transition_deviation") {
+		t.Errorf("Contributors = %+v, want transition_deviation still present (the transition must still read as entirely unseen after 50 BLOCKed attempts)", recheck.Anomaly.Contributors)
+	}
+	if hasResultSignal(recheck, "transition_rarity") {
+		t.Errorf("Contributors = %+v, want no transition_rarity — a BLOCKed transition must never accumulate enough learned observations to become \"rare but seen\"", recheck.Anomaly.Contributors)
+	}
+}
+
+func hasResultSignal(result trustvian.Result, name string) bool {
+	for _, c := range result.Anomaly.Contributors {
+		if c.Name == name {
+			return true
+		}
+	}
+	return false
+}

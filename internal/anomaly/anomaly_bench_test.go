@@ -84,3 +84,53 @@ func BenchmarkScoreTransitionDeviation(b *testing.B) {
 		_ = anomaly.Score(feat, fp, bl, cfg)
 	}
 }
+
+// BenchmarkScoreTransitionRarity measures task 026's own added cost on top
+// of the task 025 transition foundation: transitionRaritySignal's map
+// lookup on PredecessorCounts plus the O(1) frequency division, in the
+// worst case where the signal actually fires (a rare-but-seen transition,
+// past MinTransitionObservations, so Detail's fmt.Sprintf runs) rather than
+// short-circuiting on the cold-start gate or landing on a common
+// (Value == 0, no Detail) transition. Compare against
+// BenchmarkScoreTransitionDeviation, which measures the same predecessor
+// scale with only the task 025 signal enabled.
+func BenchmarkScoreTransitionRarity(b *testing.B) {
+	fp := fingerprint.Compute(stable("payment-db"))
+	bl := baseline.New(testKey)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	predecessor := fingerprint.Compute(stable("predecessor"))
+	// predecessor leads to 50 distinct filler destinations (the common
+	// case) and only twice to fp, so predecessor->fp is rare but not
+	// unseen: OutgoingTransitionTotal clears MinTransitionObservations
+	// (20) while frequency(fp | predecessor) stays low, so the rarity
+	// signal fires instead of degenerating to Value == 0.
+	for i := range 50 {
+		filler := fingerprint.Compute(stable(fmt.Sprintf("filler-%d", i)))
+		bl = bl.Observe(predecessor, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+		bl = bl.Observe(filler, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+	}
+	for range 2 {
+		bl = bl.Observe(predecessor, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+		bl = bl.Observe(fp, features.VolatileFeatures{}, now)
+		now = now.Add(time.Second)
+	}
+	// One final, unpaired predecessor observation: without it,
+	// bl.LastFingerprintID would be fp's own ID (the loop's last
+	// Observe), making the Score call below a never-seen fp->fp
+	// self-transition instead of the intended, well-established
+	// predecessor->fp transition.
+	bl = bl.Observe(predecessor, features.VolatileFeatures{}, now)
+	now = now.Add(time.Second)
+
+	feat := features.Features{Stable: stable("payment-db"), Volatile: features.VolatileFeatures{Timestamp: now}}
+	cfg := anomaly.DefaultConfig()
+	cfg.TransitionRarityWeight = 0.7
+
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = anomaly.Score(feat, fp, bl, cfg)
+	}
+}

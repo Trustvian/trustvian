@@ -200,7 +200,7 @@ says to add only when needed, not speculatively.
 ## Anomaly
 
 `internal/anomaly.Score(Features, Fingerprint, Baseline, Config)
-Anomaly` combines up to five independent signals via a **noisy-OR**
+Anomaly` combines up to eight independent signals via a **noisy-OR**
 combination — `score = 1 - Π(1 - value_i · weight_i)` — chosen
 specifically because a single severe signal should dominate the
 result, not be diluted by averaging against several unrelated benign
@@ -214,13 +214,17 @@ signals:
 | `error_deviation` | An error occurred against a fingerprint whose baseline error rate is low |
 | `sensitive_target` | The destination is in `Config.SensitiveTargetFloor` — a fixed penalty that persists *regardless of familiarity* |
 | `time_pattern_deviation` | The event's UTC hour-of-day has historically accounted for a much smaller share of this fingerprint's traffic than a uniform 1/24 baseline would predict. Requires the fingerprint to be known and `FingerprintStats.TimePatternObservations >= Config.MinObservations`. **Contributes 0 to `Score` by default** — see below |
+| `transition_deviation` (`v0.6` task 025) | The immediately preceding fingerprint has never before led to this one, for this actor (`PredecessorCounts_B[A] == 0`). **Contributes 0 to `Score` by default** — see [Sequence-aware detection](#sequence-aware-detection) below |
+| `transition_rarity` (`v0.6` task 026) | The immediately preceding fingerprint *has* led to this one before, but rarely: `1 - (PredecessorCounts_B[A] / OutgoingTransitionTotal_A)`, gated on `OutgoingTransitionTotal_A >= Config.MinTransitionObservations`. Mutually exclusive with `transition_deviation` for the same transition. **Contributes 0 to `Score` by default** — see [Sequence-aware detection](#sequence-aware-detection) below |
 
-**Three of the six ship inert.** `DefaultConfig()` leaves
+**Five of the eight ship inert.** `DefaultConfig()` leaves
 `SensitiveTargetFloor` empty (so `sensitive_target` never fires until an
-operator names their sensitive destinations), and sets both
-`FrequencyWeight` and `TimePatternWeight` to `0` (so `frequency_deviation`
-and `time_pattern_deviation` are detected and reported in `Contributors`,
-but multiply to nothing inside the noisy-OR). In all three cases the
+operator names their sensitive destinations), and sets
+`FrequencyWeight`, `TimePatternWeight`, `TransitionWeight`, and
+`TransitionRarityWeight` all to `0` (so `frequency_deviation`,
+`time_pattern_deviation`, `transition_deviation`, and
+`transition_rarity` are all detected and reported in `Contributors`,
+but multiply to nothing inside the noisy-OR). In every case the
 mechanism is complete and tested; only the deployment-specific value that
 makes it count is left to the operator, because no default is correct
 everywhere.
@@ -498,6 +502,23 @@ scoring path, no new pipeline stage.
 - **Sequence length.** One step (`E(n-1) -> E(n)`) — a deliberately
   narrow foundation. n-gram/Markov generalization is explicitly future,
   unscoped work (see [ROADMAP.md § v0.6](ROADMAP.md#v06--behavioral-detection-depth)).
+- **Transition rarity (`v0.6` task 026).** A second signal,
+  `transition_rarity`, evolves `transition_deviation`'s binary
+  seen/unseen into a graded common/uncommon/rare measure for
+  transitions that *have* been seen: `rarity(A->B) = 1 -
+  (PredecessorCounts_B[A] / OutgoingTransitionTotal_A)`, an empirical
+  relative frequency, never called a "probability" — see [ADR
+  0011](adr/0011-transition-rarity-statistic-and-orientation.md) for
+  why the destination-oriented `PredecessorCounts` alone cannot answer
+  this and why the new `FingerprintStats.OutgoingTransitionTotal`
+  scalar (living on the predecessor's own stats) is what makes an O(1)
+  answer possible. Gated on a minimum-support threshold
+  (`Config.MinTransitionObservations`, default `20`) below which the
+  signal does not fire at all, and mutually exclusive with
+  `transition_deviation` by construction (never both fire for the same
+  transition). Opt-in via `Config.TransitionRarityWeight` (defaults to
+  `0`), the same precedent as every other signal weight in this
+  package.
 
 This document describes the domain model as it exists today. Planned
 extensions to it (AI-agent session/delegation fields, further v0.6

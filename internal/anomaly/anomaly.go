@@ -110,6 +110,28 @@ type Config struct {
 	// Score until an operator opts in.
 	TransitionWeight float64
 
+	// MinTransitionObservations is how many valid outgoing transitions
+	// a predecessor Fingerprint must have recorded
+	// (baseline.FingerprintStats.OutgoingTransitionTotal) before
+	// transition_rarity is computed for it at all — the identical
+	// "don't mistake a tiny sample for evidence" role MinObservations
+	// plays for categorical_novelty, applied to the denominator of a
+	// transition frequency instead of a fingerprint's own maturity.
+	// Below this, transition_rarity does not fire, full stop — not
+	// "fires weakly." See
+	// docs/adr/0011-transition-rarity-statistic-and-orientation.md §
+	// Minimum support for why 20 (matching MinObservations's own
+	// default) is a reasonable starting resolution.
+	MinTransitionObservations uint64
+
+	// TransitionRarityWeight defaults to 0, for the identical
+	// "ships opt-in" reason every other v0.6 signal weight does: a
+	// graded rarity reading needs real traffic to be meaningful, and
+	// existing callers must see byte-for-byte unchanged Score output
+	// unless they explicitly opt in. See
+	// docs/tasks/026-transition-rarity.md's Non-Goals.
+	TransitionRarityWeight float64
+
 	// SensitiveTargetFloor maps a Target name to a minimum anomaly
 	// contribution that always applies when that target is touched,
 	// regardless of how familiar the Baseline is with it. This is what
@@ -130,16 +152,18 @@ type Config struct {
 // Anomaly.Contributors; only their contribution to Score is opt-in.
 func DefaultConfig() Config {
 	return Config{
-		MinObservations:      20,
-		LatencyZThreshold:    3.0,
-		FrequencyZThreshold:  3.0,
-		NoveltyWeight:        1.0,
-		LatencyWeight:        0.6,
-		ErrorWeight:          0.8,
-		FrequencyWeight:      0,
-		TimePatternWeight:    0,
-		TransitionWeight:     0,
-		SensitiveTargetFloor: map[string]float64{},
+		MinObservations:           20,
+		LatencyZThreshold:         3.0,
+		FrequencyZThreshold:       3.0,
+		NoveltyWeight:             1.0,
+		LatencyWeight:             0.6,
+		ErrorWeight:               0.8,
+		FrequencyWeight:           0,
+		TimePatternWeight:         0,
+		TransitionWeight:          0,
+		MinTransitionObservations: 20,
+		TransitionRarityWeight:    0,
+		SensitiveTargetFloor:      map[string]float64{},
 	}
 }
 
@@ -243,6 +267,9 @@ func Score(feat features.Features, fp fingerprint.Fingerprint, bl baseline.Basel
 	// the write side, and docs/SECURITY.md § Sequence state for why.
 	if bl.LastFingerprintID != "" && feat.Volatile.Timestamp.After(bl.LastFingerprintTime) {
 		if s := transitionSignal(bl.LastFingerprintID, stats, cfg); s.Value > 0 {
+			signals = append(signals, s)
+		}
+		if s := transitionRaritySignal(bl.LastFingerprintID, bl.Fingerprints[bl.LastFingerprintID], stats, cfg); s.Value > 0 {
 			signals = append(signals, s)
 		}
 	}
@@ -388,6 +415,60 @@ func transitionSignal(predecessor string, destStats baseline.FingerprintStats, c
 		Weight: cfg.TransitionWeight,
 		Detail: fmt.Sprintf("transition from fingerprint %s has never been observed leading to this one", predecessor),
 	}
+}
+
+// transitionRaritySignal reports how rare an already-seen transition
+// from predecessor into destStats is, as an empirical relative
+// frequency — see
+// docs/adr/0011-transition-rarity-statistic-and-orientation.md for the
+// full statistical definition and, specifically, why
+// P(destination | predecessor) — not P(predecessor | destination),
+// which destStats.PredecessorCounts alone would give if misread — is
+// the orientation computed here: predStats.OutgoingTransitionTotal is
+// the total number of valid transitions where predecessor was the
+// source, to *any* destination, making
+// count/predStats.OutgoingTransitionTotal a genuine estimate of how
+// often this specific destination follows predecessor, not how often
+// this predecessor precedes this destination among its other
+// predecessors.
+//
+// Mutually exclusive with transitionSignal by construction, not
+// convention: this returns a zero-Value Signal whenever the
+// transition has never been observed at all (count == 0) —
+// transitionSignal already reports that case as transition_deviation,
+// and collapsing the two would lose the seen-but-rare vs. never-seen
+// distinction this task's own brief requires preserving.
+//
+// Gated on predStats.OutgoingTransitionTotal >=
+// cfg.MinTransitionObservations: below that, a low frequency is more
+// likely a tiny-sample artifact than genuine rarity, so the signal
+// does not fire at all — not "fires weakly." The explicit
+// OutgoingTransitionTotal == 0 check guards division by zero even if
+// a caller misconfigures MinTransitionObservations to 0.
+func transitionRaritySignal(predecessor string, predStats, destStats baseline.FingerprintStats, cfg Config) Signal {
+	count := destStats.PredecessorCounts[predecessor]
+	if count == 0 {
+		return Signal{Name: "transition_rarity", Weight: cfg.TransitionRarityWeight}
+	}
+	if predStats.OutgoingTransitionTotal == 0 || predStats.OutgoingTransitionTotal < cfg.MinTransitionObservations {
+		return Signal{Name: "transition_rarity", Weight: cfg.TransitionRarityWeight}
+	}
+
+	frequency := float64(count) / float64(predStats.OutgoingTransitionTotal)
+	// frequency is always in (0, 1] by construction: count only ever
+	// increments in lockstep with predStats.OutgoingTransitionTotal
+	// for this exact (predecessor, destination) pair (see
+	// baseline.Baseline.Observe), so count can never exceed it. The
+	// clamp below is defensive, not expected to trigger — see ADR 0011
+	// § Mapping frequency to a bounded signal value for why no
+	// nonlinear transform is applied on top of it.
+	value := max(min(1-frequency, 1), 0)
+	if value == 0 {
+		return Signal{Name: "transition_rarity", Weight: cfg.TransitionRarityWeight}
+	}
+
+	detail := fmt.Sprintf("transition observed %d/%d (%.2f%%) of this fingerprint's outgoing transitions", count, predStats.OutgoingTransitionTotal, frequency*100)
+	return Signal{Name: "transition_rarity", Value: value, Weight: cfg.TransitionRarityWeight, Detail: detail}
 }
 
 func errorSignal(known bool, stats baseline.FingerprintStats, cfg Config) Signal {

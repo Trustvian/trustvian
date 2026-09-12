@@ -274,6 +274,96 @@ actually fires (a genuinely unseen transition), the identical
 "only pay for what fires" discipline every other `anomaly` signal
 function already follows.
 
+### v0.6 task 026 (Transition Rarity)
+
+Measured same environment (Go 1.27, darwin/arm64, Apple M3 Pro).
+"Before" is task 025 (Sequence Analysis Foundation) re-measured on this
+same machine in a disposable `git worktree` at commit `e91752d`, not
+merely carried over from the table above, so the delta below is a real
+same-machine A/B, not cross-session noise:
+
+| Benchmark | Before (task 025) | After (task 026) |
+|---|---:|---:|
+| `BenchmarkObserve` (no transition recorded) | 223.4 ns/op, 672 B/op, 3 allocs | 220.9–224.4 ns/op, 704 B/op, 3 allocs — unchanged in kind |
+| `BenchmarkObserveTransition` | 376.3 ns/op, 1,344 B/op, 6 allocs | 420.0–420.8 ns/op, 1,408 B/op, 6 allocs |
+| `BenchmarkScoreKnownFamiliar` | 98.77 ns/op, 0 B/op, 0 allocs | 136.3–136.9 ns/op, 0 B/op, 0 allocs |
+| `BenchmarkScoreTransitionDeviation` | 164.5 ns/op, 160 B/op, 3 allocs | 206.6–206.9 ns/op, 160 B/op, 3 allocs — unchanged |
+| `BenchmarkScoreTransitionRarity` (new) | — | 364.7–373.1 ns/op, 296 B/op, 5 allocs |
+| `BenchmarkEngineAnalyze` (end-to-end, read-only, default config) | 467.9–471.8 ns/op, 456 B/op, 17 allocs | 506.4–512.5 ns/op, 456 B/op, 17 allocs |
+| `BenchmarkEngineAnalyzeTransitionRarity` (new, rarity weight enabled) | — | 509.7–515.1 ns/op, 456 B/op, 17 allocs |
+
+**`Engine.Analyze`'s allocation profile is unchanged — `456 B/op, 17
+allocs/op`, identical to task 025 — but its latency genuinely
+increased, by design, not by accident.** `transitionRaritySignal` is
+called unconditionally alongside `transitionSignal` on every event that
+has a predecessor (see `anomaly.Score`), the same "always compute,
+weight-gate the contribution" pattern every prior signal already
+follows — it is not gated behind `TransitionRarityWeight > 0` before
+running, only before its `Value` is allowed to affect `Score`. This
+means the ~35–40ns/call cost below is paid on **every** steady-state
+`Analyze` call from this task onward, whether or not an operator ever
+sets `TransitionRarityWeight` above its `0` default — not hidden here:
+
+- `BenchmarkScoreKnownFamiliar`: 98.77ns → 136.3–136.9ns (+~38ns), still
+  `0 B/0 allocs` — the added cost is exactly one more map lookup
+  (`PredecessorCounts`) plus a field read (`OutgoingTransitionTotal`)
+  and a division/min/max, on a path that was already a single map
+  lookup before this task; no allocation because the self-transition in
+  this benchmark's mature baseline is 100% frequent (`rarity == 0`), so
+  the early-return-with-zero-value path is what's measured, and it
+  never builds a `Detail` string.
+- `BenchmarkEngineAnalyze`: 467.9–471.8ns → 506.4–512.5ns (+~38–41ns),
+  same relative cost, propagated through the full pipeline — consistent
+  with the isolated `anomaly.Score` delta above, confirming the extra
+  cost is fully accounted for by `transitionRaritySignal` itself, not
+  an incidental change elsewhere in the pipeline.
+- `BenchmarkEngineAnalyzeTransitionRarity` (weight actually set to
+  `0.7`) measures within noise of `BenchmarkEngineAnalyze` on the same
+  tree (509.7–515.1ns vs. 506.4–512.5ns) — expected, since the weight
+  only changes whether `combine()` incorporates an already-computed,
+  already-fired `Value`; it does not change whether the computation
+  itself runs.
+- `BenchmarkObserveTransition`: 376.3ns → 420.0–420.8ns (+~44ns), and
+  `B/op` grew from 1,344 to 1,408 (+64 B) with **no additional alloc
+  count** (6 allocs, unchanged) — `FingerprintStats` grew by one
+  `uint64` field (`OutgoingTransitionTotal`), so every copy-on-write map
+  entry this benchmark's alternating-fingerprint path already makes is
+  now 8 bytes larger per stored value; `observeOutgoingTransition`
+  itself writes into a map slot the surrounding `Observe` call already
+  cloned, so it adds no *new* allocation, only the field-size increase.
+  `BenchmarkObserve`'s own steady-state path never exercises
+  `observeOutgoingTransition` at all — per task 025's own documented
+  finding, its fixed clock and repeated fingerprint mean the ordering
+  guard only passes on the very first iteration — yet its `B/op` also
+  moved, consistently, from 672 to 704 (reproduced identically across
+  three separate runs, so not run-to-run noise): the same 8-byte
+  `FingerprintStats` growth is copied into `Baseline.Fingerprints`'
+  cloned map on *every* `Observe` call regardless of whether a
+  transition is recorded, so this +32 B is the map's own per-entry copy
+  cost growing with the struct, not a new code path being exercised.
+  Allocation *count* stayed at 3 either way.
+
+**Not optimized away, and not hidden.** This is a genuine, small,
+sub-40ns-per-call latency cost on the common `Analyze` path, paid
+regardless of whether the feature is enabled, in exchange for keeping
+`transitionRaritySignal`'s lookup O(1) (one map read, one field read,
+one division) rather than gating it behind a second config check that
+would itself cost a branch on every call for no meaningful savings.
+Every number above stays sub-microsecond and the allocation profile is
+provably unaffected (`0 B/0 allocs` in the no-fire case,
+`456 B/17 allocs` end-to-end) — consistent with
+[docs/adr/0011](adr/0011-transition-rarity-statistic-and-orientation.md)'s
+own "no full-map scans, O(1) lookup" requirement holding in practice,
+not just in the design.
+
+**`BenchmarkScoreTransitionRarity`'s 296 B / 5 allocs is
+`transitionRaritySignal`'s cost when it actually fires** — a rare
+(2-of-52), but seen and past-minimum-support transition, so the
+`Detail` string (`fmt.Sprintf`) is built, the genuine "worst case" this
+benchmark exists to measure, mirroring
+`BenchmarkScoreTransitionDeviation`'s own choice to benchmark the firing
+case rather than a degenerate always-common one.
+
 ## Reading the numbers
 
 **Session-to-session `ns/op` moved broadly; allocation counts didn't —

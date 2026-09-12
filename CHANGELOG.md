@@ -36,6 +36,28 @@ actually depend on.
   allocs/op, unchanged). See
   [docs/sequence-analysis.md](docs/sequence-analysis.md) for the full
   design.
+- **Transition Rarity**
+  ([task 026](docs/tasks/026-transition-rarity.md)) — a new, opt-in
+  anomaly signal, `transition_rarity`, evolving task 025's binary
+  seen/unseen `transition_deviation` into a graded common/uncommon/rare
+  measure for transitions that *have* been seen:
+  `rarity(A->B) = 1 - (PredecessorCounts_B[A] / OutgoingTransitionTotal_A)`
+  — an empirical relative frequency, deliberately never called a
+  "probability" (no Markov model, no smoothing — see [ADR
+  0011](docs/adr/0011-transition-rarity-statistic-and-orientation.md)).
+  `internal/baseline.FingerprintStats` gains one new scalar,
+  `OutgoingTransitionTotal` (no new map, no new cardinality dimension);
+  `internal/anomaly.Config` gains `MinTransitionObservations` (defaults
+  to `20`, a minimum-support cold-start gate) and
+  `TransitionRarityWeight` (defaults to `0`, the same "ships opt-in"
+  precedent every other signal weight in this package already set).
+  `transition_deviation` and `transition_rarity` remain mutually
+  exclusive by construction — an unseen transition is never also
+  reported as "rare." Existing `v0.5`/task-025 callers see byte-for-byte
+  unchanged `Score` output; `Engine.Analyze`'s allocation profile stays
+  unchanged (`456 B/op, 17 allocs/op`), though its latency grows by a
+  small, reported (not hidden) amount — see
+  [docs/PERFORMANCE.md § v0.6 task 026](docs/PERFORMANCE.md#v06-task-026-transition-rarity).
 
 ## v0.5.0 — Policy & Configuration
 
