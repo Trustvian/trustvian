@@ -8,15 +8,19 @@ in [`docs/tasks/`](tasks/); each task file is independently
 understandable and carries its own objective, scope, non-goals,
 technical requirements, tests, benchmarks, documentation, and
 acceptance criteria. Milestones without a fully-scoped task sequence
-yet (`v0.7`–`v0.9` below, and the remainder of `v0.6` beyond its first
-task; `v0.5` has all five of its tasks scoped and done —
+yet (`v0.7`–`v0.9` below, and the remainder of `v0.6` beyond its four
+feature slices; `v0.5` has all five of its tasks scoped and done —
 [019](tasks/019-policy-config-model.md),
 [020](tasks/020-policy-config-loader.md),
 [021](tasks/021-cli-config-integration.md),
 [022](tasks/022-collector-config-integration.md), and
-[023](tasks/023-declarative-alert-configuration.md); `v0.6` has its
-first task done —
-[025](tasks/025-sequence-analysis-foundation.md)) are deliberately
+[023](tasks/023-declarative-alert-configuration.md); `v0.6` has all
+four of its feature slices scoped and done —
+[025](tasks/025-sequence-analysis-foundation.md),
+[026](tasks/026-transition-rarity.md),
+[027](tasks/027-bounded-ngram-detection.md), and
+[028](tasks/028-markov-transition-scoring.md), with a stabilization
+pass remaining before release) are deliberately
 not pre-scoped in detail — this roadmap's own
 "small vertical slices" principle, applied to itself.
 
@@ -213,14 +217,16 @@ milestones exist to close:
 
 **Next up:** with `v0.1`–`v0.5.0` shipped (see [Release readiness —
 v0.5.0](#release-readiness--v050) for the tag/dependency verification),
-`v0.6` — Behavioral Detection Depth is now in progress: its first four
-tasks, [025 Sequence Analysis
+`v0.6` — Behavioral Detection Depth is now a **release candidate**: all
+five of its tasks, [025 Sequence Analysis
 Foundation](tasks/025-sequence-analysis-foundation.md), [026
 Transition Rarity](tasks/026-transition-rarity.md), [027 Bounded n-gram
-Detection](tasks/027-bounded-ngram-detection.md), and [028 Markov
-Transition Scoring](tasks/028-markov-transition-scoring.md), are done
-(see the milestone section below); `v0.6` stabilization/release gate is
-named as the sole remaining illustrative slice, not yet started. The rest of this roadmap's
+Detection](tasks/027-bounded-ngram-detection.md), [028 Markov
+Transition Scoring](tasks/028-markov-transition-scoring.md), and [029
+Stabilization & Release Gate](tasks/029-v06-stabilization-release-gate.md),
+are done (see the milestone section below), and task 029's own audit
+found no release blocker. Creating the `v0.6.0` tag and GitHub release
+remains an explicit human action, not yet taken. The rest of this roadmap's
 remaining work (the rest of `v0.6` through `v1.0` Production-Ready OSS,
 defined below) charts the
 path to a complete, standalone, production-usable OSS product — see
@@ -824,14 +830,21 @@ Nothing remains outstanding for this release.
 
 ## v0.6 — Behavioral Detection Depth
 
-**Status: in progress.** [Task 025](tasks/025-sequence-analysis-foundation.md)
-(Sequence Analysis Foundation), [task
-026](tasks/026-transition-rarity.md) (Transition Rarity), [task
-027](tasks/027-bounded-ngram-detection.md) (Bounded n-gram Detection),
-and [task 028](tasks/028-markov-transition-scoring.md) (Markov
-Transition Scoring) are done; the sole remaining illustrative slice is
-`v0.6` stabilization/release gate (see "Not yet done" below) — not yet
-started, not yet scoped. The rest of
+**Status: release candidate — stabilization complete.** [Task
+025](tasks/025-sequence-analysis-foundation.md) (Sequence Analysis
+Foundation), [task 026](tasks/026-transition-rarity.md) (Transition
+Rarity), [task 027](tasks/027-bounded-ngram-detection.md) (Bounded
+n-gram Detection), [task
+028](tasks/028-markov-transition-scoring.md) (Markov Transition
+Scoring), and [task 029](tasks/029-v06-stabilization-release-gate.md)
+(Stabilization & Release Gate) are all done. Task 029's own audit found
+no release blocker — see its own Findings section for the full
+checklist (double-counting protection re-verified, state bounds
+confirmed, public API and dependencies confirmed unchanged since
+`v0.5.0`, one genuine documentation-drift item found and fixed). No
+`v0.6.0` tag has been created and no GitHub release has been published
+yet — those remain explicit human actions outside this milestone's own
+task scope. The rest of
 the milestone below remains unscoped, per this roadmap's own "small
 vertical slices" principle.
 
@@ -844,10 +857,10 @@ before `v1.0`, per this roadmap's now-explicit product boundary.
 
 **Scope** (task files [025](tasks/025-sequence-analysis-foundation.md),
 [026](tasks/026-transition-rarity.md),
-[027](tasks/027-bounded-ngram-detection.md), and
-[028](tasks/028-markov-transition-scoring.md) for the slices done so
-far; the rest remain unscoped and unnumbered until each is actually
-picked up — illustrative names only below):
+[027](tasks/027-bounded-ngram-detection.md),
+[028](tasks/028-markov-transition-scoring.md), and
+[029](tasks/029-v06-stabilization-release-gate.md) — every task this
+milestone currently scopes is done):
 
 - **025 Sequence Analysis Foundation — done.** `internal/baseline.Baseline`
   gains `LastFingerprintID`/`LastFingerprintTime` (an actor's most
@@ -969,6 +982,28 @@ picked up — illustrative names only below):
   0013](adr/0013-first-order-markov-surprisal-without-duplicate-evidence.md)
   and [task 028](tasks/028-markov-transition-scoring.md) for the full
   mathematical definition, benchmarks, and the complete test list.
+- **029 Stabilization & Release Gate — done.** Not new functionality —
+  a verification pass tying tasks 025–028 together, mirroring [task
+  024](tasks/024-v05-release-gate.md)'s shape for `v0.5`. Its own
+  highest-priority item: re-verifying, from source and by a fresh
+  full-combination benchmark
+  (`BenchmarkEngineAnalyzeFullBehavioral`), that
+  `transition_rarity`/`markov_surprisal`'s mutual-exclusion mechanism
+  (task 028/ADR 0013) holds under every realistic weight combination,
+  not just the pairwise scenarios task 028's own tests constructed —
+  no defect found. Also audited and resolved: one genuine
+  documentation-drift finding (this document's own stale "first task
+  done" wording, corrected), a confirmed-intentional (not a blocker)
+  decision that `v0.6` behavioral configuration stays programmatic-only
+  for now (consistent with `FrequencyWeight`/`TimePatternWeight`'s own
+  pre-`v0.6` precedent), and a confirmed-intentional (not a defect)
+  finding that every v0.6 signal computes regardless of its own weight
+  — the same explainability-driven convention every prior opt-in signal
+  in this package already follows, measured and documented rather than
+  "optimized" away. Zero new dependencies and zero public API changes
+  since `v0.5.0`, verified directly. See [task
+  029](tasks/029-v06-stabilization-release-gate.md) for the complete
+  findings list and release checklist.
 - **Already covered by existing signals**, named here only to close
   the gap between this document's language and the original spec's
   ([`trustvian-project-spec.md` §
@@ -981,19 +1016,18 @@ picked up — illustrative names only below):
   "operation deviation" (`categorical_novelty` on `Operation`), and
   "frequency"/"time-of-day deviation" (`frequency_deviation`,
   `time_pattern_deviation`, both already shipped).
-- **Not yet done — illustrative future slices, unscoped, no task
-  numbers reserved:**
-  - *v0.6 stabilization / release gate* (**next**) — mirroring [task
-    024](tasks/024-v05-release-gate.md)'s shape for `v0.5`, once the
-    milestone's feature slices are complete. This is the sole
-    remaining item on this list: tasks 025–028 have delivered
-    pairwise transition detection (binary and graded), bounded
-    higher-order (3-gram) detection, and a first-order Markov severity
-    curve over the same evidence — a substantial build-out of this
-    milestone's "sequence-aware detection" objective. A genuinely new
-    detection slice beyond these would need its own concrete,
-    evidence-driven justification before this list grows again, not a
-    speculative addition. Not yet started, not yet scoped.
+- **Not yet done — nothing currently scoped.** Tasks 025–029 have
+  delivered pairwise transition detection (binary and graded), bounded
+  higher-order (3-gram) detection, a first-order Markov severity curve
+  over the same evidence, and a stabilization pass confirming no
+  release blocker remains — a complete build-out of this milestone's
+  "sequence-aware detection" objective. `v0.6.0` itself (the tag and
+  GitHub release) has not been created — that is a human action outside
+  this milestone's own task scope, not a further feature slice. A
+  genuinely new detection capability beyond what tasks 025–028 already
+  built would need its own concrete, evidence-driven justification and
+  would belong to a later milestone (see `v0.7` below), not a
+  speculative addition to this list.
 
 **Preferred architecture** (explicit, to close off scope creep before
 it starts):
@@ -1034,13 +1068,19 @@ signal reads a fingerprint's recent history the same way
 **Acceptance criteria.** See [task
 025](tasks/025-sequence-analysis-foundation.md)'s, [task
 026](tasks/026-transition-rarity.md)'s, [task
-027](tasks/027-bounded-ngram-detection.md)'s, and [task
-028](tasks/028-markov-transition-scoring.md)'s own Acceptance Criteria
-sections for the slices done so far — all fully met, verified by `go
+027](tasks/027-bounded-ngram-detection.md)'s, [task
+028](tasks/028-markov-transition-scoring.md)'s, and [task
+029](tasks/029-v06-stabilization-release-gate.md)'s own Acceptance
+Criteria sections — all fully met, verified by `go
 test ./... -race -count=1` and `go test -bench=. -benchmem ./...`
 showing `BenchmarkEngineAnalyze`'s allocation profile unchanged across
-all four tasks. The milestone as a whole remains incomplete: it is not done until the
-remaining, still-unscoped slices above are picked up.
+all five tasks, and by task 029's own release-readiness audit finding
+no blocker. **The milestone's implementation is complete and
+release-ready** — `v0.6.0` itself (a real, tagged, published release)
+remains a separate, explicit human action, matching the same
+tag/GitHub-release step `v0.5.0`'s own gate ([task
+024](tasks/024-v05-release-gate.md)) required before that milestone
+could be called shipped.
 
 ## v0.7 — AI Agent Behavioral Security
 

@@ -556,6 +556,96 @@ cost alone anymore without breaking the minimum-support gate it itself
 needs to fire. Reported here in full, not hidden, per this codebase's
 own "report as found" benchmark discipline.
 
+### v0.6 stabilization pass (task 029): full feature-combination matrix
+
+Task 029's own release-readiness audit asked a question no prior v0.6
+task's own benchmark had directly answered: how does the full
+`Engine.Analyze` pipeline compare across *every* feature-enablement
+combination, not just each task's own before/after delta? Measured
+fresh (Go 1.27, darwin/arm64, Apple M3 Pro,
+`go test -bench "BenchmarkEngineAnalyze" -benchmem -benchtime=2s
+-count=3 .`), all six configurations on the *same* tree (this table is
+a same-machine comparison across configurations, not an across-commit
+one — see the task-by-task tables above for that):
+
+| Configuration | Weight(s) set | ns/op | B/op | allocs/op |
+|---|---|---:|---:|---:|
+| Default (everything at its `0` default) | — | 649.9–657.3 | 456 | 17 |
+| Transition deviation enabled | `TransitionWeight=0.7` | 651.2–652.6 | 456 | 17 |
+| Transition rarity enabled | `TransitionRarityWeight=0.7` | 653.5–668.6 | 456 | 17 |
+| n-gram enabled | `NGramWeight=NGramRarityWeight=0.7` | 651.0–656.9 | 456 | 17 |
+| Markov enabled | `MarkovWeight=0.7` | 652.7–658.9 | 456 | 17 |
+| Full behavioral (all five weights) | all `=0.7` | 656.0–659.6 | 456 | 17 |
+
+(`BenchmarkEngineAnalyzeTransitionDeviation` and
+`BenchmarkEngineAnalyzeFullBehavioral`, both new this pass, complete
+the per-signal matrix — every other row already existed as its own
+task's dedicated benchmark.)
+
+**Every configuration lands in the same ~650–669ns band, and every
+configuration's allocation profile is byte-for-byte identical
+(`456 B/op, 17 allocs/op`).** This is not noise masking a real
+difference — it is the direct, expected consequence of an
+architectural decision already made and documented at every prior
+v0.6 task: every signal function runs unconditionally on every
+`Analyze` call that has the history to evaluate it, regardless of its
+own weight. Raising a weight from `0` to a real value changes nothing
+about *whether* the signal computes — only whether `combine()`
+multiplies an already-computed value into `Score`. "Full behavioral"
+costs no more than "Markov enabled" alone, because by the time any one
+v0.6 weight is nonzero, every v0.6 signal was already being computed
+regardless.
+
+**Answering task 029's own critical question directly: does a user
+who has not enabled Markov pay the `math.Log2`/lookup/normalization
+cost? Yes — `MarkovWeight=0 computation skipped: NO`.** Measured, not
+assumed: `BenchmarkEngineAnalyze` (every weight at its `0` default,
+649.9–657.3ns) and `BenchmarkEngineAnalyzeMarkov` (`MarkovWeight=0.7`,
+652.7–658.9ns) are indistinguishable within this session's own
+run-to-run noise. The cost of `markovSurprisalSignal` running was
+already fully paid in `BenchmarkEngineAnalyze`'s own number — turning
+the weight on adds nothing further.
+
+**This was evaluated explicitly against the alternative (skip a
+signal's computation entirely when its own weight is `0`) and
+deliberately left unchanged.** Two architectural options exist:
+
+- **A (current, for all eleven signals, not just Markov's three
+  v0.6-added ones): compute every signal regardless of weight.** A
+  signal's raw `Value`/`Detail` remains visible in
+  `Anomaly.Contributors` for explainability/calibration purposes even
+  before an operator opts into scoring it — the exact mechanism
+  `FrequencyWeight` (task 004, `v0.1`) and `TimePatternWeight` (task
+  017, `v0.3`) already established, years before any v0.6 signal
+  existed, and which every v0.6 signal (`TransitionWeight` onward)
+  deliberately continued rather than reinventing.
+- **B: skip a signal's computation entirely when its own weight is
+  `0`.** Would eliminate the ~40–70ns/signal cost measured at each
+  task's own introduction (see the task-specific sections above), but
+  at the cost of `Contributors` silently omitting a signal's raw
+  reading whenever its weight happens to be `0` — breaking
+  explainability for exactly the calibration workflow this codebase's
+  own documentation (see `FrequencyWeight`'s own doc comment in
+  `internal/anomaly/anomaly.go`) tells operators to rely on: "measure
+  your own fleet's jitter... only then raise `FrequencyWeight`" is
+  only possible if the signal is visible *before* the weight is
+  raised.
+
+**Decision: A, unchanged, for all eleven signals uniformly.** Adopting
+B for Markov alone (while every other signal, including the other five
+v0.6 additions, kept convention A) would be exactly the kind of
+signal-specific inconsistency task 029's own audit was asked to catch,
+not introduce. Adopting B for *all* signals would be a genuine,
+whole-package behavior change with real explainability consequences —
+out of scope for a stabilization pass whose own mandate is "fix only
+genuine release blockers or clearly justified defects," not
+"optimize because the code looks inefficient" (the task's own explicit
+instruction). The measured costs are real but small: sub-100ns/call,
+zero additional allocations in every non-firing case measured across
+tasks 025–028's own sections above. Not optimized away; reported here
+in full, per this codebase's "report as found" discipline, exactly as
+every prior task's own PERFORMANCE.md entry already does.
+
 ## Reading the numbers
 
 **Session-to-session `ns/op` moved broadly; allocation counts didn't —

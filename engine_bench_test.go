@@ -52,6 +52,33 @@ func BenchmarkEngineAnalyze(b *testing.B) {
 	}
 }
 
+// BenchmarkEngineAnalyzeTransitionDeviation measures the same
+// steady-state pipeline as BenchmarkEngineAnalyze, but with task 025's
+// transition_deviation signal enabled (TransitionWeight > 0) —
+// completing the per-signal benchmark matrix task 029's own
+// stabilization pass asked for (previously only transition_rarity,
+// n-gram, and Markov had a dedicated engine-level benchmark; this
+// signal itself was only ever measured at the internal/anomaly level,
+// via BenchmarkScoreTransitionDeviation). Compare against
+// BenchmarkEngineAnalyze (TransitionWeight defaults to 0) to see this
+// signal's own added cost through the full pipeline.
+func BenchmarkEngineAnalyzeTransitionDeviation(b *testing.B) {
+	cfg := anomaly.DefaultConfig()
+	cfg.TransitionWeight = 0.7
+	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()), trustvian.WithAnomalyConfig(cfg))
+	ctx := context.Background()
+
+	lastWarmUp := warmUpEngine(b, engine, ctx)
+	steadyStateTS := lastWarmUp.Add(time.Second)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := engine.Analyze(ctx, paymentEventAt(10, "steady-state", steadyStateTS)); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 // BenchmarkEngineAnalyzeTransitionRarity measures the same steady-state
 // pipeline as BenchmarkEngineAnalyze, but with task 026's transition_rarity
 // signal enabled (TransitionRarityWeight > 0) and enough warm-up
@@ -120,6 +147,37 @@ func BenchmarkEngineAnalyzeNGram(b *testing.B) {
 // pipeline.
 func BenchmarkEngineAnalyzeMarkov(b *testing.B) {
 	cfg := anomaly.DefaultConfig()
+	cfg.MarkovWeight = 0.7
+	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()), trustvian.WithAnomalyConfig(cfg))
+	ctx := context.Background()
+
+	lastWarmUp := warmUpEngine(b, engine, ctx)
+	steadyStateTS := lastWarmUp.Add(time.Second)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := engine.Analyze(ctx, paymentEventAt(10, "steady-state", steadyStateTS)); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkEngineAnalyzeFullBehavioral measures the same steady-state
+// pipeline with every v0.6 behavioral signal weight enabled at once —
+// the realistic "operator turned everything on" worst case, and the
+// scenario that most matters for confirming the
+// transition_rarity/markov_surprisal mutual-exclusion rule (ADR 0013)
+// doesn't itself add meaningful cost on the hot path: both weights are
+// set here, but only one ever contributes to combine() per call (see
+// anomaly.Score's own MarkovWeight handling). Compare against
+// BenchmarkEngineAnalyze (every weight at its 0 default) for the full,
+// cumulative cost of enabling all of tasks 025-028 together.
+func BenchmarkEngineAnalyzeFullBehavioral(b *testing.B) {
+	cfg := anomaly.DefaultConfig()
+	cfg.TransitionWeight = 0.7
+	cfg.TransitionRarityWeight = 0.7
+	cfg.NGramWeight = 0.7
+	cfg.NGramRarityWeight = 0.7
 	cfg.MarkovWeight = 0.7
 	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()), trustvian.WithAnomalyConfig(cfg))
 	ctx := context.Background()
