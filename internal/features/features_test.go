@@ -192,6 +192,32 @@ func TestExtractDeterministic(t *testing.T) {
 	}
 }
 
+// TestExtractPopulatesDelegatedFromIntoVolatileNotStable is task 031's
+// mandatory proof that Context.DelegatedFrom is read into
+// VolatileFeatures, never StableFeatures — the identical "context,
+// never Fingerprint identity" precedent task 014 already established
+// for SessionID/ApprovalStatus, now applied to the field Extract
+// actually reads.
+func TestExtractPopulatesDelegatedFromIntoVolatileNotStable(t *testing.T) {
+	e := baseEvent(event.OperationCategoryHTTP, "GET /health", nil)
+	e.Context.DelegatedFrom = "orchestrator-agent"
+
+	withDelegation := features.Extract(e)
+
+	e.Context.DelegatedFrom = ""
+	withoutDelegation := features.Extract(e)
+
+	if withDelegation.Volatile.DelegatedFrom != "orchestrator-agent" {
+		t.Errorf("Volatile.DelegatedFrom = %q, want %q", withDelegation.Volatile.DelegatedFrom, "orchestrator-agent")
+	}
+	if withoutDelegation.Volatile.DelegatedFrom != "" {
+		t.Errorf("Volatile.DelegatedFrom = %q, want empty", withoutDelegation.Volatile.DelegatedFrom)
+	}
+	if withDelegation.Stable != withoutDelegation.Stable {
+		t.Errorf("Stable differs by DelegatedFrom alone: %+v vs %+v — DelegatedFrom must never affect StableFeatures", withDelegation.Stable, withoutDelegation.Stable)
+	}
+}
+
 func TestExtractDoesNotMutateEvent(t *testing.T) {
 	attrs := map[string]any{features.AttrDurationMS: float64(10)}
 	e := baseEvent(event.OperationCategoryHTTP, "GET /health", attrs)

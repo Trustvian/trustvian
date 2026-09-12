@@ -183,6 +183,33 @@ type Config struct {
 	// choice to introduce a separate MinNGramObservations).
 	MarkovWeight float64
 
+	// DelegationWeight defaults to 0, for the identical "ships opt-in"
+	// reason every prior new signal's weight does: a brand-new actor
+	// needs real delegation traffic to build up DelegatorCounts history
+	// before "never seen this delegator before" is a trustworthy
+	// judgment, not merely a reflection of not having run long enough
+	// yet. Existing callers that construct a Config without setting
+	// this field (or via DefaultConfig) get byte-for-byte unchanged
+	// Score output: delegation_deviation is still computed and
+	// reported in Anomaly.Contributors whenever an event carries
+	// DelegatedFrom, but contributes nothing to Score until an
+	// operator opts in. See
+	// docs/tasks/031-delegation-behavioral-semantics.md's Non-Goals.
+	//
+	// No separate minimum-observations field exists for this signal,
+	// deliberately: delegation_deviation mirrors transitionSignal's
+	// exact shape (binary seen/unseen, not a frequency/rarity
+	// estimate), and transitionSignal itself has no dedicated
+	// minimum-support gate either — cold start for a binary
+	// seen/unseen signal is already handled by the overall Confidence
+	// this Score call returns (driven by the destination Fingerprint's
+	// own maturity), the same mechanism every other signal here relies
+	// on. A delegation *rarity* signal, if one is ever built, would
+	// need its own minimum-support field the way TransitionRarityWeight
+	// needed MinTransitionObservations — this task deliberately does
+	// not build that signal (see ADR 0016).
+	DelegationWeight float64
+
 	// SensitiveTargetFloor maps a Target name to a minimum anomaly
 	// contribution that always applies when that target is touched,
 	// regardless of how familiar the Baseline is with it. This is what
@@ -218,6 +245,7 @@ func DefaultConfig() Config {
 		MinNGramObservations:      20,
 		NGramRarityWeight:         0,
 		MarkovWeight:              0,
+		DelegationWeight:          0,
 		SensitiveTargetFloor:      map[string]float64{},
 	}
 }
@@ -370,6 +398,20 @@ func Score(feat features.Features, fp fingerprint.Fingerprint, bl baseline.Basel
 		}
 	}
 
+	// feat.Volatile.DelegatedFrom == "" means this event was not the
+	// result of delegation — the correct, safe "not applicable" case,
+	// not evaluated as familiar or novel. This is deliberately
+	// independent of bl.Fingerprints/known: delegation provenance is a
+	// property of the actor being delegated to, not of any one
+	// operation, so it is evaluated against bl.DelegatorCounts
+	// directly rather than gated on this event's own Fingerprint
+	// maturity.
+	if feat.Volatile.DelegatedFrom != "" {
+		if s := delegationSignal(feat.Volatile.DelegatedFrom, bl, cfg); s.Value > 0 {
+			signals = append(signals, s)
+		}
+	}
+
 	if floor, ok := cfg.SensitiveTargetFloor[feat.Stable.TargetName]; ok && floor > 0 {
 		signals = append(signals, Signal{
 			Name:   "sensitive_target",
@@ -504,6 +546,41 @@ func transitionSignal(predecessor string, destStats baseline.FingerprintStats, c
 		Value:  1,
 		Weight: cfg.TransitionWeight,
 		Detail: fmt.Sprintf("transition from fingerprint %s has never been observed leading to this one", predecessor),
+	}
+}
+
+// delegationSignal reports how novel delegatedFrom is as an immediate
+// delegator for this actor: 0 if this exact delegator has been
+// observed at least once before (however few times — there is no
+// "rare" threshold, only "seen" vs. "never seen", mirroring
+// transitionSignal exactly), 1 if it never has. bl.DelegatorCounts is
+// read directly (nil-safe: a nil map read returns the zero value), so
+// an actor with no delegation history at all correctly reports maximal
+// novelty for any delegator too.
+//
+// This is behavioral evidence only, not an authorization or
+// provenance-verification judgment: delegatedFrom is self-reported,
+// unauthenticated input (event.Context.DelegatedFrom's own doc
+// comment; see ADR 0016). A familiar delegator is not thereby
+// authorized to delegate, and a novel delegator is not thereby
+// malicious — this signal answers "is this unusual for this actor?",
+// the same question every other signal in this file answers, nothing
+// more.
+//
+// This deliberately does not compute a delegation *probability* or a
+// frequency-based "rare" threshold — a delegation-rarity signal, if
+// ever justified by real traffic, is separate future work, not part of
+// this task's minimum meaningful evidence. See
+// docs/tasks/031-delegation-behavioral-semantics.md's Non-Goals.
+func delegationSignal(delegatedFrom string, bl baseline.Baseline, cfg Config) Signal {
+	if bl.DelegatorCounts[delegatedFrom] > 0 {
+		return Signal{Name: "delegation_deviation", Weight: cfg.DelegationWeight}
+	}
+	return Signal{
+		Name:   "delegation_deviation",
+		Value:  1,
+		Weight: cfg.DelegationWeight,
+		Detail: fmt.Sprintf("delegator %q has never been observed for this actor", delegatedFrom),
 	}
 }
 

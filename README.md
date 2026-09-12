@@ -135,6 +135,30 @@ and [`docs/ROADMAP.md` §
 v0.7](docs/ROADMAP.md#v07--ai-agent-behavioral-security) for the full
 domain-model reasoning and current state.
 
+The next `v0.7` slice, [Delegation Behavioral
+Semantics](docs/tasks/031-delegation-behavioral-semantics.md), gives
+`DelegatedFrom` its own first real consumer — a new, opt-in
+`internal/anomaly` signal, `delegation_deviation`: has this actor ever
+received delegation from this immediate delegator before? Learned via
+a small, bounded (64-entry) map on `Baseline`
+(`DelegatorCounts`, alongside the existing `PredecessorCounts`/
+`TrigramCounts`), scoped to the actor being delegated to, not to any
+one operation it performs — the same "actor-level, not
+per-Fingerprint" shape `Baseline.LastFingerprintID` already has. **A
+familiar delegator is not thereby authorized, and an unfamiliar one is
+not thereby malicious** — this is behavioral evidence only;
+`DelegatedFrom` remains exactly as unauthenticated and self-reported
+as task 014 left it, and nothing in this task verifies where a claimed
+delegator actually came from. Proven, not just documented: repeated
+BLOCKed delegation from a forged delegator never "normalizes" through
+repetition (the same learning-eligibility gate every other behavioral
+dimension already obeys), delegation evidence never affects
+`Fingerprint` identity, and delegation and approval evidence
+(task 030) never entangle — a familiar delegator does not exempt an
+operation from an approval requirement, and a novel delegator does not
+itself block an operation approval already satisfies. See [ADR
+0016](docs/adr/0016-delegation-as-behavioral-evidence-not-provenance.md).
+
 **Trustvian OSS is meant to be a complete, standalone,
 production-usable behavioral security product on its own** — detect,
 score, decide, alert, integrate, and run, all without Trustvian
@@ -145,10 +169,9 @@ alert sink (Slack/Teams/PagerDuty) — declarative *alert* configuration
 itself is
 now implemented (see above); wiring it into the CLI or the Collector
 processor is deliberately deferred, since neither has an alert-delivery
-flow yet for it to plug into — delegation behavioral semantics and
-combined agent-security-scenario validation beyond the two `v0.7`
-slices above, a production-grade persistent store beyond `FileStore`,
-and
+flow yet for it to plug into — combined agent-security-scenario
+validation beyond the three `v0.7` slices above, a production-grade
+persistent store beyond `FileStore`, and
 release/operational engineering (CI, Docker image, SBOM). See
 [`docs/ROADMAP.md`](docs/ROADMAP.md#the-oss--enterprise-product-boundary)
 for the explicit OSS/Control boundary and the full milestone sequence

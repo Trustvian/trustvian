@@ -110,6 +110,26 @@ const maxPredecessors = 64
 // independently invented number.
 const maxTrigramPredecessors = 64
 
+// maxDelegators bounds Baseline.DelegatorCounts: the number of
+// distinct immediate-delegator Actor.IDs tracked per actor+environment
+// Baseline. This is a resource-exhaustion bound, the identical role
+// maxPredecessors plays for PredecessorCounts, applied one level up —
+// Baseline itself, not a single FingerprintStats entry, since
+// delegation provenance is a property of the actor being delegated
+// to, not of any one operation it performs (see
+// docs/tasks/031-delegation-behavioral-semantics.md's orientation
+// decision). An attacker who controls Context.DelegatedFrom (it is
+// self-reported, unauthenticated input — see ADR 0016) could otherwise
+// grow this map without bound by varying it on every event. 64 reuses
+// maxPredecessors's own "generous for real traffic, trivial worst-case
+// memory" value deliberately, not coincidentally — a real actor's
+// distinct delegators are typically a handful, not per-event entropy —
+// but is its own independent constant, not a shared one, for the same
+// reason maxTrigramPredecessors is its own constant rather than
+// reusing maxPredecessors directly: one bound must never be assumed to
+// imply another.
+const maxDelegators = 64
+
 // TrigramKey identifies the two-fingerprint predecessor pair leading
 // into one destination FingerprintStats' TrigramCounts entry — the
 // destination itself is implicit (whichever FingerprintStats.TrigramCounts
@@ -361,6 +381,25 @@ func recordTrigramContinuation(counts map[string]uint64, grandparent string) map
 	return next
 }
 
+// recordDelegator increments counts[delegator], with the identical
+// bounded-copy-on-write discipline recordPredecessor/recordTrigram/
+// recordTrigramContinuation already establish — see recordPredecessor's
+// own doc comment for why neither in-place mutation nor unbounded
+// growth is acceptable here. A deliberately separate function, not a
+// shared generic helper, for the same "three/four small, near-identical
+// bounded-map functions are simpler to audit than a premature
+// abstraction" reasoning recordTrigram's own doc comment already gives.
+func recordDelegator(counts map[string]uint64, delegator string) map[string]uint64 {
+	if _, tracked := counts[delegator]; !tracked && len(counts) >= maxDelegators {
+		return counts
+	}
+
+	next := make(map[string]uint64, len(counts)+1)
+	maps.Copy(next, counts)
+	next[delegator]++
+	return next
+}
+
 // observeOutgoingTransition increments s.OutgoingTransitionTotal by
 // one, for a valid transition where s is the predecessor. A plain,
 // unguarded increment — matching Count's own existing precedent (see
@@ -583,6 +622,24 @@ type Baseline struct {
 	// redundant. See
 	// docs/adr/0012-bounded-trigram-behavioral-context.md.
 	PreviousFingerprintID string
+
+	// DelegatorCounts records, for this actor+environment, how many
+	// times each distinct immediate delegator (Actor.ID, from
+	// features.VolatileFeatures.DelegatedFrom) has been observed
+	// delegating an event to this actor — the minimum state a
+	// delegation-deviation signal needs (see internal/anomaly's
+	// delegation_deviation), mirroring FingerprintStats.PredecessorCounts's
+	// exact shape, one level up: this is actor-level state, not
+	// per-Fingerprint, because "who normally delegates to this actor"
+	// is a property of the actor, not of any one operation it
+	// performs. A nil map (the zero value) means "no delegation
+	// observed yet for this actor" — the correct, safe cold-start
+	// default. Bounded at maxDelegators distinct entries, with the
+	// identical "first N distinct delegators win, fail toward
+	// maximal novelty past the bound" policy recordPredecessor already
+	// established. See docs/tasks/031-delegation-behavioral-semantics.md
+	// and ADR 0016.
+	DelegatorCounts map[string]uint64
 }
 
 // New returns an empty Baseline for key, ready to be passed to Observe.
@@ -612,6 +669,11 @@ func New(key Key) Baseline {
 // shift the history window — exactly the same "absence of information,
 // not a misleading data point" stance FingerprintStats.observe's own
 // interval guard takes, now extended coherently one step further back.
+//
+// vol.DelegatedFrom, when non-empty, updates DelegatorCounts
+// unconditionally — unlike the sequence state above, delegation
+// provenance carries no ordering dependency, so it is not subject to
+// the same now-must-strictly-follow guard.
 func (b Baseline) Observe(fp fingerprint.Fingerprint, vol features.VolatileFeatures, now time.Time) Baseline {
 	advances := b.LastFingerprintID == "" || now.After(b.LastFingerprintTime)
 	validTransition := b.LastFingerprintID != "" && now.After(b.LastFingerprintTime)
@@ -652,6 +714,18 @@ func (b Baseline) Observe(fp fingerprint.Fingerprint, vol features.VolatileFeatu
 		lastFingerprintTime = now
 	}
 
+	// DelegatorCounts records vol.DelegatedFrom unconditionally on
+	// every valid observation (no ordering guard, unlike the
+	// transition/3-gram state above): delegation provenance is a fact
+	// about *this* event alone, not something whose validity depends
+	// on strictly following a prior timestamp the way a transition or
+	// interval measurement does. An out-of-order event's own delegator
+	// claim is exactly as real as an in-order one's.
+	delegatorCounts := b.DelegatorCounts
+	if vol.DelegatedFrom != "" {
+		delegatorCounts = recordDelegator(delegatorCounts, vol.DelegatedFrom)
+	}
+
 	return Baseline{
 		Key:                   b.Key,
 		Fingerprints:          next,
@@ -659,5 +733,6 @@ func (b Baseline) Observe(fp fingerprint.Fingerprint, vol features.VolatileFeatu
 		LastFingerprintID:     lastFingerprintID,
 		LastFingerprintTime:   lastFingerprintTime,
 		PreviousFingerprintID: previousFingerprintID,
+		DelegatorCounts:       delegatorCounts,
 	}
 }

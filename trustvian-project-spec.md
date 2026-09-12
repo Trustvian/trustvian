@@ -627,14 +627,39 @@ previously left open:
   evaluates the evidence an integration supplies, it does not
   authenticate where that evidence came from.
 
-Not yet built, and not either task's job: agent behavioral *detection
-scenarios* beyond proving reuse of existing signals (a later, unscoped
-`v0.7` slice), delegation-aware detection (`DelegatedFrom` remains
-context-only, unaffected by task 030), a delegation graph, and any
-declarative (YAML/CLI/Collector) configuration surface for
-agent-specific behavior beyond the generic `approval_status` condition
-field task 030 already added (the existing `PolicyConfig`/YAML/CLI/
-Collector path already carries it — no separate surface was needed).
+**Task 031 — Delegation Behavioral Semantics — is also done.**
+[ADR 0016](docs/adr/0016-delegation-as-behavioral-evidence-not-provenance.md)
+gave `DelegatedFrom` its first real consumer: a new, opt-in
+`internal/anomaly` signal (`delegation_deviation`) that flags a
+delegator this actor has never received delegation from before,
+learned via a small, bounded (64-entry) map on `Baseline`. Two
+distinctions this section must state precisely, because they are easy
+to get wrong:
+
+- **Implemented:** bounded behavioral learning of immediate-delegator
+  familiarity — "does this actor normally receive delegated work from
+  this delegator?" — provably independent of `Fingerprint` identity,
+  of approval-policy evidence (task 030), and of
+  `Actor.IdentityConfidence`.
+- **Not implemented, and not this project's job:** delegation
+  authentication or authorization of any kind. A familiar delegator is
+  never thereby authorized, and an unfamiliar one is never thereby
+  malicious — `delegation_deviation` answers "is this unusual for this
+  actor," never "is this delegation authentic." `DelegatedFrom` remains
+  exactly as unauthenticated and self-reported as it was after task
+  014; a malicious actor can still behaviorally "normalize" a forged
+  delegator through repetition, and nothing in this project verifies
+  the claim's provenance. No delegation graph, multi-hop chain, depth
+  scoring, or delegation-rarity/Markov/n-gram signal exists either —
+  the smallest meaningful behavioral evidence was the explicit target,
+  not the ceiling.
+
+Not yet built, and not any of these three tasks' job: agent behavioral
+*detection scenarios* that combine approval and delegation evidence
+against realistic attack shapes (a later, unscoped `v0.7` slice), and
+delegation provenance verification (signed claims, a trusted
+orchestration layer, identity-provider evidence) — a distinct,
+genuinely future integration this project has not designed.
 
 **MCP.** Trustvian's read/query surface may eventually be exposed to AI
 agents and developer tooling via MCP

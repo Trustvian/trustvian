@@ -8,21 +8,28 @@ in [`docs/tasks/`](tasks/); each task file is independently
 understandable and carries its own objective, scope, non-goals,
 technical requirements, tests, benchmarks, documentation, and
 acceptance criteria. Milestones without a fully-scoped task sequence
-yet (`v0.7`–`v0.9` below, and the remainder of `v0.6` beyond its four
-feature slices; `v0.5` has all five of its tasks scoped and done —
-[019](tasks/019-policy-config-model.md),
+yet (`v0.8`–`v0.9` below) are deliberately not pre-scoped in detail —
+this roadmap's own "small vertical slices" principle, applied to
+itself. Every earlier milestone through `v0.7` has each of its slices
+either scoped and done, or explicitly named as the next slice, not
+left as a vague placeholder: `v0.5` has all five of its tasks scoped
+and done — [019](tasks/019-policy-config-model.md),
 [020](tasks/020-policy-config-loader.md),
 [021](tasks/021-cli-config-integration.md),
 [022](tasks/022-collector-config-integration.md), and
 [023](tasks/023-declarative-alert-configuration.md); `v0.6` has all
-four of its feature slices scoped and done —
-[025](tasks/025-sequence-analysis-foundation.md),
+four of its feature slices scoped and done, plus its stabilization
+gate — [025](tasks/025-sequence-analysis-foundation.md),
 [026](tasks/026-transition-rarity.md),
-[027](tasks/027-bounded-ngram-detection.md), and
-[028](tasks/028-markov-transition-scoring.md), with a stabilization
-pass remaining before release) are deliberately
-not pre-scoped in detail — this roadmap's own
-"small vertical slices" principle, applied to itself.
+[027](tasks/027-bounded-ngram-detection.md),
+[028](tasks/028-markov-transition-scoring.md), and
+[029](tasks/029-v06-stabilization-release-gate.md); `v0.7` has its
+foundation and its first behavioral-policy slice scoped and done —
+[014](tasks/014-ai-agent.md) and
+[030](tasks/030-approval-aware-policy-semantics.md) — [031](tasks/031-delegation-behavioral-semantics.md)
+now joins them, with 032 (Agent Security Scenario Validation) and 033
+(`v0.7` Stabilization & Release Gate) named as the remaining sequence,
+not yet task-filed.
 
 Cross-references: [ARCHITECTURE.md](ARCHITECTURE.md) (system shape),
 [DOMAIN.md](DOMAIN.md) (what exists today), [SECURITY.md](SECURITY.md)
@@ -1212,21 +1219,57 @@ require zero code changes, since both already delegate to
 **Acceptance criteria.** See
 [030-approval-aware-policy-semantics.md](tasks/030-approval-aware-policy-semantics.md).
 
+**Task 031 — Delegation Behavioral Semantics — is done.** [Task file
+031](tasks/031-delegation-behavioral-semantics.md) answers this
+milestone's own design question: *can Trustvian identify unusual
+delegation relationships using bounded behavioral learning without
+treating self-reported delegation metadata as authenticated
+provenance?* Yes — and it required no new pipeline stage, no
+delegation graph, and no new port method. `features.VolatileFeatures`
+gained one field (`DelegatedFrom`, read from `Context.DelegatedFrom`);
+`baseline.Baseline` gained one bounded map (`DelegatorCounts`, capped
+at 64 distinct delegators, mirroring `PredecessorCounts`'s exact
+shape one level up — actor-scoped, not per-operation, since "who
+normally delegates to this actor" is a property of the actor, not of
+any one thing it does); `internal/anomaly` gained one opt-in signal,
+`delegation_deviation` (binary seen/unseen, mirroring
+`transition_deviation`'s exact shape — deliberately not a rarity
+signal). Two design questions this task's own brief demanded be kept
+separate, both proven by test, not just documented:
+
+- **Behavioral familiarity is not authorization.**
+  `TestAnalyzeDelegationApprovalIndependence` proves delegation
+  evidence and approval-policy evidence never entangle: a familiar
+  delegator does not exempt an operation from an approval requirement,
+  and a novel delegator does not itself block an operation approval
+  already satisfies.
+- **`DelegatedFrom` stays unauthenticated, self-reported input.**
+  `delegation_deviation` answers "is this unusual for this actor?",
+  never "is this delegation authentic?" — no cryptographic
+  verification, no provenance check, exactly the boundary
+  `docs/SECURITY.md § AI Agent behavioral security`'s "Delegation
+  abuse" entry already documented before this task existed.
+
+The existing learning-eligibility gate protects delegation state for
+free: `TestAnalyzeDelegationPoisoningIneligibleEventsDoNotTrain`
+proves repeated BLOCKed delegation from a never-seen delegator never
+becomes "familiar" through repetition alone.
+`TestAnalyzeDelegationActorIsolation` and
+`TestAnalyzeDelegationFingerprintStability` confirm the identical
+actor-isolation and Fingerprint-independence guarantees every other
+`v0.6`/`v0.7` signal already has. See [ADR
+0016](adr/0016-delegation-as-behavioral-evidence-not-provenance.md).
+
+**Acceptance criteria.** See
+[031-delegation-behavioral-semantics.md](tasks/031-delegation-behavioral-semantics.md).
+
 **What's next (illustrative, unscoped — none of this is implemented
-or task-filed yet).** Tasks 014 and 030 are foundation slices, not the
-whole milestone. Further `v0.7` work continues from task **031**
-onward (**015** and **016** stay reserved for MCP and Control
+or task-filed yet).** Tasks 014, 030, and 031 are foundation slices,
+not the whole milestone. Further `v0.7` work continues from task
+**032** onward (**015** and **016** stay reserved for MCP and Control
 respectively, per the project's existing task-numbering scheme — not
 reusable for further agent-detection slices):
 
-- **031 — Delegation Behavioral Semantics.** Design question: *is the
-  current delegation provenance consistent with learned/allowed
-  behavior?* Smallest meaningful slice: detecting an unexpected
-  immediate delegator for a given actor — not a full delegation graph,
-  not multi-hop chain analytics, not depth-escalation scoring. Must
-  document `DelegatedFrom` as unauthenticated, self-reported input
-  (already noted in `docs/SECURITY.md § AI Agent behavioral security`)
-  before any detector treats it as a trust signal.
 - **032 — Agent Security Scenario Validation.** Validates the combined
   system (030 + 031 + existing `v0.6` signals) against realistic
   scenarios — unexpected privileged tool use, a sensitive
