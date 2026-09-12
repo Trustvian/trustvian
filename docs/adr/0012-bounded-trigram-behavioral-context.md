@@ -185,6 +185,14 @@ directly (see ADR 0011's own "Why Markov still waits," which applies
 identically here — no transition matrix, no smoothing, no higher-order
 probability model exists yet).
 
+**Update (task 028):** [task 028](../tasks/028-markov-transition-scoring.md)
+added a first-order Markov signal, `markov_surprisal`, but deliberately
+did not extend it over `TrigramCounts`/`TrigramContinuationTotal` — per
+its own explicit scope boundary, Markov scoring in that task stays
+first-order (`state(t-1) -> state(t)`), not merged with this ADR's
+3-gram context. A "Markov over trigrams" extension, if one is ever
+built, remains exactly as open as this section originally described.
+
 ## Consequences
 
 - One new scalar field, `Baseline.PreviousFingerprintID string`.

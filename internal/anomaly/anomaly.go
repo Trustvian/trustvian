@@ -166,6 +166,23 @@ type Config struct {
 	// docs/tasks/027-bounded-ngram-detection.md's Non-Goals.
 	NGramRarityWeight float64
 
+	// MarkovWeight defaults to 0, for the identical "ships opt-in"
+	// reason every other v0.6 signal weight does — and, additionally,
+	// because it changes *which* curve scores the same evidence
+	// TransitionRarityWeight already reads: markov_surprisal and
+	// transition_rarity are proven mathematically to be monotonic
+	// reparameterizations of the identical frequency statistic (see
+	// docs/adr/0013-first-order-markov-surprisal-without-duplicate-evidence.md),
+	// so Score forces transition_rarity's own contribution to zero
+	// whenever MarkovWeight > 0, regardless of TransitionRarityWeight's
+	// own value — a caller cannot double-count this evidence by any
+	// combination of the two weights. No separate minimum-support field
+	// exists for this signal: it reuses MinTransitionObservations
+	// exactly, since both signals read the identical denominator (see
+	// ADR 0013's own reasoning for why this differs from task 027's
+	// choice to introduce a separate MinNGramObservations).
+	MarkovWeight float64
+
 	// SensitiveTargetFloor maps a Target name to a minimum anomaly
 	// contribution that always applies when that target is touched,
 	// regardless of how familiar the Baseline is with it. This is what
@@ -200,6 +217,7 @@ func DefaultConfig() Config {
 		NGramWeight:               0,
 		MinNGramObservations:      20,
 		NGramRarityWeight:         0,
+		MarkovWeight:              0,
 		SensitiveTargetFloor:      map[string]float64{},
 	}
 }
@@ -308,6 +326,22 @@ func Score(feat features.Features, fp fingerprint.Fingerprint, bl baseline.Basel
 			signals = append(signals, s)
 		}
 		if s := transitionRaritySignal(bl.LastFingerprintID, predStats, stats, cfg); s.Value > 0 {
+			// transition_rarity and markov_surprisal are proven
+			// (docs/adr/0013-first-order-markov-surprisal-without-duplicate-evidence.md)
+			// to be monotonic reparameterizations of the identical
+			// frequency statistic — scoring both would double-count one
+			// piece of evidence. When MarkovWeight is enabled, it takes
+			// over as the sole scoring representation: transition_rarity
+			// is still computed and reported here (for explainability —
+			// an operator can see both curves), but its contribution to
+			// combine() is forced to zero, regardless of
+			// cfg.TransitionRarityWeight's own value.
+			if cfg.MarkovWeight > 0 {
+				s.Weight = 0
+			}
+			signals = append(signals, s)
+		}
+		if s := markovSurprisalSignal(bl.LastFingerprintID, predStats, stats, cfg); s.Value > 0 {
 			signals = append(signals, s)
 		}
 
@@ -525,6 +559,66 @@ func transitionRaritySignal(predecessor string, predStats, destStats baseline.Fi
 
 	detail := fmt.Sprintf("transition observed %d/%d (%.2f%%) of this fingerprint's outgoing transitions", count, predStats.OutgoingTransitionTotal, frequency*100)
 	return Signal{Name: "transition_rarity", Value: value, Weight: cfg.TransitionRarityWeight, Detail: detail}
+}
+
+// markovSurprisalSignal reports the same predecessor->destination
+// transition transitionRaritySignal reads, through a differently
+// shaped curve: information-theoretic surprisal, -log2(P(B|A)),
+// bounded into [0,1) rather than transition_rarity's linear 1-frequency.
+//
+// This is deliberately NOT new evidence. See
+// docs/adr/0013-first-order-markov-surprisal-without-duplicate-evidence.md
+// for the full proof that markov_surprisal and transition_rarity are
+// strictly monotonic reparameterizations of the identical frequency
+// statistic — they can never disagree on which of two transitions is
+// rarer, only on how sharply the numeric severity grows as frequency
+// shrinks (surprisal keeps growing across the whole rare tail; 1-frequency
+// saturates near 1 quickly). Score() enforces that only one of the two
+// curves ever contributes to combine() for a given call (see Score's
+// own MarkovWeight handling) — this function's own Weight field is
+// therefore not sufficient on its own to prevent double-counting;
+// callers must go through Score, not call this directly for scoring.
+//
+// Shares transitionRaritySignal's exact gates, by design, not
+// coincidence: count == 0 remains transition_deviation's domain (never
+// computed here, so frequency > 0 is structurally guaranteed whenever
+// this function proceeds past the gate — -log2 of a zero probability
+// is never evaluated, so Inf/NaN are impossible by construction, not
+// by a defensive check); below cfg.MinTransitionObservations, no
+// signal fires at all, reusing that field rather than introducing a
+// second minimum-support threshold for the identical denominator.
+func markovSurprisalSignal(predecessor string, predStats, destStats baseline.FingerprintStats, cfg Config) Signal {
+	count := destStats.PredecessorCounts[predecessor]
+	if count == 0 {
+		return Signal{Name: "markov_surprisal", Weight: cfg.MarkovWeight}
+	}
+	if predStats.OutgoingTransitionTotal == 0 || predStats.OutgoingTransitionTotal < cfg.MinTransitionObservations {
+		return Signal{Name: "markov_surprisal", Weight: cfg.MarkovWeight}
+	}
+
+	frequency := float64(count) / float64(predStats.OutgoingTransitionTotal)
+	surprisal := -math.Log2(frequency)
+
+	// k anchors the normalization's one free constant to
+	// MinTransitionObservations — the same threshold that already
+	// governs this signal's cold-start gate — rather than an invented
+	// magic number: a transition observed at exactly the rarest
+	// reliably-resolvable frequency (1/MinTransitionObservations) maps
+	// to normalized == 0.5, the midpoint of the output range. See ADR
+	// 0013 § Mathematical definition for the full justification.
+	// max(..., 2) guards log2 against a misconfigured
+	// MinTransitionObservations of 0 or 1 (log2(0) is -Inf, log2(1) is
+	// 0, either of which would make k <= 0 and collapse the
+	// normalization), mirroring transitionRaritySignal's own defensive
+	// floor against the identical misconfiguration.
+	k := math.Log2(max(float64(cfg.MinTransitionObservations), 2))
+	value := max(min(surprisal/(surprisal+k), 1), 0)
+	if value == 0 {
+		return Signal{Name: "markov_surprisal", Weight: cfg.MarkovWeight}
+	}
+
+	detail := fmt.Sprintf("transition observed %d/%d (%.2f%%) of this fingerprint's outgoing transitions, carrying %.2f bits of surprise under the learned first-order model", count, predStats.OutgoingTransitionTotal, frequency*100, surprisal)
+	return Signal{Name: "markov_surprisal", Value: value, Weight: cfg.MarkovWeight, Detail: detail}
 }
 
 // ngramDeviationSignal reports whether the 3-gram

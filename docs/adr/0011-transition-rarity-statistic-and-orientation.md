@@ -162,6 +162,17 @@ decisions needing to be revisited; it would add the missing pieces
 above (full-row queries, smoothing, or an explicit probability-model
 label), not change the counters underneath them.
 
+**Update (task 028):** [task 028](../tasks/028-markov-transition-scoring.md)
+revisited this section and confirmed every point above still holds — no
+transition matrix, no higher-order history, no smoothing was added.
+What it *did* add, `markov_surprisal`, is not "the future Markov task"
+this section anticipated: it is an alternative bounded severity curve
+over this ADR's own `frequency(A -> B)`, mathematically proven to carry
+zero additional ranking information beyond `transition_rarity` (see
+[ADR 0013](0013-first-order-markov-surprisal-without-duplicate-evidence.md)).
+The genuinely open items named in this section — a full `P(*|A)` row,
+higher-order history, smoothing — remain unbuilt and undecided.
+
 ## Consequences
 
 - One new scalar field, `FingerprintStats.OutgoingTransitionTotal

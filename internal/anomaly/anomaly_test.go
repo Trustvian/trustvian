@@ -1669,6 +1669,441 @@ func TestScoreCombinedSequenceSignalsRemainBounded(t *testing.T) {
 	}
 }
 
+// --- Task 028: first-order Markov surprisal ---
+
+func TestDefaultConfigMarkovWeightIsOptIn(t *testing.T) {
+	cfg := anomaly.DefaultConfig()
+	if cfg.MarkovWeight != 0 {
+		t.Errorf("DefaultConfig().MarkovWeight = %v, want 0 (opt-in, like every other v0.6 signal weight)", cfg.MarkovWeight)
+	}
+}
+
+// TestScoreMarkovSurprisalKnownNumeratorDenominator reproduces the
+// exact surprisal/normalization arithmetic documented in
+// docs/adr/0013-first-order-markov-surprisal-without-duplicate-evidence.md
+// — "the score went up" is not enough for a security-relevant number.
+func TestScoreMarkovSurprisalKnownNumeratorDenominator(t *testing.T) {
+	predecessor := fingerprint.Compute(stable("read"))
+	common := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "common", TargetName: "customer-db", Environment: "production",
+	})
+	rare := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "rare", TargetName: "customer-db", Environment: "production",
+	})
+
+	// 96 + 4 = 100 total; rare's frequency is exactly 4/100 = 0.04.
+	b := transitionRarityBaseline(predecessor, []fingerprint.Fingerprint{common, rare}, []int{96, 4})
+
+	cfg := anomaly.DefaultConfig()
+	cfg.MarkovWeight = 0.5
+
+	eventTime := b.LastFingerprintTime.Add(time.Second)
+	feat := features.Features{Stable: rare.Stable, Volatile: features.VolatileFeatures{Timestamp: eventTime}}
+	got := anomaly.Score(feat, rare, b, cfg)
+
+	wantFrequency := 4.0 / 100.0
+	wantSurprisal := -math.Log2(wantFrequency)
+	wantK := math.Log2(float64(cfg.MinTransitionObservations)) // MinTransitionObservations=20 here
+	wantValue := wantSurprisal / (wantSurprisal + wantK)
+
+	var gotValue float64
+	found := false
+	for _, c := range got.Contributors {
+		if c.Name == "markov_surprisal" {
+			gotValue = c.Value
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Contributors = %+v, want markov_surprisal", got.Contributors)
+	}
+	if diff := gotValue - wantValue; diff > 1e-9 || diff < -1e-9 {
+		t.Fatalf("markov_surprisal Value = %v, want %v (surprisal=%v, k=%v)", gotValue, wantValue, wantSurprisal, wantK)
+	}
+}
+
+// TestScoreMarkovSurprisalOrdering mirrors TestScoreTransitionRarityOrdering:
+// common, uncommon, and rare continuations from the same predecessor
+// must produce strictly increasing surprisal, and an unseen transition
+// must carry transition_deviation, not markov_surprisal.
+func TestScoreMarkovSurprisalOrdering(t *testing.T) {
+	predecessor := fingerprint.Compute(stable("read"))
+	common := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "common", TargetName: "customer-db", Environment: "production",
+	})
+	uncommon := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "uncommon", TargetName: "customer-db", Environment: "production",
+	})
+	rare := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "rare", TargetName: "customer-db", Environment: "production",
+	})
+	unseen := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "unseen", TargetName: "customer-db", Environment: "production",
+	})
+
+	// 900 + 90 + 10 = 1000 total outgoing transitions from predecessor.
+	b := transitionRarityBaseline(predecessor, []fingerprint.Fingerprint{common, uncommon, rare}, []int{900, 90, 10})
+
+	cfg := anomaly.DefaultConfig()
+	cfg.MarkovWeight = 0.8
+
+	scoreFor := func(dest fingerprint.Fingerprint) anomaly.Anomaly {
+		eventTime := b.LastFingerprintTime.Add(time.Second)
+		feat := features.Features{Stable: dest.Stable, Volatile: features.VolatileFeatures{Timestamp: eventTime}}
+		return anomaly.Score(feat, dest, b, cfg)
+	}
+
+	surprisalValue := func(a anomaly.Anomaly) float64 {
+		for _, c := range a.Contributors {
+			if c.Name == "markov_surprisal" {
+				return c.Value
+			}
+		}
+		return -1
+	}
+
+	commonAnomaly, uncommonAnomaly, rareAnomaly, unseenAnomaly := scoreFor(common), scoreFor(uncommon), scoreFor(rare), scoreFor(unseen)
+	commonSurprisal, uncommonSurprisal, rareSurprisal := surprisalValue(commonAnomaly), surprisalValue(uncommonAnomaly), surprisalValue(rareAnomaly)
+
+	if commonSurprisal < 0 || uncommonSurprisal < 0 || rareSurprisal < 0 {
+		t.Fatalf("expected markov_surprisal on all three seen transitions: common=%v uncommon=%v rare=%v", commonSurprisal, uncommonSurprisal, rareSurprisal)
+	}
+	if !(commonSurprisal < uncommonSurprisal && uncommonSurprisal < rareSurprisal) {
+		t.Fatalf("surprisal ordering violated: common=%v, uncommon=%v, rare=%v — want common < uncommon < rare", commonSurprisal, uncommonSurprisal, rareSurprisal)
+	}
+
+	if hasSignal(unseenAnomaly.Contributors, "markov_surprisal") {
+		t.Error("unseen transition carried markov_surprisal, want it to carry only transition_deviation")
+	}
+	if !hasSignal(unseenAnomaly.Contributors, "transition_deviation") {
+		t.Error("unseen transition did not carry transition_deviation")
+	}
+}
+
+// TestScoreMarkovSurprisalColdStart mirrors TestScoreTransitionRarityColdStart:
+// below MinTransitionObservations, markov_surprisal does not fire at
+// all — reusing the identical field, not a separate Markov-specific
+// threshold (see ADR 0013).
+func TestScoreMarkovSurprisalColdStart(t *testing.T) {
+	predecessor := fingerprint.Compute(stable("read"))
+	destA := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "a", TargetName: "customer-db", Environment: "production",
+	})
+	destB := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "b", TargetName: "customer-db", Environment: "production",
+	})
+
+	cfg := anomaly.DefaultConfig()
+	cfg.MarkovWeight = 0.8
+	const minSupport = 20
+	cfg.MinTransitionObservations = minSupport
+
+	tests := []struct {
+		name          string
+		totalOutgoing int
+		wantFire      bool
+	}{
+		{"zero observations", 0, false},
+		{"one observation", 1, false},
+		{"minSupport - 1", minSupport - 1, false},
+		{"minSupport exactly", minSupport, true},
+		{"minSupport + 1", minSupport + 1, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var b baseline.Baseline
+			if tt.totalOutgoing == 0 {
+				b = baseline.New(testKey)
+			} else if tt.totalOutgoing == 1 {
+				b = transitionRarityBaseline(predecessor, []fingerprint.Fingerprint{destB}, []int{1})
+			} else {
+				b = transitionRarityBaseline(predecessor, []fingerprint.Fingerprint{destA, destB}, []int{tt.totalOutgoing - 1, 1})
+			}
+
+			eventTime := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+			if !b.LastFingerprintTime.IsZero() {
+				eventTime = b.LastFingerprintTime.Add(time.Second)
+			}
+			feat := features.Features{Stable: destB.Stable, Volatile: features.VolatileFeatures{Timestamp: eventTime}}
+			got := anomaly.Score(feat, destB, b, cfg)
+
+			fired := hasSignal(got.Contributors, "markov_surprisal")
+			if fired != tt.wantFire {
+				t.Errorf("markov_surprisal fired = %v, want %v (totalOutgoing=%d, minSupport=%d)", fired, tt.wantFire, tt.totalOutgoing, minSupport)
+			}
+		})
+	}
+}
+
+// TestScoreMarkovSurprisalUnseenTransitionNeverFires proves the zero-
+// probability policy (ADR 0013 § Zero probability): a never-seen
+// transition is transition_deviation's domain, never
+// markov_surprisal's — -log2(0) is never evaluated, so Inf/NaN are
+// impossible by construction here, not merely by a defensive check.
+func TestScoreMarkovSurprisalUnseenTransitionNeverFires(t *testing.T) {
+	predecessor := fingerprint.Compute(stable("read"))
+	// Give predecessor real outgoing history (past minimum support) so
+	// the *only* reason markov_surprisal could fail to fire is the
+	// zero-count gate, not the cold-start gate.
+	filler := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "filler", TargetName: "customer-db", Environment: "production",
+	})
+	unseen := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "unseen", TargetName: "customer-db", Environment: "production",
+	})
+	b := transitionRarityBaseline(predecessor, []fingerprint.Fingerprint{filler}, []int{50})
+
+	cfg := anomaly.DefaultConfig()
+	cfg.MarkovWeight = 1.0
+
+	eventTime := b.LastFingerprintTime.Add(time.Second)
+	feat := features.Features{Stable: unseen.Stable, Volatile: features.VolatileFeatures{Timestamp: eventTime}}
+	got := anomaly.Score(feat, unseen, b, cfg)
+
+	if hasSignal(got.Contributors, "markov_surprisal") {
+		t.Errorf("Contributors = %+v, want no markov_surprisal for a never-seen transition", got.Contributors)
+	}
+	if !hasSignal(got.Contributors, "transition_deviation") {
+		t.Errorf("Contributors = %+v, want transition_deviation for a never-seen transition", got.Contributors)
+	}
+	if math.IsNaN(got.Score) || math.IsInf(got.Score, 0) {
+		t.Fatalf("Score = %v for an unseen transition, want a finite number", got.Score)
+	}
+}
+
+// TestScoreMarkovSurprisalNeverExceedsBounds mirrors
+// TestScoreTransitionRarityNeverExceedsBounds: across a range of
+// counts and totals, markov_surprisal's Value must always land in
+// [0,1) — never negative, never >=1, never NaN, never Inf.
+func TestScoreMarkovSurprisalNeverExceedsBounds(t *testing.T) {
+	predecessor := fingerprint.Compute(stable("read"))
+	cfg := anomaly.DefaultConfig()
+	cfg.MarkovWeight = 1.0
+	cfg.MinTransitionObservations = 1
+
+	// 10,000 (not larger) matches this codebase's own established
+	// runtime-hygiene precedent for this style of "large total" bounds
+	// check (see task 026's own TestBaselineObserveManyDistinctTransitionsStayBounded,
+	// reduced from an illustrative 10,000 for the identical reason) —
+	// large enough to prove the bound holds far past any realistic
+	// deployment's traffic, without the O(N) Observe-call cost this
+	// helper's own construction pays making the suite unreasonably slow.
+	for _, total := range []int{1, 2, 5, 20, 1000, 10_000} {
+		dest := fingerprint.Compute(features.StableFeatures{
+			ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+			OperationName: fmt.Sprintf("dest-%d", total), TargetName: "customer-db", Environment: "production",
+		})
+		b := transitionRarityBaseline(predecessor, []fingerprint.Fingerprint{dest}, []int{total})
+
+		eventTime := b.LastFingerprintTime.Add(time.Second)
+		feat := features.Features{Stable: dest.Stable, Volatile: features.VolatileFeatures{Timestamp: eventTime}}
+		got := anomaly.Score(feat, dest, b, cfg)
+
+		for _, c := range got.Contributors {
+			if c.Name != "markov_surprisal" {
+				continue
+			}
+			if math.IsNaN(c.Value) || math.IsInf(c.Value, 0) {
+				t.Errorf("total=%d: markov_surprisal Value = %v, want a finite number", total, c.Value)
+			}
+			if c.Value < 0 || c.Value >= 1 {
+				t.Errorf("total=%d: markov_surprisal Value = %v, want in [0,1)", total, c.Value)
+			}
+		}
+	}
+}
+
+// TestMarkovSurprisalIsMonotonicReparameterizationOfRarity is task
+// 028's own mandatory "Critical Duplication Test" (§36 of the task
+// brief): proves markov_surprisal and transition_rarity, computed
+// independently (via separate Config values so each fires on its own),
+// never disagree on the relative ordering of a set of transitions —
+// the direct empirical proof of ADR 0013's claim that the two are
+// monotonic reparameterizations of the identical frequency statistic,
+// not independent evidence.
+func TestMarkovSurprisalIsMonotonicReparameterizationOfRarity(t *testing.T) {
+	predecessor := fingerprint.Compute(stable("read"))
+	dests := make([]fingerprint.Fingerprint, 6)
+	counts := []int{500, 200, 100, 50, 20, 5}
+	for i := range dests {
+		dests[i] = fingerprint.Compute(features.StableFeatures{
+			ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+			OperationName: fmt.Sprintf("dest-%d", i), TargetName: "customer-db", Environment: "production",
+		})
+	}
+	b := transitionRarityBaseline(predecessor, dests, counts)
+
+	rarityCfg := anomaly.DefaultConfig()
+	rarityCfg.TransitionRarityWeight = 0.8
+	markovCfg := anomaly.DefaultConfig()
+	markovCfg.MarkovWeight = 0.8
+
+	valueOf := func(cfg anomaly.Config, name string, dest fingerprint.Fingerprint) float64 {
+		eventTime := b.LastFingerprintTime.Add(time.Second)
+		feat := features.Features{Stable: dest.Stable, Volatile: features.VolatileFeatures{Timestamp: eventTime}}
+		got := anomaly.Score(feat, dest, b, cfg)
+		for _, c := range got.Contributors {
+			if c.Name == name {
+				return c.Value
+			}
+		}
+		t.Fatalf("dest %s: expected signal %q to fire", dest.ID, name)
+		return -1
+	}
+
+	type reading struct {
+		rarity, surprisal float64
+	}
+	readings := make([]reading, len(dests))
+	for i, d := range dests {
+		readings[i] = reading{
+			rarity:    valueOf(rarityCfg, "transition_rarity", d),
+			surprisal: valueOf(markovCfg, "markov_surprisal", d),
+		}
+	}
+
+	// Every pair must agree on ordering: rarity(X) < rarity(Y) iff
+	// surprisal(X) < surprisal(Y). Disagreement on any pair would
+	// disprove the monotonic-reparameterization claim.
+	for i := range readings {
+		for j := range readings {
+			if i == j {
+				continue
+			}
+			rarityLess := readings[i].rarity < readings[j].rarity
+			surprisalLess := readings[i].surprisal < readings[j].surprisal
+			if rarityLess != surprisalLess {
+				t.Fatalf("ordering disagreement at (%d,%d): rarity=(%v,%v) surprisal=(%v,%v) — transition_rarity and markov_surprisal must never disagree on relative ordering",
+					i, j, readings[i].rarity, readings[j].rarity, readings[i].surprisal, readings[j].surprisal)
+			}
+		}
+	}
+}
+
+// TestScoreMarkovAndTransitionRarityAreMutuallyExclusiveInScoring is
+// task 028's mandatory combined-score/double-counting proof (§9, §37
+// of the task brief): even if a caller sets BOTH TransitionRarityWeight
+// and MarkovWeight to nonzero, the combined Score must match scoring
+// with ONLY markov_surprisal's contribution active — proving
+// transition_rarity's own contribution was genuinely suppressed, not
+// merely reported at a lower weight.
+func TestScoreMarkovAndTransitionRarityAreMutuallyExclusiveInScoring(t *testing.T) {
+	predecessor := fingerprint.Compute(stable("read"))
+	common := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "common", TargetName: "customer-db", Environment: "production",
+	})
+	rare := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "rare", TargetName: "customer-db", Environment: "production",
+	})
+	b := transitionRarityBaseline(predecessor, []fingerprint.Fingerprint{common, rare}, []int{95, 5})
+
+	eventTime := b.LastFingerprintTime.Add(time.Second)
+	feat := features.Features{Stable: rare.Stable, Volatile: features.VolatileFeatures{Timestamp: eventTime}}
+
+	// Both weights nonzero: if double-counting were happening, this
+	// Score would exceed the markov-only Score below.
+	bothCfg := anomaly.DefaultConfig()
+	bothCfg.TransitionRarityWeight = 0.9
+	bothCfg.MarkovWeight = 0.9
+	bothResult := anomaly.Score(feat, rare, b, bothCfg)
+
+	markovOnlyCfg := anomaly.DefaultConfig()
+	markovOnlyCfg.MarkovWeight = 0.9
+	markovOnlyResult := anomaly.Score(feat, rare, b, markovOnlyCfg)
+
+	if diff := bothResult.Score - markovOnlyResult.Score; diff > 1e-9 || diff < -1e-9 {
+		t.Fatalf("Score with both weights set = %v, want exactly %v (markov-only) — transition_rarity's contribution must be fully suppressed when MarkovWeight > 0, not partially double-counted", bothResult.Score, markovOnlyResult.Score)
+	}
+
+	// transition_rarity must still be visible in Contributors (for
+	// explainability), just with no scoring effect.
+	var rarityContributor anomaly.Signal
+	found := false
+	for _, c := range bothResult.Contributors {
+		if c.Name == "transition_rarity" {
+			rarityContributor, found = c, true
+		}
+	}
+	if !found {
+		t.Fatalf("Contributors = %+v, want transition_rarity still reported for explainability", bothResult.Contributors)
+	}
+	if rarityContributor.Weight != 0 {
+		t.Errorf("transition_rarity Contributor.Weight = %v, want 0 (forced to zero when MarkovWeight > 0)", rarityContributor.Weight)
+	}
+	if rarityContributor.Value == 0 {
+		t.Errorf("transition_rarity Contributor.Value = 0, want > 0 (still computed/reported, only its Weight is suppressed)")
+	}
+
+	// Sanity: with neither weight set, Score is lower than either
+	// enabled-signal case above (setup check, not the main assertion).
+	neitherResult := anomaly.Score(feat, rare, b, anomaly.DefaultConfig())
+	if neitherResult.Score >= markovOnlyResult.Score {
+		t.Errorf("Score with neither weight = %v, want < markov-only Score = %v (setup check)", neitherResult.Score, markovOnlyResult.Score)
+	}
+}
+
+// TestScoreCombinedMarkovAndNGramSignalsRemainBounded proves task
+// 028's Markov signal interacts safely with task 027's n-gram signals
+// when both fire on the same event (they answer genuinely different
+// questions — see ADR 0013 § Relationship to bounded n-grams — so both
+// legitimately co-firing is expected, not a bug): the combined Score
+// stays finite and in [0,1], mirroring
+// TestScoreCombinedSequenceSignalsRemainBounded's own proof one
+// signal-pair over.
+func TestScoreCombinedMarkovAndNGramSignalsRemainBounded(t *testing.T) {
+	grandparent := fingerprint.Compute(stable("auth-service"))
+	predecessor := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "read_customer", TargetName: "customer-db", Environment: "production",
+	})
+	rare := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "rare", TargetName: "customer-db", Environment: "production",
+	})
+	common := fingerprint.Compute(features.StableFeatures{
+		ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryDB,
+		OperationName: "common", TargetName: "customer-db", Environment: "production",
+	})
+	b := ngramBaseline(grandparent, predecessor, []fingerprint.Fingerprint{common, rare}, []int{95, 5})
+
+	cfg := anomaly.DefaultConfig()
+	cfg.MarkovWeight = 1.0
+	cfg.NGramWeight = 1.0
+	cfg.NGramRarityWeight = 1.0
+	cfg.NoveltyWeight = 1.0
+	cfg.SensitiveTargetFloor = map[string]float64{"customer-db": 0.9}
+
+	eventTime := b.LastFingerprintTime.Add(time.Second)
+	feat := features.Features{Stable: rare.Stable, Volatile: features.VolatileFeatures{Timestamp: eventTime}}
+	got := anomaly.Score(feat, rare, b, cfg)
+
+	if !hasSignal(got.Contributors, "markov_surprisal") {
+		t.Errorf("Contributors = %+v, want markov_surprisal to fire (setup check)", got.Contributors)
+	}
+	if !hasSignal(got.Contributors, "ngram_rarity") {
+		t.Errorf("Contributors = %+v, want ngram_rarity to also fire (setup check)", got.Contributors)
+	}
+	if math.IsNaN(got.Score) || math.IsInf(got.Score, 0) {
+		t.Fatalf("Score = %v with Markov and n-gram signals firing together, want a finite number", got.Score)
+	}
+	if got.Score < 0 || got.Score > 1 {
+		t.Fatalf("Score = %v with Markov and n-gram signals firing together, want in [0,1]", got.Score)
+	}
+}
+
 func hasSignal(signals []anomaly.Signal, name string) bool {
 	for _, s := range signals {
 		if s.Name == name {

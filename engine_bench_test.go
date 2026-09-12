@@ -107,6 +107,34 @@ func BenchmarkEngineAnalyzeNGram(b *testing.B) {
 	}
 }
 
+// BenchmarkEngineAnalyzeMarkov measures the same steady-state pipeline
+// as BenchmarkEngineAnalyze, but with task 028's markov_surprisal
+// signal enabled (MarkovWeight > 0). warmUpEngine's 30 repeated
+// self-transitions clear MinTransitionObservations (20) well before
+// the steady-state calls begin, so markov_surprisal computes its full
+// arithmetic on every call rather than short-circuiting on the
+// cold-start gate — mirroring BenchmarkEngineAnalyzeTransitionRarity's
+// own reuse of warmUpEngine one level over. Compare against
+// BenchmarkEngineAnalyze (MarkovWeight defaults to 0, i.e. the task
+// 027 baseline) to see this signal's own added cost through the full
+// pipeline.
+func BenchmarkEngineAnalyzeMarkov(b *testing.B) {
+	cfg := anomaly.DefaultConfig()
+	cfg.MarkovWeight = 0.7
+	engine := trustvian.NewEngine(trustvian.WithPolicy(riskGatedPolicy()), trustvian.WithAnomalyConfig(cfg))
+	ctx := context.Background()
+
+	lastWarmUp := warmUpEngine(b, engine, ctx)
+	steadyStateTS := lastWarmUp.Add(time.Second)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := engine.Analyze(ctx, paymentEventAt(10, "steady-state", steadyStateTS)); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 // BenchmarkEngineAnalyzeParallel measures the same steady-state pipeline
 // under concurrent calls from multiple goroutines, since Analyze is the
 // primary hot path and Engine is documented as safe for concurrent use.

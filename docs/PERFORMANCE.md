@@ -462,13 +462,99 @@ signal actually fires (a genuinely unseen 3-gram), mirroring
 `ngramRaritySignal`'s cost when it actually fires** — a rare
 (2-of-52), but seen and past-minimum-support 3-gram, so the `Detail`
 string is built; the roughly 2x cost over `BenchmarkScoreTransitionRarity`
-(296 B/5 allocs) is expected, not a red flag — this benchmark's own
-fixture construction does twice as much `Baseline.Observe` work per
-repeat (three `Observe` calls — grandparent, predecessor, destination —
-versus two for the pairwise case), and `ngramRaritySignal` itself does
-one more map lookup (`TrigramContinuationTotal` in addition to
-`TrigramCounts`) than `transitionRaritySignal`'s single
-`OutgoingTransitionTotal` scalar read.
+(296 B/5 allocs *as measured at task 027* — see task 028's own section
+below for why this number later changed, unrelated to n-grams) is
+expected, not a red flag — this benchmark's own fixture construction
+does twice as much `Baseline.Observe` work per repeat (three `Observe`
+calls — grandparent, predecessor, destination — versus two for the
+pairwise case), and `ngramRaritySignal` itself does one more map lookup
+(`TrigramContinuationTotal` in addition to `TrigramCounts`) than
+`transitionRaritySignal`'s single `OutgoingTransitionTotal` scalar
+read.
+
+### v0.6 task 028 (Markov Transition Scoring)
+
+Measured same environment (Go 1.27, darwin/arm64, Apple M3 Pro).
+"Before" is task 027 (Bounded n-gram Detection) re-measured on this
+same machine in a disposable `git worktree` at commit `e31875f`, the
+same same-machine-A/B discipline every prior v0.6 task's own entry
+used:
+
+| Benchmark | Before (task 027) | After (task 028) |
+|---|---:|---:|
+| `BenchmarkScoreKnownFamiliar` | 205.7–210.7 ns/op, 0 B/op, 0 allocs | 255.0–260.5 ns/op, 0 B/op, 0 allocs |
+| `BenchmarkScoreTransitionRarity` | 434.2–437.3 ns/op, 296 B/op, 5 allocs | 722.0–745.4 ns/op, 648 B/op, 9 allocs |
+| `BenchmarkScoreMarkovSurprisal` (new) | — | 722.0–728.9 ns/op, 648 B/op, 9 allocs |
+| `BenchmarkScoreMarkovLookup` (new, below minimum support) | — | 280.7–285.7 ns/op, 112 B/op, 2 allocs |
+| `BenchmarkEngineAnalyze` (end-to-end, read-only, default config) | 597.2–606.5 ns/op, 456 B/op, 17 allocs | 645.8–652.3 ns/op, 456 B/op, 17 allocs |
+| `BenchmarkEngineAnalyzeMarkov` (new, weight enabled) | — | 650.2–652.3 ns/op, 456 B/op, 17 allocs |
+
+**`Engine.Analyze`'s allocation profile is unchanged — `456 B/op, 17
+allocs/op`, identical to task 027 — but its latency grows by
+~45–50ns/call**, for the identical structural reason every prior v0.6
+task's own latency growth did: `markovSurprisalSignal` is called
+unconditionally alongside the existing transition signals whenever a
+predecessor exists, regardless of whether `MarkovWeight` is ever raised
+above its `0` default.
+
+- `BenchmarkScoreKnownFamiliar`: 205.7–210.7ns → 255.0–260.5ns
+  (+~47–52ns), still `0 B/0 allocs` — one more map lookup
+  (`PredecessorCounts`, already read by `transitionRaritySignal` too,
+  so no *additional* lookup here beyond the arithmetic) plus
+  `math.Log2` twice and a division, on a self-transition fixture where
+  the resulting frequency is 100% (`surprisal == 0`, `normalized ==
+  0`), so the early-return path is what runs, never building a
+  `Detail` string.
+- `BenchmarkEngineAnalyze`: 597.2–606.5ns → 645.8–652.3ns
+  (+~46–49ns), consistent with the isolated `anomaly.Score` delta
+  above.
+- `BenchmarkEngineAnalyzeMarkov` (weight actually set to `0.7`)
+  measures within noise of `BenchmarkEngineAnalyze` on the same tree
+  (650.2–652.3ns vs. 645.8–652.3ns) — expected, since the weight only
+  changes whether `combine()` incorporates an already-computed,
+  already-fired `Value`, not whether the computation runs. (This
+  benchmark's own self-transition fixture also resolves to `surprisal
+  == 0`, so the delta here is smaller still than
+  `BenchmarkScoreMarkovSurprisal`'s own firing-case cost below.)
+
+**`BenchmarkScoreMarkovLookup`'s 112 B / 2 allocs is the common,
+non-firing case** — a predecessor below `MinTransitionObservations`,
+so `markovSurprisalSignal` takes its early-return path: one map read
+(`PredecessorCounts`), one field read (`OutgoingTransitionTotal`), one
+comparison, no `math.Log2`, no `Detail` string. The 112 B / 2 allocs
+here come from `anomaly.Score`'s own surrounding `categorical_novelty`/
+`Contributors` slice machinery on this fixture's otherwise-empty
+baseline, not from this signal itself.
+
+**`BenchmarkScoreMarkovSurprisal`'s 648 B / 9 allocs is
+`markovSurprisalSignal`'s cost when it actually fires** — a rare
+(2-of-52), but seen and past-minimum-support transition, so the
+`Detail` string (`fmt.Sprintf`, plus two `math.Log2` calls and a
+division) is built, mirroring `BenchmarkScoreTransitionRarity`'s own
+choice to benchmark the firing case.
+
+**`BenchmarkScoreTransitionRarity`'s allocation profile genuinely
+changed (296 B/5 allocs at task 027 → 648 B/9 allocs at task 028), and
+this was deliberately left uncorrected, unlike task 027's own
+`BenchmarkScoreTransitionDeviation` fix.** The two cases differ in
+kind: task 027's leak was a genuine fixture accident (a benchmark that
+predated `Baseline.PreviousFingerprintID`'s mere existence happened to
+leave it non-empty, activating an unrelated signal it was never meant
+to exercise, fixable with a one-line, test-only reset). This one is
+not fixable the same way, because it is not an accident:
+`markovSurprisalSignal` shares `transitionRaritySignal`'s *exact* gate
+by deliberate design (see
+[docs/adr/0013](adr/0013-first-order-markov-surprisal-without-duplicate-evidence.md) —
+both read identical `count`/`total` state under the identical
+`MinTransitionObservations` threshold), so any fixture with enough
+history to fire `transition_rarity` necessarily has enough to fire
+`markov_surprisal` too, regardless of `MarkovWeight`'s own value
+(`Score`'s append condition is `Value > 0`, weight-independent — the
+same "always compute" precedent every prior signal already
+established). There is no way to isolate `transitionRaritySignal`'s
+cost alone anymore without breaking the minimum-support gate it itself
+needs to fire. Reported here in full, not hidden, per this codebase's
+own "report as found" benchmark discipline.
 
 ## Reading the numbers
 
