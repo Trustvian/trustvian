@@ -35,6 +35,7 @@ here, not moved or rewritten.
 | Explainability | `TestEvaluateAlwaysProducesNonEmptyExplanationReason` in [`internal/policy/policy_test.go`](../internal/policy/policy_test.go) |
 | Alert/notification delivery integrity | `TestSendSignsPayloadCorrectly`, `TestSendTamperedPayloadFailsVerification`, `TestSendDoesNotLeakSecret`, `TestNewWebhookSinkRejectsNonHTTPS`, `TestNewWebhookSinkRejectsLoopbackDestination`, `TestSendRespectsTimeout`, `TestSendPayloadTooLargeMakesNoNetworkCall` in [`alert/webhook_test.go`](../alert/webhook_test.go) |
 | Configuration-input validation | `TestValidateRejectsUnsupportedVersion`, `TestValidateRejectsInvalidDefaultDecision`, `TestValidateRejectsInvalidRuleDecision`, `TestValidateRejectsInvalidActorType`, `TestValidateRejectsInvalidOperationCategory`, `TestValidateRejectsInvalidRiskLevel`, `TestValidateRejectsDuplicateRuleName`, `TestValidateRejectsEmptyRuleName`, `TestValidateRejectsTooManyRules`, `TestValidateRejectsOverlongName` in [`config/validate_test.go`](../config/validate_test.go); `TestLoadRejectsUnknownTopLevelField`, `TestLoadRejectsUnknownNestedField`, `TestLoadRejectsDuplicateYAMLKeys`, `TestLoadFileRejectsOversizedFile`, `TestLoadRejectsEmptyInput`, `TestLoadDoesNotPanicOnArbitraryInput`, `FuzzLoad` in [`config/load_test.go`](../config/load_test.go)/[`config/fuzz_test.go`](../config/fuzz_test.go) |
+| Anomaly configuration-input validation — weight/threshold ranges, negative-into-`uint64` rejection, backward-compatible zero-value default (`v0.7` task 033) | `TestValidateAnomalyConfigRejectsInvalidWeight`, `TestValidateAnomalyConfigRejectsInvalidPointerWeight`, `TestValidateAnomalyConfigRejectsInvalidZThreshold`, `TestValidateAnomalyConfigAcceptsZeroMinObservations`, `TestValidateAnomalyConfigRejectsInvalidSensitiveTargetFloor` in [`config/anomaly_test.go`](../config/anomaly_test.go); `TestCompileAnomalyZeroValueMatchesDefaultConfig`, `TestCompileAnomalyTranslatesEveryField` in [`config/anomaly_compile_test.go`](../config/anomaly_compile_test.go); `TestLoadAnomalyRejectsNegativeIntoUnsignedField`, `TestLoadAnomalyRejectsUnknownField`, `FuzzLoadAnomaly` in [`config/anomaly_load_test.go`](../config/anomaly_load_test.go) |
 | Alert configuration-input validation | `TestValidateAlertConfigRejectsUnsupportedVersion`, `TestValidateAlertConfigRejectsInvalidSeverity`, `TestValidateAlertConfigRejectsInvalidDecision`, `TestValidateAlertConfigRejectsInvalidRiskLevel`, `TestValidateAlertConfigRejectsInvalidActorType`, `TestValidateAlertConfigRejectsInvalidTargetCategory`, `TestValidateAlertConfigRejectsInvalidMinAnomalyScore`, `TestValidateAlertConfigRejectsInvalidMaxTrustScore`, `TestValidateAlertConfigRejectsDuplicateRuleName`, `TestValidateAlertConfigRejectsEmptyRuleName`, `TestValidateAlertConfigRejectsTooManyRules` in [`config/alert_test.go`](../config/alert_test.go); `TestLoadAlertsRejectsUnknownField`, `TestLoadAlertsRejectsDuplicateYAMLKeys`, `TestLoadAlertsFileRejectsOversizedFile`, `TestLoadAlertsRejectsEmptyInput`, `FuzzLoadAlerts` in [`config/alert_load_test.go`](../config/alert_load_test.go) |
 | Sequence state (memory bounds, ordering, cross-actor isolation) | `TestBaselineObservePredecessorCountsIsBounded`, `TestBaselineObserveOutOfOrderEventDoesNotRecordOrCorruptTransition`, `TestBaselineObservePredecessorCountsIsImmutable` in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestInMemoryObserveConcurrentTransitionTracking` in [`internal/store/store_test.go`](../internal/store/store_test.go); `TestDefaultConfigTransitionWeightIsOptIn`, `TestScoreTransitionDeviation` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeTransitionDeviationEndToEnd` in [`engine_test.go`](../engine_test.go) |
 | Transition rarity — cold start, counter overflow, poisoning, actor isolation (`v0.6` task 026) | `TestBaselineObserveManyDistinctTransitionsStayBounded`, `TestBaselineObserveOutgoingTransitionTotalIsImmutable` in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestScoreTransitionRarityColdStart`, `TestScoreTransitionRarityNeverExceedsBounds`, `TestDefaultConfigTransitionRarityWeightIsOptIn` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeTransitionRarityCrossActorIsolation`, `TestAnalyzeTransitionRarityScoresBeforeLearning`, `TestObserveTransitionRarityLearnsOnlyFromEligibleDecisions` in [`engine_test.go`](../engine_test.go) |
@@ -602,6 +603,59 @@ bypass](#policy-bypass)): the *absence* of any alert
 rule is a safe, observable no-op, not a security regression the way an
 unconfigured `Policy` silently falling open would be.
 
+### Anomaly configuration-input validation
+
+**Threat:** the identical config-time-typo threat the two sections
+above address, applied to `AnomalyConfig` — a typo'd
+`delegaton_weight` (silently rejected as unknown, not the threat here)
+or a `delegation_weight: -1`/`NaN`/`1.5` (which would *not* be a typo
+Go's compiler could catch, since these are plain numeric fields) could
+otherwise silently disable a signal, silently over-drive `combine()`'s
+noisy-OR beyond its documented range, or — for a `NaN` specifically —
+propagate an undefined value into `Anomaly.Score` itself.
+
+**Status: implemented** ([task
+033](tasks/033-v07-stabilization-release-gate.md), `config`
+package — `AnomalyConfig`/`CompileAnomaly`/`LoadAnomaly`/
+`LoadAnomalyFile`, a third document/compilation path independent of
+`PolicyConfig`/`AlertConfig`, per [ADR
+0017](adr/0017-public-anomaly-configuration-boundary.md)).
+`(AnomalyConfig).Validate()` — called unconditionally inside
+`CompileAnomaly`, the same non-bypassable guarantee `PolicyConfig`/
+`AlertConfig.Validate` already have — rejects an unsupported schema
+version, and, for *every* weight-shaped field (both the plain
+`float64` opt-in weights and the three pointer fields `NoveltyWeight`/
+`LatencyWeight`/`ErrorWeight`), a value that is `NaN`, `±Inf`,
+negative, or greater than `1` — reusing `AlertConditionConfig`'s own
+`ErrInvalidThreshold`/`validThreshold` exactly, since both share the
+identical documented `[0, 1]` range. The two z-score threshold fields
+(`LatencyZThreshold`/`FrequencyZThreshold`) get their own check
+(`ErrInvalidZThreshold`: finite and `> 0`), a distinct range from a
+weight's — a threshold of `0` would be a division-by-zero risk
+downstream, and thresholds legitimately exceed `1` (they are
+standard-deviation multiples, not probabilities). Every
+`SensitiveTargetFloor` map value is validated identically to a weight.
+`MinObservations`/`MinTransitionObservations`/`MinNGramObservations`
+have no invalid `uint64` value — `0` is a genuine, internally-handled
+configuration, not a threat to guard against. Same file-parsing
+threats as `PolicyConfig`/`AlertConfig` (unknown-field rejection,
+duplicate-key rejection, bounded read, `FuzzLoadAnomaly`) are covered
+identically, reusing the same `go.yaml.in/yaml/v3` decoding path — and
+a negative YAML literal into a `uint64` field is rejected by the
+decoder itself, verified empirically
+(`TestLoadAnomalyRejectsNegativeIntoUnsignedField`), never silently
+wrapped into a huge positive value.
+
+**Backward compatibility is the primary security property this task
+protects.** `CompileAnomaly(AnomalyConfig{})` — every field at its Go
+zero value — must reproduce `anomaly.DefaultConfig()` exactly, not
+merely approximately: `TestCompileAnomalyZeroValueMatchesDefaultConfig`
+proves this with `reflect.DeepEqual`, because a silent drift here (e.g.
+a caller who forgets to set `NoveltyWeight` unintentionally disabling
+`categorical_novelty`) would be exactly the "never silently weaken a
+security policy" violation CLAUDE.md warns against, just one layer
+removed from `Policy` itself.
+
 ### Malformed events / extreme input values
 
 **Threat:** a producer sends a structurally valid but adversarial
@@ -983,14 +1037,19 @@ prove.
 | External destination drift | `categorical_novelty` via `Target.Category` | Depends entirely on the producer supplying normalized, truthful target metadata |
 | Combined (delegation + sequence + approval) | all of the above, composed via noisy-OR + `Policy` | Same limitations as each row above, individually — composition adds no new guarantee beyond them |
 
-Task 032 also found, and documents rather than silently works around,
-a public-API gap: `anomaly.Config` has no `config`-package equivalent
-of `policy.Policy`'s `config.CompilePolicy` path, so an OSS consumer
-outside this module cannot enable the `delegation_deviation`/`v0.6`
-sequence signals through public API alone — only the approval
-mechanism (row 3) is demonstrable that way today. See
+Task 032 found, and [task
+033](tasks/033-v07-stabilization-release-gate.md) closed, a public-API
+gap: `anomaly.Config` had no `config`-package equivalent of
+`policy.Policy`'s `config.CompilePolicy` path, so an OSS consumer
+outside this module could not enable the `delegation_deviation`/`v0.6`
+sequence signals through public API alone. `config.AnomalyConfig`/
+`CompileAnomaly` (see the "Anomaly configuration-input validation"
+section above and [ADR
+0017](adr/0017-public-anomaly-configuration-boundary.md)) now closes
+that gap — every row in the table above, including the combined
+scenario, is demonstrable through public API alone. See
 [examples/ai-agent-security](../examples/ai-agent-security/)'s own
-README for the worked example and the gap's exact boundary.
+README for the worked example.
 
 ## Explainability as a security property
 

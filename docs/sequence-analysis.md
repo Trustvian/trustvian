@@ -138,7 +138,7 @@ threat model this closes.
 
 ## Activation
 
-Purely a Go SDK option — no new activation mechanism:
+A Go SDK option, in-module:
 
 ```go
 cfg := anomaly.DefaultConfig()
@@ -147,12 +147,23 @@ cfg.TransitionWeight = 0.7 // opt-in: defaults to 0
 engine := trustvian.NewEngine(trustvian.WithAnomalyConfig(cfg))
 ```
 
-There is no CLI flag or Collector config field for this yet (see
-[task 025's Non-Goals](tasks/025-sequence-analysis-foundation.md#non-goals))
-— a single-event CLI invocation has no predecessor to evaluate a
-transition against in the first place, and wiring it into the
-Collector processor is separate, later work once a real consumer needs
-it.
+or, since [task 033](tasks/033-v07-stabilization-release-gate.md),
+through public API/config — no `internal/anomaly` import required —
+and the CLI's own `trustvian analyze/baseline build --anomaly-config
+<path>` flag:
+
+```go
+cfg := config.AnomalyConfig{Version: config.AnomalySchemaVersionV1, TransitionWeight: 0.7}
+ac, err := config.CompileAnomaly(cfg)
+engine := trustvian.NewEngine(trustvian.WithAnomalyConfig(ac))
+```
+
+See [Anomaly Configuration Guide](anomaly-config-guide.md) for the
+full field reference. The Collector processor does not yet gain
+parity — `processor/go.mod` still pins `v0.5.0`, predating this
+capability (and every other `v0.6`/`v0.7` one) equally; that is
+separate, later work once the pinned dependency is bumped, not a gap
+specific to this signal.
 
 ## Transition rarity (`v0.6` task 026)
 
@@ -250,12 +261,20 @@ frequency(A, B -> C) = TrigramCounts_C[{A,B}] / TrigramContinuationTotal_B[A]
   `combine()`'s noisy-OR is not redesigned for this; every contribution
   is already clamped before multiplying, so the combined score stays
   bounded regardless. See ADR 0012's own section on this.
-- **Activation** is the identical `WithAnomalyConfig` pattern:
+- **Activation** is the identical `WithAnomalyConfig` pattern (in-module):
 
   ```go
   cfg := anomaly.DefaultConfig()
   cfg.NGramWeight = 0.7       // opt-in: defaults to 0
   cfg.NGramRarityWeight = 0.7 // opt-in: defaults to 0
+  ```
+
+  or, through public API/config (see [Anomaly Configuration
+  Guide](anomaly-config-guide.md)):
+
+  ```go
+  cfg := config.AnomalyConfig{Version: config.AnomalySchemaVersionV1, NGramWeight: 0.7, NGramRarityWeight: 0.7}
+  ac, err := config.CompileAnomaly(cfg)
   ```
 
 ## What's next

@@ -746,6 +746,28 @@ to `recordPredecessor`'s already-measured cost
 (`BenchmarkObserveTransition`) — no dedicated new
 `internal/baseline` benchmark was added for this reason.
 
+### v0.7 task 033 (Public Anomaly Configuration & Stabilization)
+
+Measured same environment (Go 1.27, darwin/arm64, Apple M3 Pro). This
+task adds a config-compilation boundary, not a hot-path change —
+`CompileAnomaly` runs once, at `Engine` construction, identical to
+`CompilePolicy`'s own existing discipline (see [ADR
+0017](adr/0017-public-anomaly-configuration-boundary.md)):
+
+| Benchmark | Result |
+|---|---:|
+| `BenchmarkCompileAnomaly` (`config`, setup-path only) | 55.99 ns/op, 48 B/op, 1 alloc/op |
+| `BenchmarkValidateAnomaly` (`config`, `Validate` alone) | 32.30 ns/op, 0 B/op, 0 allocs/op |
+| `BenchmarkEngineAnalyze`/`BenchmarkEngineAnalyzeDelegationAbsent` (root, before and after) | 456 B/op, 17 allocs/op — unchanged |
+
+**No hot-path cost, confirmed by the unchanged pair.** Nothing on
+`Engine.Analyze`'s own call path invokes `CompileAnomaly`, `Validate`,
+or any other `config` package function — `Engine` stores only the
+already-compiled `anomaly.Config` value `WithAnomalyConfig` received.
+`BenchmarkCompileAnomaly`'s one allocation is the `map[string]float64`
+copy for a populated `SensitiveTargetFloor`; a config with none
+allocates nothing.
+
 ## Reading the numbers
 
 **Session-to-session `ns/op` moved broadly; allocation counts didn't —

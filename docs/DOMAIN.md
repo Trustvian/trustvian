@@ -205,7 +205,7 @@ says to add only when needed, not speculatively.
 ## Anomaly
 
 `internal/anomaly.Score(Features, Fingerprint, Baseline, Config)
-Anomaly` combines up to eleven independent signals via a **noisy-OR**
+Anomaly` combines up to twelve independent signals via a **noisy-OR**
 combination — `score = 1 - Π(1 - value_i · weight_i)` — chosen
 specifically because a single severe signal should dominate the
 result, not be diluted by averaging against several unrelated benign
@@ -224,20 +224,26 @@ signals:
 | `ngram_deviation` (`v0.6` task 027) | The 3-gram (the two fingerprints immediately preceding this one) has never before led to this one, for this actor (`TrigramCounts_C[{A,B}] == 0`). Requires both a predecessor and a grandparent fingerprint to exist. **Contributes 0 to `Score` by default** — see [Sequence-aware detection](#sequence-aware-detection) below |
 | `ngram_rarity` (`v0.6` task 027) | That same 3-gram *has* been observed before, but rarely: `1 - (TrigramCounts_C[{A,B}] / TrigramContinuationTotal_B[A])`, gated on `TrigramContinuationTotal_B[A] >= Config.MinNGramObservations`. Mutually exclusive with `ngram_deviation` for the same 3-gram. **Contributes 0 to `Score` by default** — see [Sequence-aware detection](#sequence-aware-detection) below |
 | `markov_surprisal` (`v0.6` task 028) | The identical seen-transition evidence `transition_rarity` reads, through a different, unbounded-then-normalized curve: `normalized(-log2(P(B\|A)))`. A monotonic reparameterization of `transition_rarity`, not new evidence — when this signal's weight is enabled, `transition_rarity`'s own contribution to `Score` is forced to zero for that call (still reported in `Contributors`, never double-counted). **Contributes 0 to `Score` by default** — see [Sequence-aware detection](#sequence-aware-detection) below |
+| `delegation_deviation` (`v0.7` task 031) | `Context.DelegatedFrom` (via `Volatile.DelegatedFrom`) names a delegator this *actor* has never received delegation from before (`Baseline.DelegatorCounts[delegator] == 0`) — actor-scoped, not per-Fingerprint. Evaluated only when the event carries a delegator at all. Binary seen/unseen, mirroring `transition_deviation`'s exact shape — deliberately not a rarity estimate. **Contributes 0 to `Score` by default** — see [AI Agent behavioral context](#ai-agent-behavioral-context) below |
 
-**Eight of the eleven ship inert.** `DefaultConfig()` leaves
+**Nine of the twelve ship inert.** `DefaultConfig()` leaves
 `SensitiveTargetFloor` empty (so `sensitive_target` never fires until an
 operator names their sensitive destinations), and sets
 `FrequencyWeight`, `TimePatternWeight`, `TransitionWeight`,
-`TransitionRarityWeight`, `NGramWeight`, `NGramRarityWeight`, and
-`MarkovWeight` all to `0` (so `frequency_deviation`,
-`time_pattern_deviation`, `transition_deviation`, `transition_rarity`,
-`ngram_deviation`, `ngram_rarity`, and `markov_surprisal` are all
+`TransitionRarityWeight`, `NGramWeight`, `NGramRarityWeight`,
+`MarkovWeight`, and `DelegationWeight` all to `0` (so
+`frequency_deviation`, `time_pattern_deviation`, `transition_deviation`,
+`transition_rarity`, `ngram_deviation`, `ngram_rarity`,
+`markov_surprisal`, and `delegation_deviation` are all
 detected and reported in `Contributors`,
 but multiply to nothing inside the noisy-OR). In every case the
 mechanism is complete and tested; only the deployment-specific value that
 makes it count is left to the operator, because no default is correct
-everywhere.
+everywhere. Since `v0.7` task 033, every one of these weights (plus
+`SensitiveTargetFloor` and the maturity/threshold fields) is
+configurable through public API — see
+[Anomaly Configuration Guide](anomaly-config-guide.md) and [ADR
+0017](adr/0017-public-anomaly-configuration-boundary.md).
 
 `time_pattern_deviation` ships opt-in for a second, distinct reason
 beyond calibration: `HourActivity`'s per-bucket EWMA (see Baseline above)

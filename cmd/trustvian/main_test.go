@@ -176,6 +176,82 @@ func TestRunBaselineBuildAcceptsConfigFlag(t *testing.T) {
 	}
 }
 
+// TestRunAnalyzeAcceptsAnomalyConfigFlag is task 033's own CLI-wiring
+// proof, mirroring TestRunBaselineBuildAcceptsConfigFlag's shape for
+// --anomaly-config: a valid anomaly config file is accepted and
+// analysis proceeds normally — this fixture's own weights
+// (delegation/n-gram) don't fire for a plain, non-agent event, so the
+// point here is that the flag is wired at all, not that it changes
+// this specific event's Decision.
+func TestRunAnalyzeAcceptsAnomalyConfigFlag(t *testing.T) {
+	stdout, stderr, code := captureOutput(t, func() int {
+		return run([]string{"analyze", "--anomaly-config", "testdata/anomaly-valid.yaml", "testdata/normal.json"})
+	})
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "Decision:") {
+		t.Fatalf("stdout = %q, want a rendered report", stdout)
+	}
+}
+
+// TestRunAnalyzeInvalidAnomalyConfigFailsClosed mirrors
+// TestRunAnalyzeInvalidConfigFailsClosed for --anomaly-config: an
+// explicitly supplied anomaly config that fails to load/compile must
+// produce a non-zero exit and no analysis output.
+func TestRunAnalyzeInvalidAnomalyConfigFailsClosed(t *testing.T) {
+	stdout, stderr, code := captureOutput(t, func() int {
+		return run([]string{"analyze", "--anomaly-config", "testdata/anomaly-invalid.yaml", "testdata/normal.json"})
+	})
+
+	if code == 0 {
+		t.Fatalf("exit code = 0, want non-zero for an invalid anomaly config file")
+	}
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty — no analysis must run when the anomaly config fails to load", stdout)
+	}
+	if !strings.Contains(stderr, "delegaton_weight") {
+		t.Fatalf("stderr = %q, want it to identify the unrecognized field", stderr)
+	}
+}
+
+// TestRunAnalyzeMissingAnomalyConfigFailsClosed mirrors
+// TestRunAnalyzeMissingConfigFailsClosed for --anomaly-config.
+func TestRunAnalyzeMissingAnomalyConfigFailsClosed(t *testing.T) {
+	stdout, stderr, code := captureOutput(t, func() int {
+		return run([]string{"analyze", "--anomaly-config", "testdata/does-not-exist.yaml", "testdata/normal.json"})
+	})
+
+	if code == 0 {
+		t.Fatalf("exit code = 0, want non-zero for a missing anomaly config file")
+	}
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty — no analysis must run when the anomaly config file is missing", stdout)
+	}
+	if stderr == "" {
+		t.Fatalf("stderr is empty, want an error message")
+	}
+}
+
+// TestRunBaselineBuildAcceptsAnomalyConfigFlag mirrors
+// TestRunBaselineBuildAcceptsConfigFlag for --anomaly-config: both
+// subcommands share the same newEngine helper, and a regression that
+// wired the flag into one but not the other would otherwise go
+// unnoticed.
+func TestRunBaselineBuildAcceptsAnomalyConfigFlag(t *testing.T) {
+	stdout, stderr, code := captureOutput(t, func() int {
+		return run([]string{"baseline", "build", "--anomaly-config", "testdata/anomaly-valid.yaml", "testdata/corpus.json"})
+	})
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "Events processed:") {
+		t.Fatalf("stdout = %q, want a rendered summary", stdout)
+	}
+}
+
 func TestRunAnalyzeAnomalousEventIsBlocked(t *testing.T) {
 	stdout, stderr, code := captureOutput(t, func() int {
 		return run([]string{"analyze", "testdata/anomalous.json"})

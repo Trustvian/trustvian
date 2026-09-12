@@ -23,13 +23,13 @@ gate — [025](tasks/025-sequence-analysis-foundation.md),
 [026](tasks/026-transition-rarity.md),
 [027](tasks/027-bounded-ngram-detection.md),
 [028](tasks/028-markov-transition-scoring.md), and
-[029](tasks/029-v06-stabilization-release-gate.md); `v0.7` has its
-foundation and its first behavioral-policy slice scoped and done —
-[014](tasks/014-ai-agent.md) and
-[030](tasks/030-approval-aware-policy-semantics.md) — [031](tasks/031-delegation-behavioral-semantics.md)
-now joins them, with 032 (Agent Security Scenario Validation) and 033
-(`v0.7` Stabilization & Release Gate) named as the remaining sequence,
-not yet task-filed.
+[029](tasks/029-v06-stabilization-release-gate.md); `v0.7` has all
+five of its slices scoped and done, including its own stabilization
+gate — [014](tasks/014-ai-agent.md),
+[030](tasks/030-approval-aware-policy-semantics.md),
+[031](tasks/031-delegation-behavioral-semantics.md),
+[032](tasks/032-agent-security-scenario-validation.md), and
+[033](tasks/033-v07-stabilization-release-gate.md).
 
 Cross-references: [ARCHITECTURE.md](ARCHITECTURE.md) (system shape),
 [DOMAIN.md](DOMAIN.md) (what exists today), [SECURITY.md](SECURITY.md)
@@ -1282,37 +1282,52 @@ regression, a session-cardinality re-run, a non-agent regression, and
 an identity-confidence-independence check round out the eleven new
 tests.
 
-**One genuine gap surfaced, reported, not silently patched:**
+**One genuine gap surfaced by task 032, closed by task 033:**
 `anomaly.Config` (unlike `policy.Policy`, which got a public
-`config.CompilePolicy` path in `v0.5`) has no public-API equivalent —
-an OSS consumer outside this module cannot raise
+`config.CompilePolicy` path in `v0.5`) had no public-API equivalent —
+an OSS consumer outside this module could not raise
 `DelegationWeight`/`NGramWeight`/any `v0.6`/`v0.7` signal weight above
-its default-`0` opt-in value. This means the one fully-public,
-`internal/`-import-free example this task added
-([`examples/ai-agent-security`](../examples/ai-agent-security/)) can
-demonstrate task 030's approval mechanism end-to-end (a genuinely
-differentiated `ALLOW`/`BLOCK` `Decision`, the first example in this
-directory to have one), but not task 031's delegation signal or
-`v0.6`'s sequence signals — those remain validated only inside this
-module's own test suite (`scenario_test.go`, using
-`trustvian.WithAnomalyConfig`). This gap is real and is not this
-task's to fix — see the task file's own Findings section for why a
-speculative `config.AnomalyConfig` was not added here.
+its default-`0` opt-in value, by any means. Task 032 reported this
+rather than patching it speculatively mid-scenario-audit; task 033
+below is where it was actually fixed.
 
-**What's next (illustrative, unscoped — none of this is implemented
-or task-filed yet).** Tasks 014, 030, 031, and 032 are validated
-foundation slices, not a shipped milestone. Only **033** remains
-(**015** and **016** stay reserved for MCP and Control respectively):
+**Task 033 — v0.7 Stabilization & Release Gate — is done.** [Task file
+033](tasks/033-v07-stabilization-release-gate.md) closed the gap task
+032 found: `config.AnomalyConfig` (new), compiled by
+`config.CompileAnomaly` into the exact `anomaly.Config` value
+`trustvian.WithAnomalyConfig` already accepted — a third independent
+document alongside `PolicyConfig`/`AlertConfig`, mirroring
+`CompilePolicy`'s exact shape (see [ADR
+0017](adr/0017-public-anomaly-configuration-boundary.md)). Every
+existing `anomaly.Config` field is now publicly configurable; none was
+newly invented. `CompileAnomaly(AnomalyConfig{})` reproduces
+`anomaly.DefaultConfig()` byte-for-byte, proven by
+`TestCompileAnomalyZeroValueMatchesDefaultConfig` — existing callers
+who configure nothing see unchanged behavior. The CLI gained a matching
+`--anomaly-config <path>` flag on both `analyze` and `baseline build`.
+[`examples/ai-agent-security`](../examples/ai-agent-security/) was
+rewritten to demonstrate the full combined scenario (delegation +
+sequence + approval) through public config alone, with a
+`main_test.go` proving it from within the genuinely separate `examples`
+Go module — the mandatory external-consumer proof, run as real
+`go test`, not just `go build`. A full `v0.7` regression re-run (all of
+tasks 014/030/031/032's own tests, plus every `v0.6` sequence test)
+passed under `go test ./... -race -count=1` with zero changes to
+`internal/anomaly`, `internal/baseline`, `internal/policy`, or
+`engine.go` itself.
 
-- **033 — v0.7 Stabilization & Release Gate.** Mirrors
-  [024](tasks/024-v05-release-gate.md)/[029](tasks/029-v06-stabilization-release-gate.md)'s
-  shape: re-audit 014/030/031/032 against source, confirm no
-  regression, confirm documentation currency, decide whether the
-  `anomaly.Config` public-API gap 032 surfaced blocks `v0.7.0` or is
-  explicitly deferred, before `v0.7.0` tags.
+**Acceptance criteria.** See
+[033-v07-stabilization-release-gate.md](tasks/033-v07-stabilization-release-gate.md).
 
-It remains its own explicitly-scoped task file, written when that
-slice actually starts — not speculatively now.
+**`v0.7` is release-ready.** All five tasks (014, 030, 031, 032, 033)
+are done; the one blocker task 032 found is resolved, not deferred.
+`v0.7.0` has not been tagged — tagging and publishing the release
+remain a separate, explicit human action, matching every prior
+milestone's own gate (`v0.5.0`'s [task 024](tasks/024-v05-release-gate.md),
+`v0.6.0`'s [task 029](tasks/029-v06-stabilization-release-gate.md)).
+
+**015** and **016** remain reserved for MCP and Control respectively —
+neither was touched or reused by any `v0.7` task.
 
 ## v0.8 — Production Runtime & Storage
 

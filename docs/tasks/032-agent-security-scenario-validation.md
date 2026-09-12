@@ -3,10 +3,12 @@
 **Milestone:** v0.7 · **Depends on:** [014](014-ai-agent.md),
 [030](030-approval-aware-policy-semantics.md),
 [031](031-delegation-behavioral-semantics.md) (this task validates
-their composition, adds nothing new to any of them) · **Blocks:** 033 — v0.7 Stabilization & Release Gate
-(not yet task-filed; see [ROADMAP.md § v0.7](../ROADMAP.md#v07--ai-agent-behavioral-security)) —
-the stabilization gate audits this task's findings, including the
-public-API gap below, before `v0.7.0` tags.
+their composition, adds nothing new to any of them) · **Blocks:**
+[033](033-v07-stabilization-release-gate.md) — the stabilization gate
+audits this task's findings, including the public-API gap below (and
+closes it — see [033](033-v07-stabilization-release-gate.md) and [ADR
+0017](../adr/0017-public-anomaly-configuration-boundary.md)), before
+`v0.7.0` tags.
 
 ## Objective
 

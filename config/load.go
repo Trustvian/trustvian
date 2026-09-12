@@ -160,3 +160,56 @@ func LoadAlertsFile(path string) (AlertConfig, error) {
 	}
 	return cfg, nil
 }
+
+// LoadAnomaly decodes data as a schema-v1 YAML document directly into
+// an AnomalyConfig, and validates the result before returning it — the
+// AnomalyConfig analogue of Load/LoadAlerts, deliberately a separate
+// document (see config/anomaly.go's package comment and ADR 0017).
+// Same strictness as Load/LoadAlerts: unrecognized fields and
+// duplicate mapping keys are both rejected.
+func LoadAnomaly(data []byte) (AnomalyConfig, error) {
+	if len(bytes.TrimSpace(data)) == 0 {
+		return AnomalyConfig{}, ErrEmptyInput
+	}
+
+	var cfg AnomalyConfig
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err != nil {
+		if errors.Is(err, io.EOF) {
+			return AnomalyConfig{}, ErrEmptyInput
+		}
+		return AnomalyConfig{}, fmt.Errorf("config: decode: %w", err)
+	}
+
+	if err := cfg.Validate(); err != nil {
+		return AnomalyConfig{}, err
+	}
+	return cfg, nil
+}
+
+// LoadAnomalyFile reads the file at path (bounded to
+// maxConfigFileSize, the same bound Load/LoadAlerts use) and calls
+// LoadAnomaly on its contents. Same caller-controlled-path discipline
+// as LoadFile/LoadAlertsFile: no directory scanning, no auto-discovery.
+func LoadAnomalyFile(path string) (AnomalyConfig, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return AnomalyConfig{}, fmt.Errorf("config: open %s: %w", path, err)
+	}
+	defer f.Close()
+
+	data, err := io.ReadAll(io.LimitReader(f, maxConfigFileSize+1))
+	if err != nil {
+		return AnomalyConfig{}, fmt.Errorf("config: read %s: %w", path, err)
+	}
+	if len(data) > maxConfigFileSize {
+		return AnomalyConfig{}, fmt.Errorf("%w: %s (max %d bytes)", ErrFileTooLarge, path, maxConfigFileSize)
+	}
+
+	cfg, err := LoadAnomaly(data)
+	if err != nil {
+		return AnomalyConfig{}, fmt.Errorf("config: %s: %w", path, err)
+	}
+	return cfg, nil
+}

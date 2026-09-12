@@ -171,12 +171,54 @@ exercising delegation, sequence, and approval evidence together — with
 zero new detectors and no evidence double-counting. Trustvian does not
 provide authenticated delegation or an approval workflow; both remain
 exactly the boundaries tasks 030/031 already documented. This task also
-found, and documents rather than works around, a real gap: unlike
-`policy.Policy` (publicly configurable since `v0.5` via
-`config.CompilePolicy`), `anomaly.Config` has no public equivalent —
-see [`examples/ai-agent-security`](examples/ai-agent-security/) for
-what is (task 030's approval mechanism) and isn't (delegation/sequence
-signals) demonstrable through public API alone today.
+found a real gap — `anomaly.Config`, unlike `policy.Policy` (publicly
+configurable since `v0.5`), had no public equivalent — and [task
+033](docs/tasks/033-v07-stabilization-release-gate.md) closed it:
+`config.AnomalyConfig`, compiled by `config.CompileAnomaly`, is now the
+public path to every `v0.6`/`v0.7` signal weight, and
+[`examples/ai-agent-security`](examples/ai-agent-security/) demonstrates
+the full combined scenario — delegation, sequence, and approval
+together — through public config alone, no `internal/*` import
+anywhere. **`v0.7` is now release-ready** (all five tasks — 014, 030,
+031, 032, 033 — done); tagging `v0.7.0` remains a separate, explicit
+human action, exactly like every prior milestone.
+
+### Configuring `v0.6`/`v0.7` behavioral signals
+
+Every opt-in signal below ships **disabled by default** — enabling one
+requires deliberate configuration, through public API only:
+
+```go
+cfg := config.AnomalyConfig{
+	Version:          config.AnomalySchemaVersionV1,
+	DelegationWeight: 0.7, // task 031 — familiar vs. novel delegator
+	NGramWeight:      0.9, // v0.6 — bounded 3-gram sequence novelty
+}
+ac, err := config.CompileAnomaly(cfg)
+// ...
+engine := trustvian.NewEngine(trustvian.WithAnomalyConfig(ac))
+```
+
+or, from a YAML file (`config.LoadAnomalyFile`, or
+`trustvian analyze/baseline build --anomaly-config <path>` from the
+CLI):
+
+```yaml
+version: v1
+delegation_weight: 0.7
+ngram_weight: 0.9
+```
+
+`TransitionWeight`/`TransitionRarityWeight` (`v0.6` pairwise
+transitions), `MarkovWeight` (`v0.6` first-order severity curve), and
+`SensitiveTargetFloor` (a fixed risk floor for specific destinations)
+follow the identical pattern — see
+[docs/anomaly-config-guide.md](docs/anomaly-config-guide.md) for the
+full field list, defaults, and valid ranges. Approval-aware `Policy`
+(task 030) is configured separately, via
+`config.PolicyConfig`/`config.CompilePolicy` (see
+[docs/policy-guide.md](docs/policy-guide.md)) — approval is policy
+data, never an anomaly weight.
 
 **Trustvian OSS is meant to be a complete, standalone,
 production-usable behavioral security product on its own** — detect,
@@ -188,10 +230,8 @@ alert sink (Slack/Teams/PagerDuty) — declarative *alert* configuration
 itself is
 now implemented (see above); wiring it into the CLI or the Collector
 processor is deliberately deferred, since neither has an alert-delivery
-flow yet for it to plug into — a public `config`-package equivalent
-for `anomaly.Config` (the gap task 032 surfaced), `v0.7` stabilization
-and release-gating, a production-grade persistent store beyond
-`FileStore`, and
+flow yet for it to plug into — a production-grade persistent store
+beyond `FileStore`, and
 release/operational engineering (CI, Docker image, SBOM). See
 [`docs/ROADMAP.md`](docs/ROADMAP.md#the-oss--enterprise-product-boundary)
 for the explicit OSS/Control boundary and the full milestone sequence

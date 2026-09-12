@@ -146,9 +146,40 @@ trustvian analyze --config trustvian.yaml event.json
 
 See [CLI Guide § --config](cli-guide.md#--config-path).
 
+## Enabling behavioral signals (`v0.6`/`v0.7`)
+
+Sequence/Markov/delegation detection (`transition_deviation`,
+`ngram_deviation`, `markov_surprisal`, `delegation_deviation`, ...)
+all ship **opt-in, disabled by default** — every existing user's
+behavior stays unchanged until deliberately configured. As of
+[task 033](tasks/033-v07-stabilization-release-gate.md), enabling them
+follows the identical pattern as Policy above, through a second,
+independent document:
+
+```go
+cfg, err := config.LoadAnomalyFile("anomaly.yaml")
+if err != nil {
+	panic(err)
+}
+ac, err := config.CompileAnomaly(cfg)
+if err != nil {
+	panic(err)
+}
+engine := trustvian.NewEngine(trustvian.WithAnomalyConfig(ac))
+```
+
+```bash
+trustvian analyze --anomaly-config anomaly.yaml event.json
+```
+
+See [Anomaly Configuration Guide](anomaly-config-guide.md) for the
+full field reference (every weight/threshold, its default, and its
+valid range).
+
 ## Where to next
 
 - Writing custom rules (`BLOCK`/`ALERT`/`ALLOW` decisions): [Policy Guide](policy-guide.md)
+- Enabling anomaly signals: [Anomaly Configuration Guide](anomaly-config-guide.md)
 - Feeding in OpenTelemetry spans: [OpenTelemetry Adapter](OPENTELEMETRY.md)
 - Four worked real-world scenarios: [Use Cases](use-cases.md)
 - How the pieces fit together: [Architecture](ARCHITECTURE.md)

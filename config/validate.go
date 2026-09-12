@@ -30,6 +30,14 @@ var (
 	ErrInvalidThreshold        = errors.New("config: threshold must be a finite number in [0, 1]")
 	ErrUnsupportedAlertVersion = errors.New("config: unsupported alert config version")
 	ErrInvalidApprovalStatus   = errors.New("config: invalid approval_status")
+
+	ErrUnsupportedAnomalyVersion = errors.New("config: unsupported anomaly config version")
+	// ErrInvalidZThreshold is distinct from ErrInvalidThreshold: a
+	// z-score threshold is a standard-deviation multiple (e.g. 3.0),
+	// never bounded to [0, 1] the way a weight/probability-like
+	// threshold is — see anomaly.Config.LatencyZThreshold/
+	// FrequencyZThreshold's own "Must be > 0" doc comments.
+	ErrInvalidZThreshold = errors.New("config: z-threshold must be a finite number greater than 0")
 )
 
 // Bounds on config-authored input. Configuration is operator-authored
@@ -291,4 +299,85 @@ func (c AlertConditionConfig) validate(path string) error {
 // (MaxTrustScore).
 func validThreshold(v float64) bool {
 	return !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0 && v <= 1
+}
+
+// validZThreshold reports whether v is finite and strictly positive —
+// the documented range every anomaly.Config z-score threshold field
+// requires ("Must be > 0"). Weights use validThreshold's [0, 1] range;
+// a z-threshold is a standard-deviation multiple, an unrelated scale.
+func validZThreshold(v float64) bool {
+	return !math.IsNaN(v) && !math.IsInf(v, 0) && v > 0
+}
+
+// Validate reports whether cfg is a well-formed AnomalyConfig: a
+// recognized schema version and every set field within its documented
+// range. Validate returns the first problem it finds, mirroring
+// PolicyConfig.Validate/AlertConfig.Validate's own "first error wins"
+// convention.
+//
+// Validate is called internally by CompileAnomaly, but is also exposed
+// standalone for the same reason PolicyConfig.Validate/
+// AlertConfig.Validate are: a caller can validate a config without
+// compiling it.
+func (cfg AnomalyConfig) Validate() error {
+	if cfg.Version != AnomalySchemaVersionV1 {
+		return fmt.Errorf("%w: %q (supported: %q)", ErrUnsupportedAnomalyVersion, cfg.Version, AnomalySchemaVersionV1)
+	}
+
+	// MinObservations has no invalid uint64 value: 0 is a genuine,
+	// internally-handled configuration ("everything is immediately
+	// mature" — see anomaly.Score's own familiarity computation), not
+	// an error, and every other uint64 value is equally well-defined.
+	if cfg.LatencyZThreshold != nil && !validZThreshold(*cfg.LatencyZThreshold) {
+		return fmt.Errorf("latency_z_threshold: %w: %v", ErrInvalidZThreshold, *cfg.LatencyZThreshold)
+	}
+	if cfg.FrequencyZThreshold != nil && !validZThreshold(*cfg.FrequencyZThreshold) {
+		return fmt.Errorf("frequency_z_threshold: %w: %v", ErrInvalidZThreshold, *cfg.FrequencyZThreshold)
+	}
+	if cfg.NoveltyWeight != nil && !validThreshold(*cfg.NoveltyWeight) {
+		return fmt.Errorf("novelty_weight: %w: %v", ErrInvalidThreshold, *cfg.NoveltyWeight)
+	}
+	if cfg.LatencyWeight != nil && !validThreshold(*cfg.LatencyWeight) {
+		return fmt.Errorf("latency_weight: %w: %v", ErrInvalidThreshold, *cfg.LatencyWeight)
+	}
+	if cfg.ErrorWeight != nil && !validThreshold(*cfg.ErrorWeight) {
+		return fmt.Errorf("error_weight: %w: %v", ErrInvalidThreshold, *cfg.ErrorWeight)
+	}
+	if !validThreshold(cfg.FrequencyWeight) {
+		return fmt.Errorf("frequency_weight: %w: %v", ErrInvalidThreshold, cfg.FrequencyWeight)
+	}
+	if !validThreshold(cfg.TimePatternWeight) {
+		return fmt.Errorf("time_pattern_weight: %w: %v", ErrInvalidThreshold, cfg.TimePatternWeight)
+	}
+	if !validThreshold(cfg.TransitionWeight) {
+		return fmt.Errorf("transition_weight: %w: %v", ErrInvalidThreshold, cfg.TransitionWeight)
+	}
+	// MinTransitionObservations, like MinObservations above, has no
+	// invalid uint64 value — 0 means "any nonzero total is enough" in
+	// transitionRaritySignal/markovSurprisalSignal, a valid, if
+	// extreme, configuration.
+	if !validThreshold(cfg.TransitionRarityWeight) {
+		return fmt.Errorf("transition_rarity_weight: %w: %v", ErrInvalidThreshold, cfg.TransitionRarityWeight)
+	}
+	if !validThreshold(cfg.NGramWeight) {
+		return fmt.Errorf("ngram_weight: %w: %v", ErrInvalidThreshold, cfg.NGramWeight)
+	}
+	// MinNGramObservations: same reasoning as MinTransitionObservations
+	// above — 0 is a valid, extreme configuration, not an error.
+	if !validThreshold(cfg.NGramRarityWeight) {
+		return fmt.Errorf("ngram_rarity_weight: %w: %v", ErrInvalidThreshold, cfg.NGramRarityWeight)
+	}
+	if !validThreshold(cfg.MarkovWeight) {
+		return fmt.Errorf("markov_weight: %w: %v", ErrInvalidThreshold, cfg.MarkovWeight)
+	}
+	if !validThreshold(cfg.DelegationWeight) {
+		return fmt.Errorf("delegation_weight: %w: %v", ErrInvalidThreshold, cfg.DelegationWeight)
+	}
+	for target, floor := range cfg.SensitiveTargetFloor {
+		if !validThreshold(floor) {
+			return fmt.Errorf("sensitive_target_floor[%q]: %w: %v", target, ErrInvalidThreshold, floor)
+		}
+	}
+
+	return nil
 }

@@ -194,20 +194,32 @@ a method signature:
   *implementing* an interface (not just calling a function) requires
   naming the type (see [ADR 0007](adr/0007-alert-package-is-public.md)).
 - `config.PolicyConfig`/`PolicyRule`/`PolicyCondition` — an external
-  caller must construct one (by hand today; from a parsed file, once a
-  loader exists) to express custom policy behavior at all.
+  caller must construct one (by hand, or via `config.LoadFile`) to
+  express custom policy behavior at all.
+- `config.AnomalyConfig` (`v0.7` task 033) — the identical pattern,
+  one stage earlier in the pipeline: an external caller constructs
+  this to configure behavioral scoring, never
+  `internal/anomaly.Config` directly.
 
 `policy.Policy`/`Condition`/`Rule`/`Decision`, `anomaly.Config`,
 `trust.Config`, and `store.Store` implementations all stay
 `internal/`: no external caller needs to *construct* any of them by
-name — `config.CompilePolicy` is the one exported function that
-produces a `policy.Policy` for pass-through use, exactly the boundary
-[ADR 0008](adr/0008-policy-config-boundary.md) chose instead of
-promoting `internal/policy` itself. See [Go SDK Guide § the
-public/internal boundary today](sdk-guide.md#the-publicinternal-boundary-today)
-for what remains not yet configurable this way (`anomaly.Config`,
-`trust.Config`), and [Limitations](../README.md#limitations) for the
-current state.
+name. `config.CompilePolicy`/`config.CompileAnomaly` are the two
+exported functions that produce a `policy.Policy`/`anomaly.Config` for
+pass-through use — the identical boundary [ADR
+0008](adr/0008-policy-config-boundary.md) established for Policy in
+`v0.5`, extended to Anomaly configuration by [ADR
+0017](adr/0017-public-anomaly-configuration-boundary.md) in `v0.7`:
+
+```text
+config.PolicyConfig  → CompilePolicy  → policy.Policy   → Engine
+config.AnomalyConfig → CompileAnomaly → anomaly.Config   → Engine
+```
+
+`trust.Config` is the one config type this pattern has not yet reached
+— see [Go SDK Guide § the public/internal boundary
+today](sdk-guide.md#the-publicinternal-boundary-today) and
+[Limitations](../README.md#limitations) for the current state.
 
 **Why `internal/otel` is the only package that imports OpenTelemetry.**
 The core engine (`event` through `internal/policy`, and `Engine`
