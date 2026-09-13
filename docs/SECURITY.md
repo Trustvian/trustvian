@@ -911,7 +911,11 @@ the AI-agent case specifically; a few are explicitly future work.
   input, not a computation](../.claude/rules/security.md)) — an AI
   agent is no different from a service or user actor in this respect.
   Verifying the calling agent's real identity is the deploying
-  application's authentication layer's job, upstream of Trustvian.
+  application's authentication layer's job, upstream of Trustvian. A
+  future generalization of this boundary — consuming, not verifying,
+  identity/delegation/approval confidence uniformly — is planned, not
+  scoped: see [ROADMAP.md § Runtime Identity &
+  Provenance](ROADMAP.md#runtime-identity--provenance).
 - **Delegation abuse** (an attacker forging `DelegatedFrom` to make an
   unauthorized action appear delegated from a trusted agent, or to
   behaviorally "normalize" a forged delegator through repetition).
@@ -935,7 +939,9 @@ the AI-agent case specifically; a few are explicitly future work.
   cryptographic/authenticated provenance verification (signed
   delegation claims, a trusted orchestration layer, identity-provider
   evidence) is distinct, larger, out-of-scope future work — see ADR
-  0016's own "Future trusted provenance" section.
+  0016's own "Future trusted provenance" section and [ROADMAP.md §
+  Runtime Identity & Provenance](ROADMAP.md#runtime-identity--provenance)
+  for the roadmap-level direction (planned, not yet scoped to a task).
 - **Approval self-assertion** (an agent's own event claiming
   `ApprovalStatus = Approved` and having that trusted merely because
   the event says so). **Status: `ApprovalStatus` now has a real
@@ -972,7 +978,10 @@ the AI-agent case specifically; a few are explicitly future work.
   that evidence came from. A future task adding provenance
   verification (e.g., a signed assertion from a specific
   authorization system) is a distinct, larger piece of work this task
-  deliberately did not build ahead of a concrete need.
+  deliberately did not build ahead of a concrete need — see
+  [ROADMAP.md § Runtime Identity &
+  Provenance](ROADMAP.md#runtime-identity--provenance) for the
+  roadmap-level direction (planned, not yet scoped to a task).
 - **Tool abuse (unexpected/rare tool usage).** **Status: implemented,
   via existing signals.** `categorical_novelty` and
   `transition_deviation`/`transition_rarity` already flag a tool an

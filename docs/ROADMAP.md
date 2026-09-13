@@ -1329,6 +1329,313 @@ milestone's own gate (`v0.5.0`'s [task 024](tasks/024-v05-release-gate.md),
 **015** and **016** remain reserved for MCP and Control respectively —
 neither was touched or reused by any `v0.7` task.
 
+## Beyond v0.7 — Strategic Capability Direction
+
+**Status: planning only. Nothing below this heading is scoped,
+designed, or implemented.** No task file exists for anything in this
+section; none is created until a milestone below actually starts,
+exactly like `v0.8`/`v0.9`/`v1.0` above already state their own
+scope before their own task files exist. This section does not
+renumber, move, or change the scope of `v0.8`, `v0.9`, `v1.0`,
+[Trustvian MCP](#trustvian-mcp), or [Control / Enterprise
+phase](#control--enterprise-phase) below — all four keep their
+existing meaning exactly as already written.
+
+**Why this section exists.** A competitive review of the AI-agent
+runtime-security landscape (agent/MCP discovery and runtime control,
+agent-runtime visibility and tool monitoring, memory/exfiltration
+threat coverage, prompt/content firewalls, tool-sequence and
+resource-abuse anomaly detection, and mature external policy
+evaluation) surfaced capability categories worth deliberately
+positioning Trustvian against — not to copy any one competitor's
+architecture, but to decide, in Trustvian's own terms, which
+categories strengthen its identity and which would dilute it.
+Trustvian's identity does not change:
+
+> An open-source, deterministic, explainable behavioral runtime
+> security and trust engine for services, APIs, workloads, humans, and
+> AI agents.
+
+Every candidate below was evaluated against this filter before being
+written down — reject or defer whatever fails most of these:
+
+1. Does it strengthen behavioral runtime security?
+2. Can it reuse `Event → Baseline → Anomaly → Trust → Policy`?
+3. Can it remain provider-neutral?
+4. Can it remain explainable?
+5. Can state remain bounded?
+6. Can the core work without an LLM?
+7. Does it create meaningful differentiation?
+8. Is it useful outside a single AI provider/framework?
+
+**Positioning, stated explicitly.** Trustvian is, and should remain:
+
+```text
+Open-source behavioral runtime security
++ trust evidence engine
++ policy enforcement
++ agent/service runtime visibility
+```
+
+Trustvian should **not** primarily position itself as a prompt
+firewall, an LLM proxy, a SIEM, an APM, an IAM, a workflow engine, or a
+generic observability platform — those systems integrate *with*
+Trustvian (via the OTel adapter, the alert webhook, a future policy
+adapter), they are not what Trustvian becomes.
+
+### Competitive capability matrix
+
+| Capability | Trustvian today | Priority | Strategic role |
+|---|---|---|---|
+| Behavioral anomaly (categorical/latency/error/frequency/time-pattern) | Implemented (`v0.1`–`v0.4`) | Core | Differentiator |
+| Sequence behavior (transition/n-gram/Markov) | Implemented (`v0.6`) | Core | Differentiator |
+| Delegation behavior | Implemented (`v0.7` task 031) | Core | Differentiator |
+| Approval-aware policy | Implemented (`v0.7` task 030) | Core | Differentiator |
+| Public anomaly/policy configuration | Implemented (`v0.5`, `v0.7` task 033) | Core | Adoption |
+| Agent tool / MCP behavioral security | Planned, not yet scoped to a version | P0 | Table stakes + differentiation |
+| Runtime identity & provenance | Planned, not yet scoped to a version | P0 | Differentiator |
+| Numeric behavioral baseline (resource abuse) | Planned, not yet scoped to a version | P1 | Differentiator |
+| Discovery / asset inventory (basic, single-deployment) | Planned, not yet scoped to a version | P1 | Table stakes |
+| Behavioral investigation / timeline (basic, SDK/CLI-level) | Planned, not yet scoped to a version | P1 | Differentiator |
+| Agent framework adapters | Planned, not yet scoped to a version | P1 | Adoption |
+| Security control plane (hosted, multi-deployment) | [Control / Enterprise phase](#control--enterprise-phase) | P1 | Productization |
+| Full investigation UI / case management | [Control / Enterprise phase](#control--enterprise-phase) | P2 | Productization |
+| Policy ecosystem (bundles, versioning, OPA adapter) | Planned, not yet scoped to a version | P2 | Enterprise-adjacent |
+| Response action execution (quarantine, rate-limit) | Planned, not yet scoped to a version | P2 | Enterprise-adjacent |
+| Provider-specific alert sinks (Slack/Teams/PagerDuty) | Already roadmapped, OSS scope — see [§ Alert & Notification phase](#alert--notification-phase) | P2 | Enterprise-adjacent |
+| SIEM integrations | Not yet roadmapped | P2 | Enterprise-adjacent |
+| Prompt/content security | [Future research](#future-research) — deferred | Deferred | Optional integration |
+| LLM-based intent classification | [Future research](#future-research) — deferred | Deferred | Optional integration |
+
+Capability rows already covered by an existing roadmap section link to
+it rather than duplicating it — most notably provider-specific alert
+sinks, which [§ Alert & Notification
+phase](#alert--notification-phase) already classifies as **OSS scope**,
+correcting the assumption that these are automatically an Enterprise
+concern.
+
+### Reusable behavioral primitives — a direction, not a redesign
+
+**Do not create a detector per metric or per category.** The existing
+engine already avoids this (`categorical_novelty` is one mechanism
+covering fingerprints; `transition_deviation`/`ngram_deviation` are
+one mechanism covering sequences of any length-2/3 shape;
+`delegation_deviation` reused the identical bounded-map pattern a
+third time — see [ADR
+0016](adr/0016-delegation-as-behavioral-evidence-not-provenance.md)'s
+own framing of this as a deliberate pattern, not a coincidence). Future
+work below should converge toward the same small set of general
+mechanisms rather than adding `CostDetector`, `LatencyDetector`,
+`RetryDetector`, `ToolDetector`, `MCPDetector`, one per surface:
+
+```text
+CategoricalBaseline  → tools, operations, destinations, MCP servers, providers
+NumericBaseline      → latency, cost, token usage, retries, call volume
+SequenceBaseline      → tool chains, workflows            (v0.6's existing model)
+RelationshipBaseline  → delegation, actor relationships   (task 031's existing model)
+ProvenanceEvidence    → identity/delegation/approval source confidence
+PolicyEvidence        → deterministic requirements Policy owns (task 030's existing model)
+```
+
+`SequenceBaseline`, `RelationshipBaseline`, and `PolicyEvidence`
+already exist under those names in spirit (`v0.6`, task 031, task 030
+respectively) — this is a naming/generalization direction for
+`internal/anomaly`/`internal/baseline`, not new capability. Whether
+`CategoricalBaseline`/`NumericBaseline` become real, named types or
+stay an informal pattern across signal implementations is an
+implementation decision for whichever milestone below actually adds
+the first numeric behavioral signal — not decided here. See [ARCHITECTURE.md
+§ Future architectural direction](ARCHITECTURE.md#future-architectural-direction-not-yet-implemented)
+for the durable version of this note.
+
+### Agent Tool & MCP Behavioral Security
+
+**Not the same thing as [Trustvian MCP](#trustvian-mcp) below — read
+both before assuming they overlap.** "Trustvian MCP" is Trustvian
+*exposing itself* as an MCP server (`get_behavior`, `get_trust_score`,
+...) to external tooling — an integration surface, task
+[015](tasks/015-trustvian-mcp.md). This section is the opposite
+direction: Trustvian *observing* MCP tool calls an AI agent makes,
+behaviorally, the same way it already observes any other tool call.
+
+**Objective.** Treat an MCP tool invocation as exactly what it already
+is in Trustvian's model — an `Operation{Category:
+OperationCategoryTool}` against a `Target` — and add only the one
+correlation dimension genuinely missing: which MCP server a tool call
+went through, distinct from which tool it invoked. Everything else this
+capability needs already shipped:
+
+```text
+Already shipped, reused as-is:
+  Tool identity                → Operation.Name / Target.Name (v0.1)
+  Tool sequence anomaly        → transition_deviation / ngram_deviation (v0.6)
+  Unexpected tool detection    → categorical_novelty (v0.1), proven for agents by task 014
+  Tool allow/deny policy       → policy.Condition on OperationCategory/TargetName (v0.1)
+  Approval for privileged tools → Context.ApprovalStatus + Policy (task 030)
+  Delegation into a tool call  → Context.DelegatedFrom (task 031)
+
+Genuinely new:
+  MCP server identity as a normalized dimension, distinct from tool identity
+  Unexpected-MCP-server detection (categorical_novelty applied to that new dimension)
+```
+
+**Why.** MCP tool execution is a major runtime boundary for AI agents,
+and Trustvian already understands behavioral operations and
+sequences — this is the smallest true gap between what ships and what
+a real MCP-heavy deployment needs, not a new subsystem.
+
+**Non-goals.** No MCP gateway or proxy (Trustvian does not sit in the
+MCP request path). No new `Tool`/`MCPServer` domain type — MCP server
+identity is a value on the existing `Target`/`Context` shape, the same
+way `DelegatedFrom`/`ApprovalStatus` were added to `Context` rather
+than inventing new types (tasks 014/030/031's own precedent). No
+per-provider MCP client implementation in Core — any real MCP
+transport/client code belongs in an adapter package, never
+`internal/anomaly`.
+
+**Dependencies.** `v0.1` (tool modeling), `v0.6` (sequence signals),
+`v0.7` tasks 014/030/031 (agent context, approval, delegation) — this
+capability is additive to all of them, not a rework.
+
+**Acceptance criteria.** Defined when this milestone's own task file is
+written — not before.
+
+### Runtime Identity & Provenance
+
+**Objective.** Trustvian's own semantics already, deliberately,
+distinguish *claimed* identity/delegation/approval from *verified*
+provenance (`.claude/rules/security.md` § "Identity is an input, not a
+computation"; ADR 0016's "Delegation as behavioral evidence, not
+provenance"; ADR 0015's approval trust-boundary section). This
+milestone turns that documented limitation into a capability: let
+Trustvian *consume* verified evidence when an integration can supply
+it, without ever requiring it.
+
+```text
+Event evidence → Provenance → Confidence → Trust
+```
+
+**Why this matters.** Behavioral evidence is much stronger when its
+provenance is trustworthy — a novel delegator claim from a
+cryptographically-verified orchestrator is different evidence from the
+identical claim with no verification behind it. Today, `Trust.Compute`
+already has exactly one analogous mechanism
+(`Actor.IdentityConfidence`, an opaque, externally-supplied confidence
+value Trustvian trusts but does not compute) — this capability
+generalizes that existing pattern to delegation and approval evidence,
+rather than inventing a new one.
+
+**Non-goals.** Trustvian does **not** become an IAM, an authentication
+service, or a signature-verification library. It consumes provenance
+evidence an integration's own trusted boundary already produced (e.g.
+a signed assertion, a platform-verified caller identity) — it does not
+issue identities, manage credentials, or replace an authorization
+system. No specific signing scheme is chosen here.
+
+**Scope direction, not a design.** A `Context`-level (or adjacent)
+confidence value per evidence type — delegation, approval, and
+possibly identity itself — read the same opaque, trusted way
+`IdentityConfidence` already is, feeding `trust.Compute` as one more
+input, never gating `delegation_deviation`'s or the approval policy
+condition's own evaluation (preserving ADR 0015/0016's existing
+"evidence, not enforcement" separation).
+
+**Dependencies.** `v0.7` tasks 014/030/031 (the evidence types this
+generalizes provenance for already exist).
+
+**Acceptance criteria.** Defined when this milestone's own task file is
+written — not before.
+
+### Behavioral Resource Abuse Detection
+
+**Objective.** Detect when an actor's *volume* of behavior — call
+rate, retry rate, latency, cost/token usage — deviates from its own
+learned normal, using one generic numeric-behavioral mechanism, not
+one bespoke detector per metric.
+
+```text
+Agent normally: 5-20 tool calls/session
+Observed:       700 tool calls/session
+→ behavioral resource anomaly (not "high CPU usage")
+```
+
+**Why.** The question is never "what is the absolute resource cost" —
+that is APM's question, not Trustvian's. The question is "is this
+actor behaving abnormally relative to what it has learned about
+itself," the identical question `frequency_deviation` (`v0.1`/task
+004) already answers for inter-event *timing* — this capability
+generalizes the same EWMA-mean/variance-and-z-score shape to other
+numeric dimensions (cost, retries, call volume), reusing
+`frequency_deviation`'s own statistical machinery conceptually, not
+duplicating a new formula per metric.
+
+**Non-goals.** Not an APM replacement — no dashboards of raw resource
+usage, no infrastructure metrics unrelated to actor behavior. No new
+per-metric detector; a single generic numeric-baseline mechanism
+should support every dimension listed above, per [§ Reusable
+behavioral primitives](#reusable-behavioral-primitives--a-direction-not-a-redesign).
+
+**Dependencies.** `v0.1` (`frequency_deviation`'s existing
+EWMA-mean/variance pattern is the direct statistical precedent).
+
+**Acceptance criteria.** Defined when this milestone's own task file is
+written — not before.
+
+### Sequencing relative to `v0.8`/`v0.9`
+
+The three capabilities above are, in priority order, the most likely
+candidates for the **next** milestone after `v0.7` in practice — but
+this planning pass does not renumber or reorder `v0.8`
+([Production Runtime & Storage](#v08--production-runtime--storage))
+or `v0.9` ([Operational Readiness](#v09--operational-readiness)),
+both of which already have defined scope. Whoever starts the next
+milestone decides the actual sequencing (these capabilities before
+`v0.8`/`v0.9`, interleaved, or after) — this section documents
+*priority*, not a forced version number.
+
+### Framework & policy adapters
+
+Two adoption-oriented directions, deliberately kept as **adapters**,
+never Core dependencies — the identical boundary
+[ADR 0003](adr/0003-opentelemetry-adapter-single-module.md) already
+draws for OTel:
+
+- **Agent framework adapters** (LangGraph, OpenAI Agents SDK,
+  Anthropic's agent/tool ecosystem, a generic HTTP middleware) — each
+  translates a framework's own callback/event shape into a canonical
+  `event.Event`, then calls the existing public SDK. Provider-specific
+  logic never enters `internal/anomaly` or any other Core package; see
+  [§ Package boundaries](ARCHITECTURE.md#package-boundaries) for why
+  this is enforced by Go's own `internal/` restriction, not just
+  convention.
+- **External policy evaluation (OPA)** — optional, not a replacement
+  for Trustvian's own native `Policy`. Trustvian's `Decision` already
+  has a place OPA could plug into as an alternative or additional
+  evaluator; this is not designed here, and Trustvian does not attempt
+  to recreate OPA's own maturity as a general-purpose policy language
+  (see `.claude/rules/architecture.md`'s "Policy is data" section for
+  why `policy.Policy`'s intentionally narrow, generic evaluator is not
+  aiming to become one).
+- **Policy simulation/dry-run and decision explanation tooling** — a
+  smaller, OSS-level, single-deployment idea distinct from "Central
+  policy management" (already Control's job, above): given a candidate
+  `PolicyConfig` and a corpus of past events, show what would have
+  changed. `policy.Policy.Evaluate` is already a pure function over
+  `Input`, and `Explanation` is already non-empty on every `Result` —
+  this is a CLI/SDK convenience over existing evaluation, not new
+  decision logic. Policy *bundle distribution/versioning across many
+  deployments* stays Control's job, per the existing "Central policy
+  management" item above.
+
+**Response action execution** (quarantine an actor, rate-limit,
+disable a tool, an external response webhook) is a distinct future
+direction from the two adapters above: Trustvian Core produces a
+deterministic `Decision`; *executing* an external action on that
+decision is an adapter/control-plane concern, mirroring the existing
+`Decision`-vs-`Alert`-vs-delivery separation
+(`alert.Evaluate`/`alert.Sink`) rather than a new Core responsibility.
+No specific response mechanism is designed here.
+
 ## v0.8 — Production Runtime & Storage
 
 **Objective.** OSS should be deployable as a real production system,
@@ -1487,7 +1794,16 @@ exception.
 above — `v1.0` is not gated on Trustvian Control existing, on MCP
 existing (see [Trustvian MCP](#trustvian-mcp) below), or on any
 Kafka/Redis/Kubernetes infrastructure without its own concrete
-milestone justification.
+milestone justification. **Also not gated on anything in [§ Beyond
+v0.7 — Strategic Capability
+Direction](#beyond-v07--strategic-capability-direction)** — agent
+tool/MCP behavioral security, runtime provenance, numeric behavioral
+baselines, discovery/inventory, and investigation/timeline are all
+genuinely valuable future OSS capabilities, none of them designed or
+scoped yet, and none of them retroactively expands what `v1.0` already
+means. Promoting one to a `v1.0` release-gate item is a decision for
+whoever schedules it as a real milestone, not implied by this planning
+pass.
 
 **Acceptance criteria.** All release-gate themes above verified
 against the real repository state; defined precisely (specific test
@@ -1496,6 +1812,13 @@ is written, mirroring how every prior milestone's acceptance criteria
 were only fixed once its task file existed.
 
 ## Trustvian MCP
+
+**Not the same thing as [Agent Tool & MCP Behavioral
+Security](#agent-tool--mcp-behavioral-security) above — the names
+share the word "MCP" but point in opposite directions.** This section
+is Trustvian *exposing itself* as an MCP server. The section above is
+Trustvian *observing* MCP tool calls an agent makes. Both may exist
+independently; neither depends on the other.
 
 **Objective.** Expose Trustvian's read/query surface
 (`get_behavior`, `get_trust_score`, `explain_decision`, etc.) to AI
@@ -1565,6 +1888,28 @@ placeholder today. Defines what Trustvian Control *would* need
 (consumes the OSS core as a dependency; never forks it) without
 speculatively designing dashboards, RBAC, or multi-tenancy now.
 
+**Elaborating "Investigation UI / case management" and "Fleet
+management" above, from a competitive-landscape review — still
+placeholder, still no design or implementation:** a *hosted,
+multi-deployment* control plane would plausibly expose actor/agent/
+service/MCP-server inventory, trust-score and anomaly-contributor
+history, policy-decision explanations, alert history, and a full
+investigation/case-management workflow across many deployments at
+once — none of this changes what's listed as non-goals below, and
+none of it duplicates Core's own scoring; a hosted control plane only
+*displays* evidence Core already produces (`Anomaly.Contributors`,
+`Trust`, `policy.Explanation`), it never recomputes it. **The
+single-deployment, read-only version of the same idea stays OSS**,
+per [§ The OSS / Enterprise product
+boundary](#the-oss--enterprise-product-boundary)'s own "behavioral
+inspection is OSS" principle — extending the existing `Result.Explain()`/
+CLI report to show one actor's own recent history, or listing the
+distinct `Fingerprint`s a `Store` already holds, is a **Go SDK/CLI**
+capability, not a Control one; only the *hosted, multi-tenant,
+cross-deployment* version of investigation/inventory is Control's
+job. Where exactly that line falls for a given feature is decided when
+this phase's own planning pass happens, not here.
+
 **Non-goals.** Everything in the list above and the original spec's
 Phase 6/7: web dashboard, central API, historical analytics, RBAC,
 SSO, multi-tenancy, audit, SIEM/Kafka integration, HA/horizontal
@@ -1612,6 +1957,32 @@ against the new goal rather than just carried over.
   [v0.6](#v06--behavioral-detection-depth)'s own architecture keeps ML
   as an optional plugin layer beneath the deterministic engine, never a
   dependency of the core detection path. No timeline.
+- **Prompt/content security** (prompt injection, indirect prompt
+  injection, DLP, malicious-link/content moderation, secret-leakage
+  detection in free-form text) — **research only, explicitly deferred,
+  never a core dependency.** These are genuinely useful capabilities
+  competitors in this space offer, and genuinely **not** what
+  Trustvian's deterministic, provider-neutral, LLM-independent core is
+  for — analyzing free-form prompt/completion content structurally
+  requires either an LLM or a content-specific model, which
+  [§ Beyond v0.7](#beyond-v07--strategic-capability-direction)'s own
+  filter (`Can the core work without an LLM?`) rejects for Core. If
+  ever built, it is a separate, optional adapter package (illustrative
+  name: `trustvian-content`) that normalizes its own findings into a
+  regular `event.Event`/`Event.Attributes` value or a `Policy`
+  condition input — the identical "adapter produces a canonical Event,
+  Core stays unaware of the adapter" shape [ADR
+  0003](adr/0003-opentelemetry-adapter-single-module.md) already
+  established for OTel. Not scheduled ahead of [§ Beyond
+  v0.7](#beyond-v07--strategic-capability-direction)'s P0/P1 items
+  unless a concrete consumer need changes that.
+- **LLM-based intent classification** (e.g. "is this tool call
+  off-task," "does this output look hallucinated") — **research only,
+  same reasoning as prompt/content security above**, and the same
+  non-goal this document's core principles already state
+  (`LLM-independent core`). If ever built, it is an optional evidence
+  source feeding `Policy`/`Anomaly.Contributors`, never a replacement
+  for deterministic behavioral scoring.
 - **Automatic sensitive-target classification** — **research only,
   unchanged.** Today `anomaly.Config.SensitiveTargetFloor` requires an
   operator to name sensitive destinations explicitly (see

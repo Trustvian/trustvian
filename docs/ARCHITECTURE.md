@@ -392,3 +392,123 @@ allocations. See [ADR 0005](adr/0005-fingerprint-computed-once-per-analyze.md).
   novelty, latency deviation, error deviation, and a sensitive-target
   floor). Add an interface when a second algorithm actually exists,
   not before.
+
+## Future architectural direction (not yet implemented)
+
+**Everything in this section is planning, not current architecture.**
+No type, package, or diagram element named here exists in source. See
+[docs/ROADMAP.md § Beyond v0.7 — Strategic Capability
+Direction](ROADMAP.md#beyond-v07--strategic-capability-direction) for
+the product-level reasoning; this section carries only the durable
+architectural shape, so it doesn't need to be re-derived if the
+roadmap's own prose changes.
+
+### Reusable behavioral primitives
+
+Future signals should converge on a small set of general mechanisms
+rather than one detector per metric or category — the same discipline
+that already kept `internal/anomaly` from growing a `LatencyDetector`,
+`ErrorDetector`, `ToolDetector`, etc. as separate types across `v0.1`–
+`v0.7`:
+
+```text
+CategoricalBaseline  → tools, operations, destinations, MCP servers, providers
+NumericBaseline      → latency, cost, token usage, retries, call volume
+SequenceBaseline      → tool chains, workflows            (v0.6's existing model)
+RelationshipBaseline  → delegation, actor relationships   (task 031's existing model)
+ProvenanceEvidence    → identity/delegation/approval source confidence
+PolicyEvidence        → deterministic requirements Policy owns (task 030's existing model)
+```
+
+`SequenceBaseline`/`RelationshipBaseline`/`PolicyEvidence` already
+exist in spirit under `internal/baseline`'s `PredecessorCounts`/
+`TrigramCounts` (`v0.6`), `DelegatorCounts` (task 031), and
+`internal/policy`'s `Condition`/`Unless` mechanism (task 030)
+respectively — this is a naming/generalization direction for
+`internal/anomaly`, not a new pipeline stage. Whether
+`CategoricalBaseline`/`NumericBaseline`/`ProvenanceEvidence` become
+real, named Go types, or stay an informal pattern each new signal
+implementation follows individually, is an implementation decision for
+whichever future milestone adds the first of them — not decided here.
+
+### Long-term system shape
+
+```text
+                    ┌─────────────────────────┐
+                    │ Runtime / Agents / APIs │
+                    └────────────┬────────────┘
+                                 │
+                       OTel / SDK / MCP
+                                 │
+                                 ▼
+                    ┌─────────────────────────┐
+                    │    Trustvian Core       │
+                    │                         │
+                    │ Event                   │
+                    │ Baseline                │
+                    │ Anomaly                 │
+                    │ Sequence                │
+                    │ Delegation              │
+                    │ Provenance   (planned)  │
+                    │ Trust                   │
+                    │ Policy                  │
+                    │ Decision                │
+                    └────────────┬────────────┘
+                                 │
+                 ┌───────────────┴──────────────┐
+                 │                              │
+                 ▼                              ▼
+        ┌─────────────────┐           ┌─────────────────┐
+        │ Trustvian       │           │ External        │
+        │ Control         │           │ Integrations    │
+        │ (planned)       │           │ (planned)       │
+        │                 │           │                 │
+        │ Inventory       │           │ OPA             │
+        │ Timeline        │           │ SIEM            │
+        │ Policies        │           │ Slack           │
+        │ Alerts          │           │ Teams           │
+        │ Investigation   │           │ PagerDuty       │
+        └─────────────────┘           └─────────────────┘
+```
+
+Everything under "Trustvian Core" above except `Provenance` already
+exists (see [§ The pipeline](#the-pipeline)); `Provenance` is
+`Actor.IdentityConfidence`'s existing "opaque, externally-supplied
+confidence" pattern, generalized to delegation/approval evidence — see
+[ROADMAP.md § Runtime Identity &
+Provenance](ROADMAP.md#runtime-identity--provenance). Neither
+"Trustvian Control" nor "External Integrations" is a new dependency of
+Core — this diagram shows what *consumes* Core, matching [§ The
+pipeline](#the-pipeline)'s existing "`Engine` is the composition root;
+no global engine, everything constructed and passed explicitly"
+discipline: Control and adapters receive `Result`/`Alert` values from
+a `*Engine` a caller already constructed, they never reach back into
+Core's own internals.
+
+### Architectural guardrails for this future work
+
+Restated here because they apply across every item above, not just
+one:
+
+```text
+Core remains provider-neutral.
+Core remains LLM-independent.
+No unbounded attacker-controlled state.
+High-cardinality fields do not become behavioral identity accidentally.
+Behavior is scored before learning.
+Learning eligibility remains explicit.
+Behavioral familiarity does not equal authorization.
+Evidence provenance does not equal behavioral familiarity.
+Policy owns deterministic requirements.
+Adapters translate external systems into canonical Trustvian concepts.
+Control plane consumes Core; it does not duplicate Core.
+Vendor-specific integrations stay outside Core.
+```
+
+Every one of these already holds for `v0.1`–`v0.7` (see [ADR
+0014](adr/0014-ai-agents-as-first-class-behavioral-actors.md), [ADR
+0015](adr/0015-approval-as-policy-evidence-not-behavioral-anomaly.md),
+[ADR 0016](adr/0016-delegation-as-behavioral-evidence-not-provenance.md)
+for where each was established and proven, not just asserted) — this
+list exists so a future contributor extending Core has the same bar
+stated once, in one place, rather than re-deriving it per milestone.
