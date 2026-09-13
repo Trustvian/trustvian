@@ -1575,6 +1575,62 @@ release-gate themes (correctness, performance, security, operations,
 documentation) this contract resolves into when the milestone is
 evaluated.
 
+### Beyond v1.0 — competitive positioning and strategic direction
+
+**Everything in this subsection is planning, not current
+implementation.** See [`docs/ROADMAP.md` § Beyond v0.7 — Strategic
+Capability Direction](docs/ROADMAP.md#beyond-v07--strategic-capability-direction)
+for the full reasoning and per-capability scope notes; this document
+carries only the product-positioning summary, not the architectural
+detail.
+
+**Positioning.** Trustvian is, and remains:
+
+```text
+Open-source behavioral runtime security
++ trust evidence engine
++ policy enforcement
++ agent/service runtime visibility
+```
+
+not primarily a prompt firewall, an LLM proxy, a SIEM, an APM, an IAM,
+a workflow engine, or a generic observability platform — those systems
+integrate with Trustvian; they are not what Trustvian becomes.
+
+**Differentiators** (capabilities no generic runtime-security or
+observability product has, because they require Trustvian's own
+deterministic behavioral model): deterministic behavioral baselines,
+bounded sequence learning, behavioral delegation analysis,
+approval-policy separation (behavioral familiarity is never
+authorization), behavioral provenance confidence, a cross-workload
+behavioral model (the same pipeline scores humans, services, and AI
+agents), an explainable trust score, and provider-neutral runtime
+evidence.
+
+**Table stakes** (necessary for competitive product maturity, not
+differentiating on their own): agent/MCP tool visibility, a basic
+asset/agent inventory, a dashboard-level view of that evidence, alert
+delivery, and SIEM/enterprise integrations. Trustvian should add
+enough of these to be operationally useful without letting them
+dilute the differentiators above.
+
+**PLANNED, not implemented** — the specific candidates evaluated
+against this positioning: agent tool & MCP behavioral security,
+runtime identity & provenance, behavioral resource-abuse detection
+(a generic numeric baseline, not per-metric detectors), a security
+control plane and basic/full investigation timeline (split
+OSS-single-deployment vs. Enterprise-hosted, per [§14](#14-enterprise-edition)/[§15](#15-control-dashboard)'s
+existing boundary), agent framework adapters, and an optional external
+policy adapter (OPA). None of these has a task file yet.
+
+**FUTURE / OPTIONAL, explicitly deferred**: prompt/content security
+(prompt injection, DLP, content moderation) and LLM-based intent
+classification. Both would require an LLM or a content-specific
+model, which conflicts with Trustvian's own `LLM-independent core`
+principle — if ever built, each is a separate, optional adapter
+package producing normal `Event`/`Policy` input, never a Core
+dependency.
+
 ### Historical framing (superseded)
 
 The phases below are this document's original, long-term framing,
