@@ -6,7 +6,8 @@ GO       := go
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build run demo baseline-demo test test-race bench vet fmt fmt-check tidy coverage install clean check examples
+.PHONY: help build run demo baseline-demo test test-race bench vet fmt fmt-check tidy coverage install clean check examples \
+	compose-up compose-down compose-smoke integration-postgres
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -61,6 +62,25 @@ clean: ## Remove build and coverage artifacts
 	rm -rf $(BIN_DIR) coverage.out coverage.html
 
 check: fmt-check vet build test-race ## Full local gate: fmt-check, vet, build, race tests
+
+COMPOSE_DIR  := deployments/docker-compose
+COMPOSE      := docker compose -f $(COMPOSE_DIR)/compose.yaml
+# Matches .env.example. Override on the command line to point the
+# integration suites at a different database.
+POSTGRES_DSN ?= postgres://trustvian:change-me@localhost:5433/trustvian?sslmode=disable
+
+compose-up: ## Start the reference Docker Compose deployment (see deployments/docker-compose/README.md)
+	$(COMPOSE) up -d --build
+
+compose-down: ## Stop the reference deployment, KEEPING the learned baseline volume
+	$(COMPOSE) down
+
+compose-smoke: ## Run the reference deployment's end-to-end smoke test
+	./$(COMPOSE_DIR)/smoke-test.sh
+
+integration-postgres: ## Run the PostgreSQL integration+stress suites against the Compose database
+	$(COMPOSE) up -d postgres
+	TRUSTVIAN_TEST_POSTGRES_DSN='$(POSTGRES_DSN)' $(GO) test -race ./...
 
 examples: ## Run every examples/* program and fail if any exits non-zero
 	@for d in examples/*/; do \

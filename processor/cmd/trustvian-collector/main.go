@@ -19,6 +19,7 @@ import (
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/confmap"
+	"go.opentelemetry.io/collector/confmap/provider/envprovider"
 	"go.opentelemetry.io/collector/confmap/provider/fileprovider"
 	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/exporter/debugexporter"
@@ -67,8 +68,21 @@ func main() {
 		Factories: components,
 		ConfigProviderSettings: otelcol.ConfigProviderSettings{
 			ResolverSettings: confmap.ResolverSettings{
-				URIs:              []string{"file:" + configPath},
-				ProviderFactories: []confmap.ProviderFactory{fileprovider.NewFactory()},
+				URIs: []string{"file:" + configPath},
+				// fileprovider reads the config; envprovider resolves
+				// ${env:VAR} references inside it. Both are the Collector's
+				// own upstream providers — no Trustvian-side interpolation
+				// engine exists or is needed.
+				//
+				// envprovider is what lets a deployment keep secrets out of
+				// its config file: the reference deployment passes its
+				// PostgreSQL DSN as an environment variable rather than
+				// writing credentials into collector.yaml. See
+				// deployments/docker-compose/.
+				ProviderFactories: []confmap.ProviderFactory{
+					fileprovider.NewFactory(),
+					envprovider.NewFactory(),
+				},
 			},
 		},
 	}

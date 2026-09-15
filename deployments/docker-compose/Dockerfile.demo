@@ -1,0 +1,28 @@
+# Builds the demo OTLP telemetry producer for the reference deployment.
+#
+# Same reference-build caveat as Dockerfile.collector: nothing here is an
+# official published artifact.
+
+FROM golang:1.27-alpine AS build
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+COPY processor/go.mod processor/go.sum ./processor/
+RUN cd processor && go mod download
+
+COPY . .
+
+RUN cd processor && CGO_ENABLED=0 go build -trimpath \
+        -o /out/demo-producer ./cmd/demo-producer
+
+# ---------------------------------------------------------------------
+FROM alpine:3.22
+
+RUN adduser -D -u 10001 trustvian
+
+COPY --from=build /out/demo-producer /usr/local/bin/demo-producer
+
+USER 10001:10001
+
+ENTRYPOINT ["/usr/local/bin/demo-producer"]

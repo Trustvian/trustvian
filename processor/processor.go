@@ -3,6 +3,7 @@ package trustvianprocessor
 import (
 	"context"
 	"fmt"
+	"io"
 	"sync"
 	"sync/atomic"
 
@@ -35,6 +36,16 @@ type trustvianProcessor struct {
 	engine *trustvian.Engine
 	next   consumer.Traces
 	logger *zap.Logger
+
+	// closeStore releases the configured Store's resources on Shutdown —
+	// the PostgreSQL backend owns a connection pool. Nil when the store
+	// holds nothing releasable, which is every case except PostgreSQL, so
+	// Shutdown must nil-check rather than assume.
+	//
+	// Held as a func rather than an io.Closer so the type assertion
+	// happens once at construction, where config.CompileStorage's
+	// documented lifecycle pattern belongs, instead of on every shutdown.
+	closeStore func()
 
 	processed     atomic.Uint64
 	invalid       atomic.Uint64
@@ -74,11 +85,42 @@ func newTrustvianProcessor(set component.TelemetrySettings, next consumer.Traces
 		opts = append(opts, trustvian.WithPolicy(p))
 	}
 
+	closeStore := func() {}
+	if cfg.Storage != nil {
+		sc, err := decodeStorage(cfg.Storage)
+		if err != nil {
+			return nil, err
+		}
+		// config.CompileStorage validates, connects, and migrates. Every
+		// failure returns a nil Store and an error, and returning that
+		// error here is what makes the fail-closed contract survive
+		// containerization: createTracesProcessor propagates it and the
+		// Collector refuses to start. A Collector that fell back to the
+		// in-memory store when its database was unreachable would keep
+		// scoring spans against state that silently evaporates on exit —
+		// see docs/SECURITY.md § Storage configuration.
+		s, err := config.CompileStorage(sc)
+		if err != nil {
+			return nil, fmt.Errorf("trustvianprocessor: storage: %w", err)
+		}
+		if c, ok := s.(io.Closer); ok {
+			closeStore = func() { _ = c.Close() }
+		}
+		opts = append(opts, trustvian.WithStore(s))
+
+		// The backend type, never the DSN. Knowing which store a Collector
+		// came up on is the first thing an operator wants from its logs;
+		// the connection string is a secret and must not appear in them.
+		set.Logger.Info("trustvianprocessor: storage backend initialized",
+			zap.String("type", string(sc.Type)))
+	}
+
 	return &trustvianProcessor{
-		engine:    trustvian.NewEngine(opts...),
-		next:      next,
-		logger:    set.Logger,
-		decisions: make(map[string]uint64),
+		engine:     trustvian.NewEngine(opts...),
+		next:       next,
+		logger:     set.Logger,
+		closeStore: closeStore,
+		decisions:  make(map[string]uint64),
 	}, nil
 }
 
@@ -95,7 +137,22 @@ func (p *trustvianProcessor) Capabilities() consumer.Capabilities {
 // itself (which is fully synchronous — see docs/PERFORMANCE.md
 // § Concurrency considerations in the core repository).
 func (p *trustvianProcessor) Start(_ context.Context, _ component.Host) error { return nil }
-func (p *trustvianProcessor) Shutdown(_ context.Context) error                { return nil }
+
+// Shutdown releases the configured Store's resources — for the PostgreSQL
+// backend, its connection pool. Without this, stopping a Collector left
+// server-side connections to be reaped by timeout rather than closed, and
+// a container restart loop would accumulate them.
+//
+// It does not flush or finalize anything: Observe commits synchronously
+// inside its own transaction, so there is never pending learned state to
+// lose at shutdown. That property is what makes a one-line Shutdown
+// correct here rather than the beginning of a graceful-drain mechanism.
+func (p *trustvianProcessor) Shutdown(_ context.Context) error {
+	if p.closeStore != nil {
+		p.closeStore()
+	}
+	return nil
+}
 
 // ConsumeTraces scores every span in td and forwards td (now enriched
 // in place) to the next consumer. A span that doesn't map to a

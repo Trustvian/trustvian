@@ -75,16 +75,33 @@ duplicated.
 
 ## Configuration
 
-`Config` has one field, `policy`, declaring a real Trustvian `Policy`
-in exactly the same schema the Go SDK
-(`config.LoadFile`/`config.CompilePolicy`) and the CLI
-(`trustvian analyze --config`) already consume — see the core
-repository's [Policy Guide](../docs/policy-guide.md) for the field
-reference. `WithAnomalyConfig`, `WithTrustConfig`, `WithStore`, and
-`WithContextRisk` remain unconfigurable from here for the same reason
-they always were (see below): every other Trustvian `Option` still
-takes a type from the core module's `internal/` packages that this
-module — a genuinely separate one — structurally cannot construct.
+`Config` has two fields, `policy` and `storage`, each declaring real
+Trustvian configuration in exactly the same schema the Go SDK and the CLI
+already consume — see the core repository's [Policy
+Guide](../docs/policy-guide.md) and [Storage
+Guide](../docs/storage-guide.md) for the field references.
+
+`storage` (added by core task 037) is what lets a Collector persist. Before
+it, this processor called `NewEngine` with at most `WithPolicy` and never
+`WithStore`, so every Collector deployment ran on Trustvian's non-durable
+in-memory default and discarded every learned baseline on restart. The
+block is decoded into `config.StorageConfig` and compiled by
+`config.CompileStorage`; this module contains no database code, no DSN
+parsing, and no storage configuration model of its own. An unreachable or
+misconfigured database fails Collector startup rather than silently falling
+back — and `Shutdown` releases the connection pool.
+
+Omitting `storage` keeps the in-memory default, so a config written before
+the field existed behaves identically.
+
+`WithAnomalyConfig`, `WithTrustConfig`, and `WithContextRisk` remain
+unconfigurable from here for the same reason they always were: those
+`Option`s take types from the core module's `internal/` packages that this
+module — a genuinely separate one — structurally cannot construct. `Store`
+is the exception precisely because core tasks 034–035 built a public
+compilation boundary for it; `AnomalyConfig` has one too
+(`config.CompileAnomaly`) and could be wired the same way when a
+deployment needs it.
 
 ```yaml
 processors:
@@ -99,7 +116,20 @@ processors:
             min_risk_level: critical
           decision: block
           reason: critical risk is blocked by configured policy
+
+    # Persist learned baselines, so they survive a Collector restart and
+    # are shared by every replica pointed at the same database.
+    storage:
+      version: v1
+      type: postgres
+      postgres:
+        # Supplied through the Collector's own ${env:...} provider, so the
+        # DSN — which carries a password — stays out of this file.
+        dsn: ${env:TRUSTVIAN_POSTGRES_DSN}
 ```
+
+For a complete, runnable version of the above, see the core repository's
+[reference Docker Compose deployment](../deployments/docker-compose/).
 
 **Omitting `policy:` entirely** preserves this processor's original
 behavior exactly: every span still resolves to
@@ -114,6 +144,12 @@ the whole Collector's startup — `CreateTraces` returns an error before
 any pipeline runs, never a fallback to the default policy at the first
 span.
 
+**An invalid or unreachable `storage:` block** fails startup the same way,
+and for a sharper reason: a Collector that fell back to in-memory storage
+when its configured database was unavailable would keep enriching spans
+with trust decisions derived from state that evaporates when the process
+exits, with nothing telling the operator their database was never used.
+
 Why `Config.Policy` is typed as a generic map (`map[string]any`)
 rather than `config.PolicyConfig` directly: see the core repository's
 [task 022](../docs/tasks/022-collector-config-integration.md) for the
@@ -125,13 +161,21 @@ by decoding with `go-viper/mapstructure/v2` pointed directly at those
 existing `yaml` tags, producing a real `config.PolicyConfig` with zero
 duplicate policy model anywhere in this module.
 
-`processor/go.mod` requires `github.com/Trustvian/trustvian v0.5.0` —
-the real, published release containing `config` — verified with a
-clean, workspace-free build: `GOWORK=off go build ./... && GOWORK=off
-go test ./... -race` succeeds using only that dependency, no local
-source involved. See task 022's own "Release / Module Compatibility"
-section for the history of this dependency (it briefly lagged behind
-the `config` package's own release between tasks 022 and 024).
+`processor/go.mod` carries a `replace` directive pointing at the
+repository root, so this module builds against the core module's source
+rather than a published tag. That changed in core task 037: the `storage`
+field needs `config.StorageConfig`, which does not exist in any released
+version (the newest tag is `v0.7.0`, and the `require` line still reads
+`v0.5.0` as a floor). Writing `require ... v0.8.0` before that tag exists
+would make this file assert something untrue.
+
+`GOWORK=off go build ./... && GOWORK=off go test -race ./...` still
+succeeds, and still proves what it did before — that this module needs no
+Go workspace — but it now resolves the core module through the replace
+rather than the module proxy. Core task 038 owns the release-time decision:
+bump to `v0.8.0` and drop the replace once tagged, or keep it. See task
+022's own "Release / Module Compatibility" section for this dependency's
+earlier history.
 
 ## `trustvian.behavior.id`
 

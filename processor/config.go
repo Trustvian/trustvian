@@ -31,8 +31,25 @@ import (
 // the one canonical config model exactly as written — no
 // processor-specific PolicyConfig/PolicyRule/PolicyCondition model is
 // introduced, and config.PolicyConfig itself is not modified.
+// Storage, when present, selects the Store the Engine persists learned
+// baselines into, using the same config.StorageConfig schema the Go SDK
+// and `trustvian analyze --storage-config` already consume. Omitting it
+// keeps NewEngine's own default in-memory store, so a Collector that
+// never configured storage behaves exactly as it did before this field
+// existed.
+//
+// This field is why a Collector deployment can persist at all. Before it,
+// newTrustvianProcessor called NewEngine with at most WithPolicy and
+// never WithStore, so every Collector ran on the non-durable default and
+// discarded every baseline on restart — the same gap task 034 found in
+// the CLI, in the one runtime that is actually long-lived.
+//
+// Typed as a generic map for the identical reason Policy is, and decoded
+// by decodeStorage below into the real config.StorageConfig. See
+// docs/tasks/037-reference-docker-compose-deployment.md.
 type Config struct {
-	Policy map[string]any `mapstructure:"policy,omitempty"`
+	Policy  map[string]any `mapstructure:"policy,omitempty"`
+	Storage map[string]any `mapstructure:"storage,omitempty"`
 }
 
 // decodePolicy converts the generic map Collector's decoder produced
@@ -59,6 +76,36 @@ func decodePolicy(raw map[string]any) (config.PolicyConfig, error) {
 	}
 	if err := decoder.Decode(raw); err != nil {
 		return config.PolicyConfig{}, fmt.Errorf("trustvianprocessor: policy: %w", err)
+	}
+	return cfg, nil
+}
+
+// decodeStorage is decodePolicy's exact counterpart for the `storage:`
+// block: a pure structural decode of Collector's generic map into the
+// canonical config.StorageConfig, using that type's own `yaml:"..."` tags
+// as the field mapping.
+//
+// It performs no validation, no defaulting, and — critically — no
+// database construction of its own. config.CompileStorage remains the
+// sole place a StorageConfig is validated and turned into a Store, so
+// this processor inherits every guarantee that function carries: the
+// fail-closed contract (a nil Store on any error, never a silent
+// downgrade to non-durable storage), the credential handling (the DSN is
+// never logged or wrapped into an error), and the schema-compatibility
+// checks. A processor-side pgx connection or DSN parser would have
+// forfeited all of it — see
+// docs/adr/0018-production-store-boundary-and-postgresql-direction.md.
+func decodeStorage(raw map[string]any) (config.StorageConfig, error) {
+	var cfg config.StorageConfig
+	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		TagName: "yaml",
+		Result:  &cfg,
+	})
+	if err != nil {
+		return config.StorageConfig{}, fmt.Errorf("trustvianprocessor: storage decoder: %w", err)
+	}
+	if err := decoder.Decode(raw); err != nil {
+		return config.StorageConfig{}, fmt.Errorf("trustvianprocessor: storage: %w", err)
 	}
 	return cfg, nil
 }

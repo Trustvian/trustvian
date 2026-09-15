@@ -1644,9 +1644,10 @@ No specific response mechanism is designed here.
 **Status: IN PROGRESS.** Tasks
 [034](tasks/034-production-store-contract-and-public-boundary.md),
 [035](tasks/035-postgresql-store-implementation.md), and
-[036](tasks/036-store-durability-concurrency-and-migration-hardening.md)
-are done; 037–038 are named below and not yet task-filed. **`v0.8` is not
-release-ready** — 037 and 038 remain.
+[036](tasks/036-store-durability-concurrency-and-migration-hardening.md),
+and [037](tasks/037-reference-docker-compose-deployment.md) are done; 038
+is named below and not yet task-filed. **`v0.8` is not release-ready** —
+038 remains.
 
 **Objective.** OSS should be deployable as a real production system,
 not only a library and a CLI against a local file.
@@ -1662,8 +1663,8 @@ applied to itself:
 | [034](tasks/034-production-store-contract-and-public-boundary.md) | Production Store Contract & Public Selection Boundary | **DONE** |
 | [035](tasks/035-postgresql-store-implementation.md) | PostgreSQL Store implementation | **DONE** |
 | [036](tasks/036-store-durability-concurrency-and-migration-hardening.md) | Store durability / concurrency / migration hardening | **DONE** |
-| 037 | Reference Docker Compose deployment | Next — not task-filed |
-| 038 | `v0.8` stabilization & release gate | Planned |
+| [037](tasks/037-reference-docker-compose-deployment.md) | Reference Docker Compose deployment | **DONE** |
+| 038 | `v0.8` stabilization & release gate | Next — not task-filed |
 
 **Task 034 — Production Store Contract & Public Selection Boundary — is
 done.** Starting this milestone surfaced a gap more basic than choosing
@@ -1830,10 +1831,60 @@ READ COMMITTED, deadlocks under single-row locking — are both unreachable
 by construction, so Trustvian performs no transaction retries and needs
 none.
 
+**Task 037 — Reference Docker Compose Deployment — is done.** The
+milestone's objective is that OSS be "deployable as a real production
+system, not only a library and a CLI against a local file." Three slices
+in, every guarantee was real and every demonstration was a Go test. This
+one is runnable:
+
+```text
+demo producer ──OTLP──▶ OTel Collector ──▶ Trustvian processor
+                                       ──▶ Engine ──▶ PostgreSQL
+```
+
+[`deployments/docker-compose/`](../deployments/docker-compose/) starts
+PostgreSQL and a Trustvian-enabled Collector, analyzes real OTLP telemetry
+against a PostgreSQL-backed baseline, and proves the baseline survives a
+full `down`/`up`. `./smoke-test.sh` checks all of it and exits non-zero on
+the first failure.
+
+**It closed a gap of the same kind task 034 found in the CLI.** The
+Collector processor — the one long-lived Trustvian runtime — had *no
+storage configuration at all*: it called `NewEngine` with at most
+`WithPolicy` and never `WithStore`, so every Collector deployment ran on
+the non-durable in-memory default and discarded every learned baseline on
+restart. Adding a `storage:` block was the minimum wiring the deployment
+required, and it reuses the canonical model exactly: the block decodes into
+`config.StorageConfig` and goes to `config.CompileStorage`, mirroring how
+task 022 already handled `policy:`. No processor-side database code, no DSN
+parsing, no second storage model. `Shutdown` now also releases the
+connection pool, which it previously never did.
+
+Deliberately *not* included, because the reference is meant to prove
+Trustvian rather than become an observability stack: no Grafana,
+Prometheus, Jaeger, Kafka, Redis, or ClickHouse; no Kubernetes or Helm; and
+no published image — everything builds locally from source, since official
+artifact packaging is `v0.9`'s scope and referencing an image that does not
+exist would be a fiction.
+
+The deployment's PostgreSQL service is also now the documented home for
+tasks 035/036's integration and stress suites, reusing the existing
+`TRUSTVIAN_TEST_POSTGRES_DSN` variable with **no test modified** —
+`make integration-postgres`.
+
+One honest note on versioning: `processor/go.mod` pinned
+`github.com/Trustvian/trustvian v0.5.0`, which predates
+`config.StorageConfig` entirely, so the module could not name the type it
+needed. It now carries a `replace` directive to the repository root — the
+pattern `examples/go.mod` already uses — rather than a `require v0.8.0`
+line for a tag that does not exist. Task 038 owns the release-time
+decision.
+
 **Acceptance criteria.** See
 [034-production-store-contract-and-public-boundary.md](tasks/034-production-store-contract-and-public-boundary.md),
 [035-postgresql-store-implementation.md](tasks/035-postgresql-store-implementation.md),
-and [036-store-durability-concurrency-and-migration-hardening.md](tasks/036-store-durability-concurrency-and-migration-hardening.md).
+[036-store-durability-concurrency-and-migration-hardening.md](tasks/036-store-durability-concurrency-and-migration-hardening.md),
+and [037-reference-docker-compose-deployment.md](tasks/037-reference-docker-compose-deployment.md).
 
 ### Remaining scope (not yet task-filed)
 

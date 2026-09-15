@@ -89,3 +89,21 @@ func withSearchPath(t testing.TB, dsn, schema string) string {
 	u.RawQuery = q.Encode()
 	return u.String()
 }
+
+// withApplicationName returns dsn with application_name set, so a test can
+// identify — and act on — only the connections its own store opened.
+// pg_stat_activity exposes application_name, which makes it the one
+// reliable way to distinguish "my connections" from every other
+// concurrently-running test package's.
+func withApplicationName(t testing.TB, dsn, name string) string {
+	t.Helper()
+
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatalf("url.Parse(dsn) error = %v", err)
+	}
+	q := u.Query()
+	q.Set("application_name", name)
+	u.RawQuery = q.Encode()
+	return u.String()
+}

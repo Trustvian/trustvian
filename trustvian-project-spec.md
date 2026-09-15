@@ -1575,8 +1575,12 @@ Why each step exists, not merely what it contains:
   behavior on an exhausted connection pool, atomic and
   concurrent-startup-safe migration, fail-closed handling of unknown or
   ambiguous schema metadata, and verified behavioral equivalence across
-  all three backends. A reference Docker Compose deployment remains
-  **PLANNED**, as does the `v0.8` release gate — the milestone is **not**
+  all three backends. The **reference Docker Compose deployment is
+  IMPLEMENTED** (fourth slice): an OpenTelemetry Collector running the
+  Trustvian processor against PostgreSQL, with a documented persistence
+  proof and an automated smoke test — which also required giving the
+  Collector processor its first ability to select a Store at all. The
+  `v0.8` release gate remains **PLANNED**, so the milestone is **not**
   release-ready. `InMemory` is still the default and `FileStore` is
   unchanged.
 - **`v1.0`** is the point all of the above adds up to: a release gate,

@@ -1,0 +1,45 @@
+# Builds the Trustvian-enabled OpenTelemetry Collector for the reference
+# deployment, from repository source.
+#
+# This is a REFERENCE DEPLOYMENT BUILD IMAGE, not the official published
+# Trustvian image. No image is pushed anywhere by this task; official
+# artifact publishing (and the hardening that should accompany it) is
+# v0.9's scope. Build context is the repository root, because
+# processor/go.mod replaces github.com/Trustvian/trustvian with ../ and so
+# needs the core module's source present.
+
+# Pinned to the toolchain the repository targets (go 1.27 in go.mod).
+FROM golang:1.27-alpine AS build
+
+WORKDIR /src
+
+# Module files first, so dependency download is cached independently of
+# source edits. Both modules are needed: the processor's replace directive
+# resolves to the core module in this same context.
+COPY go.mod go.sum ./
+COPY processor/go.mod processor/go.sum ./processor/
+RUN cd processor && go mod download
+
+# Then the source the build actually reads.
+COPY . .
+
+# CGO_ENABLED=0 for a static binary that runs on a distroless-style base.
+# -trimpath so the binary does not embed build-host paths.
+RUN cd processor && CGO_ENABLED=0 go build -trimpath \
+        -o /out/trustvian-collector ./cmd/trustvian-collector
+
+# ---------------------------------------------------------------------
+FROM alpine:3.22
+
+# A non-root user. The collector needs no write access to anything — its
+# config is mounted read-only and all state lives in PostgreSQL.
+RUN adduser -D -u 10001 trustvian
+
+COPY --from=build /out/trustvian-collector /usr/local/bin/trustvian-collector
+
+USER 10001:10001
+
+# OTLP/gRPC. Documentation only; publishing is compose.yaml's job.
+EXPOSE 4317
+
+ENTRYPOINT ["/usr/local/bin/trustvian-collector"]

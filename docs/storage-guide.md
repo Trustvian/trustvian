@@ -475,6 +475,46 @@ A reference Docker Compose environment is [task
 037](ROADMAP.md#v08--production-runtime--storage)'s deliverable; the
 command above is the minimum for running the tests today.
 
+## In the reference deployment
+
+[`deployments/docker-compose/`](../deployments/docker-compose/) is a
+runnable local deployment that uses this backend for real: an OTel
+Collector with the Trustvian processor, analyzing OTLP telemetry against a
+PostgreSQL baseline that survives a restart.
+
+```bash
+cd deployments/docker-compose
+docker compose up -d --build
+docker compose run --rm demo-producer
+docker compose exec postgres psql -U trustvian -d trustvian -c \
+  "SELECT actor_id, fingerprint_count, observation_count FROM trustvian_baseline;"
+```
+
+Its Trustvian configuration is the same `StorageConfig` schema documented
+above — the Collector processor decodes a `storage:` block into
+`config.StorageConfig` and hands it to `config.CompileStorage`, exactly as
+the SDK and CLI do:
+
+```yaml
+processors:
+  trustvian:
+    storage:
+      version: v1
+      type: postgres
+      postgres:
+        dsn: ${env:TRUSTVIAN_POSTGRES_DSN}
+```
+
+That deployment's PostgreSQL service is also the intended environment for
+this repository's own integration and stress tiers — see
+[§ Running the integration tests](#running-the-integration-tests) and
+`make integration-postgres`.
+
+It is a *reference* deployment: local, unhardened, with placeholder
+credentials and TLS off. Its
+[README](../deployments/docker-compose/README.md#security) says what to
+change before anything resembling production.
+
 ## Pool sizing
 
 `max_connections` caps the pool. Left at `0`, pgx uses its own default —
