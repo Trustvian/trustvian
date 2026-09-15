@@ -245,13 +245,17 @@ milestones exist to close:
   0012](adr/0012-bounded-trigram-behavioral-context.md)'s and [ADR
   0011](adr/0011-transition-rarity-statistic-and-orientation.md)'s own
   "why X still waits" sections).
-- AI-agent event types work today only through the generic `Event`
-  model (`ActorTypeAIAgent` + `OperationCategoryTool`) — no session,
-  delegation, or tool-sequence concepts exist yet (`v0.7`, below, now
-  in progress).
-- No production-grade persistent `Store` beyond `FileStore`, no Docker
-  deployment path (`v0.8`); no CI/CD, no release automation, no
-  container image (`v0.9`).
+- AI-agent behavioral context is now implemented — see `v0.7` below,
+  shipped: `event.Context` carries `SessionID`, `DelegatedFrom`, and
+  `ApprovalStatus`, delegation familiarity is a scored signal, and
+  approval evidence is policy-visible. What remains unbuilt is agent
+  *tool/MCP* security as a distinct surface — see
+  [§ Beyond v0.7](#beyond-v07--strategic-capability-direction).
+- Production-grade persistence and a reference deployment are now
+  implemented — see `v0.8` below: a PostgreSQL `Store` selectable through
+  public configuration, and a runnable Docker Compose reference
+  deployment. What remains is `v0.9`'s operational engineering: CI/CD
+  gates, release automation, and an official published container image.
 - No MCP interface (an optional integration, not a `v1.0` blocker — see
   [Trustvian MCP](#trustvian-mcp) below), no Trustvian Control (an
   organizational-governance layer that consumes OSS, not a
@@ -259,12 +263,11 @@ milestones exist to close:
   [§ The OSS / Enterprise product boundary](#the-oss--enterprise-product-boundary)
   above).
 
-**Next up:** with `v0.1`–`v0.6.0` shipped (see [Release readiness —
+**Next up:** with `v0.1`–`v0.7.0` shipped (see [Release readiness —
 v0.5.0](#release-readiness--v050) for the tag/dependency verification
-pattern `v0.6.0` repeated), `v0.7` — AI Agent Behavioral Security is now
-in progress — see the `v0.7` milestone section below. The rest of this roadmap's
-remaining work (the rest of `v0.7` through `v1.0` Production-Ready OSS,
-defined below) charts the
+pattern every later release has repeated) and `v0.8` release-ready, this
+roadmap's remaining work (`v0.9` Operational Readiness through `v1.0`
+Production-Ready OSS, defined below) charts the
 path to a complete, standalone, production-usable OSS product — see
 each milestone section for
 dependencies; none of `v0.6`–`v0.9` are strictly ordered relative to
@@ -1659,9 +1662,8 @@ not only a library and a CLI against a local file.
 
 ### Slice sequence
 
-Small vertical slices, in dependency order. Only the active one gets a
-task file, per this roadmap's own "small vertical slices" principle
-applied to itself:
+Small vertical slices, in dependency order. Each has its own task file,
+written when the slice became active:
 
 | Task | Title | Status |
 |---|---|---|

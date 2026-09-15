@@ -5,371 +5,112 @@
 > OpenTelemetry observes behavior. Trustvian evaluates whether that
 > behavior should be trusted.
 
-Trustvian is an open-source, Go-based engine that turns runtime
-behavior — API calls, service-to-service traffic, database access,
-AI-agent tool calls — into an explainable trust score and a security
-decision: `ALLOW`, `OBSERVE_ONLY`, `ALERT`, `CHALLENGE`,
-`REQUIRE_APPROVAL`, or `BLOCK`.
+Trustvian is an open-source Go engine that turns runtime behavior — API
+calls, service-to-service traffic, database access, AI-agent tool calls —
+into an explainable trust score and a security decision. It learns each
+actor's normal behavior, measures how far a new action deviates from it,
+and evaluates that evidence against policy you control.
 
-Identity tells you who something is. Telemetry tells you what it did.
-Trustvian determines whether what it did should be trusted.
+Decisions are deterministic and explainable: every score carries the
+signals that produced it, and every decision carries the rule that made
+it. There is no model to retrain and no opaque verdict.
 
-## Status
+[![Go](https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white)](go.mod)
+[![CI](https://github.com/Trustvian/trustvian/actions/workflows/go.yml/badge.svg)](https://github.com/Trustvian/trustvian/actions/workflows/go.yml)
+[![Latest tag](https://img.shields.io/github/v/tag/Trustvian/trustvian?label=latest)](https://github.com/Trustvian/trustvian/tags)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-`v0.1`–`v0.5.0` are shipped: the core pipeline, Go SDK, CLI, a
-persistent file-backed store, an inbound OpenTelemetry adapter, outbound
-`trustvian.*` result attributes, a standalone OTel Collector processor
-([`processor/`](processor/README.md)), an opt-in hour-of-day
-time-pattern anomaly signal, and a public
-[`alert`](docs/DOMAIN.md#alert) package — turning a `Result`/`Decision`
-into a minimal, explainable `Alert`, evaluated by a
-`policy.Condition`-shaped rule matcher and delivered to a generic,
-HMAC-signed HTTPS webhook, all reachable directly from the Go SDK with
-no OpenTelemetry involvement (see
-[`examples/alert-webhook`](examples/alert-webhook/README.md)) — are all
-implemented, tested, and benchmarked.
+## Why Trustvian?
 
-**`v0.5.0` — Policy & Configuration is shipped.** A public `config`
-package lets a caller outside this module declare a `Policy` in a
-versioned YAML file — strictly validated, strictly parsed — and
-compile it into a real, enforced `policy.Policy`, without ever
-importing `internal/policy`; the CLI's `trustvian analyze`/`trustvian
-baseline build` can now load that same file directly via `--config
-<path>`; the standalone [OTel Collector processor](processor/README.md)
-can now declare a real Policy from a `policy:` block in Collector
-configuration, using the exact same schema (`processor/go.mod` depends
-on this exact release, verified with a clean `GOWORK=off` build/test);
-and a structurally independent `config` model — `AlertConfig`/
-`CompileAlerts` — now lets a caller declare declarative Alert
-Evaluation rules (`[]alert.Rule`) the same way, deliberately kept
-separate from Policy configuration (see [Configuring
-Alerts](#configuring-alerts) below and [ADR
-0009](docs/adr/0009-alert-config-is-a-separate-document.md)). See
-[Configuring a Policy](#configuring-a-policy) below.
+Authentication and authorization answer questions about *identity*.
+Telemetry answers questions about *activity*. Neither answers the question
+that matters once an actor is already inside your system:
 
-**`v0.6.0` — Behavioral Detection Depth is shipped.** All four of its
-feature tasks (plus a stabilization pass) are done: [Sequence Analysis
-Foundation](docs/tasks/025-sequence-analysis-foundation.md) added a
-new, opt-in `transition_deviation` anomaly signal that answers whether
-the immediately preceding action has ever led to this one before, for
-a given actor (e.g. an actor whose normal path is `read -> update`
-producing a signal on a never-seen `read -> delete`); [Transition
-Rarity](docs/tasks/026-transition-rarity.md) then evolved that binary
-seen/unseen signal into a graded `transition_rarity` measure — common,
-uncommon, or rare, for transitions that *have* been seen — computed as
-an empirical relative frequency, deliberately never called a
-"probability" (see [ADR
-0011](docs/adr/0011-transition-rarity-statistic-and-orientation.md)
-for why, and for the orientation question — `P(destination|predecessor)`
-vs. `P(predecessor|destination)` — this task had to answer correctly
-before writing any code); [Bounded n-gram
-Detection](docs/tasks/027-bounded-ngram-detection.md) then extended
-order-awareness one step further back — a fixed 3-gram, not a
-configurable `n` — with `ngram_deviation`/`ngram_rarity`, catching
-sequences where both individual pairwise hops (`A -> B` and `B -> C`)
-are independently familiar yet the complete sequence
-`A -> B -> C` has never occurred, information the pairwise signals
-above structurally cannot see (see [ADR
-0012](docs/adr/0012-bounded-trigram-behavioral-context.md)); [Markov
-Transition Scoring](docs/tasks/028-markov-transition-scoring.md) then
-asked, and answered honestly, a mandatory question before writing any
-code — what would Markov scoring add beyond `transition_rarity`? The
-answer: no new evidence (both are proven strictly monotonic functions
-of the identical frequency statistic), only an alternative severity
-curve, `markov_surprisal`, that preserves more resolution across the
-rare tail than the linear `transition_rarity` mapping does — so the two
-are mutually exclusive in scoring by construction, never
-double-counted, even if an operator enables both weights at once (see
-[ADR 0013](docs/adr/0013-first-order-markov-surprisal-without-duplicate-evidence.md)).
-All five signals are deterministic, no ML, no new public API, reusing
-the existing `Baseline`/`Store` infrastructure rather than a parallel
-one (see [Sequence Analysis](docs/sequence-analysis.md) and [ADR
-0010](docs/adr/0010-bounded-process-local-sequence-state.md)).
-Existing `v0.5` callers are unaffected: every new signal defaults to a
-zero weight and `BenchmarkEngineAnalyze`'s allocation profile is
-unchanged. Higher-order/full Markov modeling (a transition matrix,
-smoothing, or a Markov treatment merged with the 3-gram context above)
-remains unscoped future work — see
-[`docs/ROADMAP.md` § v0.6](docs/ROADMAP.md#v06--behavioral-detection-depth).
+| Layer | Question |
+|---|---|
+| Identity | Who is this actor? |
+| Telemetry | What did this actor do? |
+| **Trustvian** | **Does this behavior match what should be trusted?** |
 
-**`v0.7` — AI Agent Behavioral Security is now in progress.** Its
-foundation task, [AI Agent Event/Context
-Foundation](docs/tasks/014-ai-agent.md), is done: AI agents are
-behavioral actors analyzed by the same engine above, not a second
-security engine. `event.Context` gained three optional fields —
-`SessionID`, `DelegatedFrom`, and `ApprovalStatus` — for session
-grouping, single-hop agent-to-agent delegation, and a recorded
-human-approval fact, respectively; none of the three enter
-`Fingerprint`/baseline identity, proven (not just asserted) by a test
-that runs 1000 distinct `SessionID`s with identical behavior through
-the real engine and confirms exactly one `Fingerprint` accumulates all
-1000 observations. The task also proved `v0.6`'s existing bounded
-3-gram signal already detects agent tool-sequence novelty — training
-`search → secret.read` and `secret.read → external.post` as
-independently familiar, then confirming
-`search → secret.read → external.post` still gets flagged as
-anomalous — with zero agent-specific detection code. See [ADR
-0014](docs/adr/0014-ai-agents-as-first-class-behavioral-actors.md).
+A valid credential does not stop behaving strangely. A service keeps its
+permissions when it starts reaching an unfamiliar dependency; an AI agent
+keeps its API key when it begins calling tools in an order it has never
+used before. Static permissions are evaluated once, then drift silently.
+Trustvian instead looks at behavior that is *unusual for this particular
+actor*:
 
-The next `v0.7` slice, [Approval-Aware Policy
-Semantics](docs/tasks/030-approval-aware-policy-semantics.md), gives
-`ApprovalStatus` its first real consumer — entirely inside `Policy`,
-with no new anomaly signal: `policy.Condition` gained an
-`ApprovalStatus` field, letting a `Rule`'s existing `Unless` mechanism
-express "this operation requires approval" (`Unless: &Condition{
-ApprovalStatus: ApprovalApproved }`) without any new Rule-level
-primitive. **Policy, not the event, is authoritative** — an event
-self-declaring `ApprovalNotRequired` cannot exempt itself from a
-configured requirement, and missing evidence (`ApprovalUnspecified`)
-fails closed to `BLOCK`, both proven by dedicated regression tests, not
-just documented. `ApprovalStatus` remains untrusted, self-reported
-evidence: Trustvian evaluates it, it does not verify its provenance,
-and it does not grant approval. Anomaly/Trust scoring is provably
-unaffected — an approval rule changes only `Decision`, never
-`Anomaly.Score` or `Trust.Score` for the identical underlying
-behavior. The mechanism is domain-generic, not coupled to
-`ActorTypeAIAgent`: the identical rule gates a `service` or `user`
-actor's matching operation the same way. See [ADR
-0015](docs/adr/0015-approval-as-policy-evidence-not-behavioral-anomaly.md)
-and [`docs/ROADMAP.md` §
-v0.7](docs/ROADMAP.md#v07--ai-agent-behavioral-security) for the full
-domain-model reasoning and current state.
+- a service suddenly calling a dependency it has never contacted
+- an AI agent using an unfamiliar sequence of tools
+- an actor reaching an unexpected destination
+- a delegated action arriving from an unfamiliar delegator
+- an operation occurring far outside its learned latency or timing pattern
 
-The next `v0.7` slice, [Delegation Behavioral
-Semantics](docs/tasks/031-delegation-behavioral-semantics.md), gives
-`DelegatedFrom` its own first real consumer — a new, opt-in
-`internal/anomaly` signal, `delegation_deviation`: has this actor ever
-received delegation from this immediate delegator before? Learned via
-a small, bounded (64-entry) map on `Baseline`
-(`DelegatorCounts`, alongside the existing `PredecessorCounts`/
-`TrigramCounts`), scoped to the actor being delegated to, not to any
-one operation it performs — the same "actor-level, not
-per-Fingerprint" shape `Baseline.LastFingerprintID` already has. **A
-familiar delegator is not thereby authorized, and an unfamiliar one is
-not thereby malicious** — this is behavioral evidence only;
-`DelegatedFrom` remains exactly as unauthenticated and self-reported
-as task 014 left it, and nothing in this task verifies where a claimed
-delegator actually came from. Proven, not just documented: repeated
-BLOCKed delegation from a forged delegator never "normalizes" through
-repetition (the same learning-eligibility gate every other behavioral
-dimension already obeys), delegation evidence never affects
-`Fingerprint` identity, and delegation and approval evidence
-(task 030) never entangle — a familiar delegator does not exempt an
-operation from an approval requirement, and a novel delegator does not
-itself block an operation approval already satisfies. See [ADR
-0016](docs/adr/0016-delegation-as-behavioral-evidence-not-provenance.md).
+Unfamiliar behavior is **evidence, not a verdict**. Trustvian quantifies and
+explains the deviation; your policy decides what to do about it. A new
+deployment and an intrusion can look alike to a baseline — which is exactly
+why the decision stays configurable and the reasoning stays visible.
 
-`v0.7`'s three behavioral/policy slices are now validated **in
-combination**, not just individually
-([task 032](docs/tasks/032-agent-security-scenario-validation.md)):
-agent behavior, `v0.6` sequence analysis, delegation deviation, and
-approval-aware policy all compose correctly against realistic
-scenarios — an unexpected privileged tool, a sensitive
-read-then-external-post sequence, an approval violation, an unexpected
-delegator, external-destination drift, and one combined case
-exercising delegation, sequence, and approval evidence together — with
-zero new detectors and no evidence double-counting. Trustvian does not
-provide authenticated delegation or an approval workflow; both remain
-exactly the boundaries tasks 030/031 already documented. This task also
-found a real gap — `anomaly.Config`, unlike `policy.Policy` (publicly
-configurable since `v0.5`), had no public equivalent — and [task
-033](docs/tasks/033-v07-stabilization-release-gate.md) closed it:
-`config.AnomalyConfig`, compiled by `config.CompileAnomaly`, is now the
-public path to every `v0.6`/`v0.7` signal weight, and
-[`examples/ai-agent-security`](examples/ai-agent-security/) demonstrates
-the full combined scenario — delegation, sequence, and approval
-together — through public config alone, no `internal/*` import
-anywhere. **`v0.7.0` is shipped** (all five tasks — 014, 030, 031, 032,
-033 — done and released).
+## How It Works
 
-**`v0.8` — Production Runtime & Storage is implementation-complete and
-release-ready; `v0.8.0` has not yet been published.** All five slices
-(034–038) are done: production persistence is selectable through public
-configuration, PostgreSQL is implemented and hardened, and a runnable
-reference deployment demonstrates the whole path. Its first
-slice ([task
-034](docs/tasks/034-production-store-contract-and-public-boundary.md))
-makes persistence *selectable* for the first time: `config.StorageConfig`
-+ `config.CompileStorage` are the public path to a durable `store.Store`,
-and `trustvian analyze`/`baseline build` gained `--storage-config`.
-Before this, `WithStore` was in-module-only in practice — `store.Store`
-lives under `internal/` with methods referencing internal types, so no
-external consumer could select any store, not even the `FileStore` that
-already shipped, and every deployment silently ran in memory and lost its
-baselines on restart. A durable store now survives restarts through
-public API alone (see
-[`examples/persistent-baseline`](examples/persistent-baseline/)), against
-an executable `Store` contract that every backend must satisfy.
-
-Task 035 added the **PostgreSQL backend**, which passes all nine of those
-contract guarantees unmodified:
-
-```yaml
-version: v1
-type: postgres
-postgres:
-  dsn: postgres://trustvian:${PGPASSWORD}@db.internal:5432/trustvian?sslmode=require
-```
-
-This is what makes a horizontally-scaled deployment coherent: several
-Trustvian instances sharing one baseline, rather than each replica holding
-its own opinion of what "normal" means for the same actor. `Observe` is
-atomic and lost-update-free (including the first observation for a brand-new
-key), state is inspectable with plain SQL, and an unreachable database
-fails closed — there is no path from "PostgreSQL is unavailable" to a
-silently substituted in-memory store. It is also ~6–17× *faster* than the
-file backend under concurrent writes, since it updates one row instead of
-rewriting everything.
-
-Task 036 hardened that backend against the conditions production actually
-produces — heavy contention, cancelled lock waits, exhausted pools, lost
-connections, database restarts, and unreadable schema metadata — and
-verified that **storage choice does not change behavior**: all three
-backends produce identical learned state and identical decisions.
-
-### Run it: reference Docker Compose deployment
-
-```bash
-cd deployments/docker-compose
-docker compose up -d --build            # PostgreSQL + OTel Collector + Trustvian
-docker compose run --rm demo-producer   # send 60 spans of routine behavior
-```
-
-Trustvian learns from the telemetry, persists the baseline to PostgreSQL,
-and scores against it again after a restart. `./smoke-test.sh` proves the
-whole path automatically. Full guide, including the persistence proof and
-the security caveats:
-[`deployments/docker-compose/README.md`](deployments/docker-compose/README.md).
-
-`InMemory` remains the default and `FileStore` is unchanged. See
-[`docs/storage-guide.md`](docs/storage-guide.md) for durability,
-concurrency, and failure semantics, [ADR
-0018](docs/adr/0018-production-store-boundary-and-postgresql-direction.md),
-and [`docs/ROADMAP.md` §
-v0.8](docs/ROADMAP.md#v08--production-runtime--storage).
-
-### Configuring `v0.6`/`v0.7` behavioral signals
-
-Every opt-in signal below ships **disabled by default** — enabling one
-requires deliberate configuration, through public API only:
-
-```go
-cfg := config.AnomalyConfig{
-	Version:          config.AnomalySchemaVersionV1,
-	DelegationWeight: 0.7, // task 031 — familiar vs. novel delegator
-	NGramWeight:      0.9, // v0.6 — bounded 3-gram sequence novelty
-}
-ac, err := config.CompileAnomaly(cfg)
-// ...
-engine := trustvian.NewEngine(trustvian.WithAnomalyConfig(ac))
-```
-
-or, from a YAML file (`config.LoadAnomalyFile`, or
-`trustvian analyze/baseline build --anomaly-config <path>` from the
-CLI):
-
-```yaml
-version: v1
-delegation_weight: 0.7
-ngram_weight: 0.9
-```
-
-`TransitionWeight`/`TransitionRarityWeight` (`v0.6` pairwise
-transitions), `MarkovWeight` (`v0.6` first-order severity curve), and
-`SensitiveTargetFloor` (a fixed risk floor for specific destinations)
-follow the identical pattern — see
-[docs/anomaly-config-guide.md](docs/anomaly-config-guide.md) for the
-full field list, defaults, and valid ranges. Approval-aware `Policy`
-(task 030) is configured separately, via
-`config.PolicyConfig`/`config.CompilePolicy` (see
-[docs/policy-guide.md](docs/policy-guide.md)) — approval is policy
-data, never an anomaly weight.
-
-**Trustvian OSS is meant to be a complete, standalone,
-production-usable behavioral security product on its own** — detect,
-score, decide, alert, integrate, and run, all without Trustvian
-Control. Not yet built, on the path there: arbitrary-length n-gram/full
-Markov sequence scoring beyond the bounded foundation above, delivery
-reliability (retry/deduplication/cooldown) and any provider-specific
-alert sink (Slack/Teams/PagerDuty) — declarative *alert* configuration
-itself is
-now implemented (see above); wiring it into the CLI or the Collector
-processor is deliberately deferred, since neither has an alert-delivery
-flow yet for it to plug into — and release/operational engineering (CI,
-official Docker image, SBOM), which is `v0.9`'s scope. Production
-persistence and a reference Docker Compose deployment are no longer on
-this list: both landed in `v0.8` (see above). See
-[`docs/ROADMAP.md`](docs/ROADMAP.md#the-oss--enterprise-product-boundary)
-for the explicit OSS/Control boundary and the full milestone sequence
-through `v1.0`. ML-based detection stays optional research, never a
-core dependency. See [`trustvian-project-spec.md`](trustvian-project-spec.md)
-for the full long-term vision and [`CLAUDE.md`](CLAUDE.md) for the
-engineering conventions this repository follows. For guides, worked
-examples, and four real-world use cases with verified input/output, see
-[`docs/`](docs/README.md). For what's shipped, in progress, and planned
-next, see [`docs/ROADMAP.md`](docs/ROADMAP.md) and its detailed task
-breakdown under [`docs/tasks/`](docs/tasks/).
-
-## How it works
-
-```
+```text
 Event → Features → Fingerprint → Baseline → Anomaly → Trust → Policy → Decision
 ```
 
-1. **Event** — one observed action: an HTTP call, a DB query, an RPC, an
-   AI-agent tool invocation, or a call to an external destination.
-2. **Features** — stable dimensions (actor type, operation, target,
-   environment) that identify *what kind* of behavior this is, split
-   from volatile ones (latency, errors) that feed anomaly detection.
-3. **Fingerprint** — a deterministic identity for that behavioral
-   shape.
-4. **Baseline** — the statistical history for that fingerprint: how
-   often it's been seen, its typical latency and error rate.
-5. **Anomaly** — how much this event deviates from its baseline, with
-   every contributing signal retained (never a single opaque number).
-6. **Trust** — anomaly, identity confidence, and context risk combined
-   into a trust score and a risk level, with each input still visible.
-7. **Policy** — a data-driven, ordered rule set that turns trust/risk
-   into a final `Decision`, always with a human-readable explanation.
+| Stage | What it does |
+|---|---|
+| **Event** | A normalized record of one action: actor, operation, target, context |
+| **Features** | Splits it into *stable* dimensions (the behavior's identity) and *volatile* ones (latency, errors, timing) |
+| **Fingerprint** | A deterministic hash of the stable dimensions — "this kind of action by this kind of actor" |
+| **Baseline** | Per-actor learned statistics for each fingerprint: counts, timing, error rates, sequence history |
+| **Anomaly** | Scores deviation, keeping every contributing signal — plus a separate confidence for how much the baseline is worth trusting yet |
+| **Trust** | Combines identity confidence, anomaly evidence, and context risk into one score and a risk level |
+| **Policy** | First-match-wins rules over that result |
+| **Decision** | `allow`, `observe_only`, `alert`, `challenge`, `require_approval`, or `block` |
 
-## Install
+Learning is explicit and gated. `Analyze` never mutates state; `Observe`
+folds a result into the baseline only when the action actually proceeded, so
+repeating a blocked action cannot teach the engine to accept it.
+
+## Key Capabilities
+
+**Behavioral baselines** — deterministic fingerprints, per-actor frequency
+and recency, latency and error-rate statistics, time-of-day patterns. All
+state is bounded: no actor can grow its baseline without limit.
+
+**Sequence analysis** — order-aware detection beyond single events:
+transition deviation, transition rarity, bounded 3-gram novelty, and
+first-order Markov surprisal. Each signal is opt-in.
+
+**Trust and policy** — explainable anomaly contributors, a multiplicative
+trust score, risk classification, and ordered policy rules that fail closed
+on misconfiguration.
+
+**Alerts** — declarative rules over results, delivered to a generic HTTPS
+webhook with HMAC-SHA256 request signing.
+
+Persistence, OpenTelemetry integration, and AI-agent security each have
+their own section below.
+
+## Quick Start
+
+### Install
 
 ```bash
-go install github.com/Trustvian/trustvian/cmd/trustvian@latest
+go install github.com/Trustvian/trustvian/cmd/trustvian@latest   # CLI
+go get github.com/Trustvian/trustvian                            # library
 ```
 
-Or add the SDK to a Go project:
+### CLI
+
+The repository ships event fixtures, so the fastest first run is from a
+clone:
 
 ```bash
-go get github.com/Trustvian/trustvian
+git clone https://github.com/Trustvian/trustvian && cd trustvian
+go run ./cmd/trustvian analyze cmd/trustvian/testdata/normal.json
 ```
 
-## CLI
-
-```bash
-trustvian analyze events.json
-trustvian baseline build events.json
-```
-
-`events.json` is a JSON array of events:
-
-```json
-[
-  {
-    "id": "evt-1",
-    "timestamp": "2026-01-01T12:00:00Z",
-    "actor": { "id": "svc-payment", "type": "service", "identity_confidence": 0.95 },
-    "operation": { "category": "http", "name": "POST /payment" },
-    "target": { "name": "payment-db" },
-    "context": { "environment": "production" },
-    "attributes": { "duration_ms": 42 }
-  }
-]
-```
-
-`analyze` scores each event and prints a report:
-
-```
+```text
 Trustvian Behavioral Analysis
 
 Service: svc-payment
@@ -384,17 +125,21 @@ Decision: ALLOW
 Reason:   risk within tolerance
 ```
 
-`baseline build` replays a corpus of events through the same
-gated learning path as live traffic and prints a learned/skipped
-summary. See [Limitations](#limitations) for why its result doesn't
-persist across separate CLI invocations yet.
+A maximum anomaly score on a first-ever event is expected: the fingerprint
+is genuinely novel, but confidence in that reading is zero, so it
+contributes nothing to trust yet.
 
-Both subcommands accept `--config <path>` to load a real `Policy` from
-a schema-v1 YAML file instead of the CLI's built-in default policy —
-see [Configuring a Policy](#configuring-a-policy) below and the [CLI
-Guide](docs/cli-guide.md#--config-path) for the full behavior.
+To learn from a corpus and then score against it, use `baseline build` with
+persistent storage:
 
-## Go SDK
+```bash
+trustvian baseline build --storage-config storage.yaml corpus.json
+trustvian analyze        --storage-config storage.yaml events.json
+```
+
+See the [CLI guide](docs/cli-guide.md).
+
+### Go SDK
 
 ```go
 package main
@@ -402,6 +147,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	trustvian "github.com/Trustvian/trustvian"
@@ -410,260 +156,313 @@ import (
 
 func main() {
 	engine := trustvian.NewEngine()
+	ctx := context.Background()
 
-	result, err := engine.Analyze(context.Background(), event.Event{
-		ID:        "evt-1",
+	ev := event.Event{
+		ID:        "evt-001",
 		Timestamp: time.Now(),
 		Actor: event.Actor{
-			ID:                 "svc-payment",
+			ID:                 "svc-checkout",
 			Type:               event.ActorTypeService,
-			IdentityConfidence: 0.95,
+			IdentityConfidence: 1.0,
 		},
 		Operation: event.Operation{
 			Category: event.OperationCategoryHTTP,
-			Name:     "POST /payment",
+			Name:     "GET /api/orders",
 		},
-		Target:  event.Target{Name: "payment-db"},
-		Context: event.Context{Environment: "production"},
-	})
-	if err != nil {
-		panic(err)
+		Target: event.Target{Name: "orders-api"},
 	}
 
-	fmt.Println(result.Trust.Score, result.Trust.Risk, result.Decision)
+	result, err := engine.Analyze(ctx, ev)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(result.Explain())
 
-	// Feed the result back in — Observe only actually learns from
-	// decisions where the action proceeded (ALLOW/OBSERVE_ONLY/ALERT);
-	// it's always safe to call unconditionally.
-	engine.Observe(context.Background(), result)
+	// Fold this observation into the baseline, if the action proceeded.
+	if _, err := engine.Observe(ctx, result); err != nil {
+		log.Fatal(err)
+	}
 }
 ```
 
-`Engine`'s behavior (custom `Policy`, anomaly/trust thresholds, a
-different `Store`) is configured via functional options
-(`trustvian.WithPolicy`, `trustvian.WithAnomalyConfig`,
-`trustvian.WithTrustConfig`, `trustvian.WithStore`,
-`trustvian.WithContextRisk`). `WithPolicy` now has a real path for a
-genuinely external caller — see [Configuring a
-Policy](#configuring-a-policy) below; the other four still take types
-that only code living inside this module can construct — see
-[Limitations](#limitations).
+See the [SDK guide](docs/sdk-guide.md).
 
-For seven runnable, real `go run`-verified programs against this exact
-SDK — a basic call, credential misuse, an unexpected dependency, an
-external destination, abnormal request frequency, AI-agent security,
-and an end-to-end alert delivered to a signed webhook — see
-[`examples/`](examples/README.md).
+## Production Persistence
 
-## Configuring a Policy
+`NewEngine()` uses an in-memory store, so nothing persists unless you ask
+for it. Three backends are available, all selected through the same public
+configuration document.
 
-By default, `NewEngine()` has no rules and always resolves to
-`OBSERVE_ONLY`. A real `Policy` — one that actually produces
-`ALLOW`/`BLOCK`/`REQUIRE_APPROVAL` differentiation — can now be
-declared in a versioned YAML file and loaded by any caller, including
-a genuinely separate Go module, without ever importing
-`internal/policy`:
+| Backend | Intended use | Survives restart | Shared across processes |
+|---|---|---|---|
+| `memory` | Tests and ephemeral workloads. The default. | No | No |
+| `file` | Single-process durable use — a CLI run, or one long-lived service | Yes | No — there is no cross-process file locking |
+| `postgres` | Production and horizontally-scaled deployments | Yes | Yes |
+
+PostgreSQL is the backend to choose when more than one instance must agree
+about an actor. Two instances with two separate files hold two different
+baselines, so the same actor can be familiar to one and novel to the other,
+and the decision an event receives depends on which replica handled it.
 
 ```yaml
-# trustvian.yaml
+# storage.yaml
 version: v1
-default_decision: observe_only
-default_reason: no policy rules configured; observing by default
-rules:
-  - name: block-critical-risk
-    when:
-      min_risk_level: critical
-    decision: block
-    reason: critical risk is blocked by configured policy
+type: postgres
+postgres:
+  dsn: postgres://trustvian:PASSWORD@db.internal:5432/trustvian?sslmode=require
+  max_connections: 25          # optional
+  connect_timeout_seconds: 15  # optional
 ```
+
+> Trustvian's own YAML loader does **not** expand environment variables, so
+> a DSN written here is a literal secret in a file. To keep credentials out
+> of configuration, build `config.StorageConfig` in Go and read the DSN from
+> the environment yourself, or — inside the Collector — use its native
+> `${env:VAR}` syntax. See the [storage guide](docs/storage-guide.md).
+
+In Go:
 
 ```go
-cfg, err := config.LoadFile("trustvian.yaml")
+s, err := config.CompileStorage(cfg)
 if err != nil {
-	log.Fatal(err)
+	return err // never a silent fallback
 }
-p, err := config.CompilePolicy(cfg)
-if err != nil {
-	log.Fatal(err)
+if c, ok := s.(io.Closer); ok {
+	defer c.Close()
 }
-engine := trustvian.NewEngine(trustvian.WithPolicy(p))
+engine := trustvian.NewEngine(trustvian.WithStore(s))
 ```
 
-`p`'s underlying type is `policy.Policy` (an `internal/` type), but
-this code never names it: `p` is received from `CompilePolicy` and
-passed straight into `WithPolicy` via ordinary Go type inference — a
-deliberate design, not a loophole, recorded in
-[ADR 0008](docs/adr/0008-policy-config-boundary.md).
+**Storage selection fails closed.** If PostgreSQL is explicitly configured
+and the database is unreachable, unauthenticated, or running an incompatible
+schema version, initialization returns an error and no store — never a
+fallback to in-memory. A silent downgrade would mean every later decision
+was made against state you believed was durable and shared.
 
-Loading is strict on purpose: an unrecognized field, an unsupported
-schema version, an invalid decision/actor-type/risk-level value, or a
-duplicate YAML key all fail with an actionable error rather than being
-silently ignored — a config typo should never silently weaken a
-policy. See [Policy Guide § Loading a Policy from a YAML
-file](docs/policy-guide.md#loading-a-policy-from-a-yaml-file) for the
-full field reference and [`docs/tasks/019`](docs/tasks/019-policy-config-model.md)/[`020`](docs/tasks/020-policy-config-loader.md)
-for how this was built.
-
-The CLI consumes the exact same file: `trustvian analyze --config
-trustvian.yaml event.json` runs `config.LoadFile` +
-`config.CompilePolicy` internally and analyzes under that policy
-instead of the built-in default — see [`docs/tasks/021`](docs/tasks/021-cli-config-integration.md)
-and the [CLI Guide](docs/cli-guide.md#--config-path).
-
-The standalone [OTel Collector processor](processor/README.md) now has
-an equivalent `policy:` block in its own Collector configuration,
-using the identical schema (see
-[`docs/tasks/022`](docs/tasks/022-collector-config-integration.md)) —
-`processor/go.mod` depends on `v0.5.0`, verified with a clean
-`GOWORK=off` build/test against that real, published release.
-
-## Configuring Alerts
-
-Declarative Alert Evaluation rules (`[]alert.Rule`) can be declared the
-same way, using a **separate, independent** config document and
-compiler — `config.AlertConfig`/`config.CompileAlerts`, not a field on
-`PolicyConfig`. Policy configuration answers "what decision should
-Trustvian make"; Alert configuration answers "which Results/Decisions
-should produce an Alert" — the two stay independently compiled, exactly
-as `alert.Evaluate`'s own structural independence from `internal/policy`
-already keeps them apart at runtime. See [ADR
-0009](docs/adr/0009-alert-config-is-a-separate-document.md) for why
-this isn't a `policy:`/`alerts:` combined schema.
-
-```yaml
-# alerts.yaml
-version: v1
-rules:
-  - name: critical-risk
-    when:
-      min_risk_level: critical
-    severity: critical
-```
-
-```go
-cfg, err := config.LoadAlertsFile("alerts.yaml")
-if err != nil {
-	log.Fatal(err)
-}
-rules, err := config.CompileAlerts(cfg)
-if err != nil {
-	log.Fatal(err)
-}
-
-result, _ := engine.Analyze(ctx, ev)
-if a, matched := alert.Evaluate(result, rules); matched {
-	sink.Send(ctx, a)
-}
-```
-
-Unlike `PolicyConfig`, an `AlertConfig` has no mandatory default: an
-empty `Rules` list is valid, matching `alert.Evaluate`'s own "no match
-means no alert" design — the absence of an alert is a safe, inert
-outcome, not a security regression. See [`docs/tasks/023`](docs/tasks/023-declarative-alert-configuration.md)
-for how this was built. There is no CLI `--alert-config` flag and no
-Collector `alerts:` block yet — deliberately: neither has an
-alert-delivery flow today for a compiled `[]alert.Rule` to plug into.
+Concurrent `Observe` for one actor is atomic and loses no updates, including
+the first observation for an actor the database has never seen. Durability,
+concurrency, schema, and failure semantics:
+[storage guide](docs/storage-guide.md).
 
 ## OpenTelemetry
 
-The core engine has no OpenTelemetry dependency at all. `internal/otel`
-is a self-contained adapter that maps a finished span
-(`sdktrace.ReadOnlySpan`) into an `event.Event` using standard semantic
-conventions (HTTP, DB, RPC, `deployment.environment.name`,
-`service.name`) plus four documented `trustvian.*` override attributes
-for what no convention covers yet, and derives five outbound
-`trustvian.*` result attributes (`AttributesFromResult`) for a caller
-to attach to a span. A standalone OTel Collector processor
-([`processor/`](processor/README.md), a separate Go module using the
-heavier collector-builder toolchain deliberately kept out of this
-module's dependency graph) consumes this SDK's public API to score
-every span passing through a Collector pipeline, optionally under a
-real configured `Policy` (see [Configuring a
-Policy](#configuring-a-policy) above). See
-[`docs/OPENTELEMETRY.md`](docs/OPENTELEMETRY.md) for the full mapping.
+Two integration paths. The Collector is not required to use Trustvian.
 
-## Project layout
+**In-process** — an instrumented application with Trustvian as a library.
+The inbound adapter maps a finished span to an `Event` using standard
+semantic conventions, and the outbound side writes `trustvian.*` attributes
+back onto the span.
 
-```
-trustvian/
-├── trustvian.go, engine.go, options.go, result.go   # public SDK (root package)
-├── event/               # public domain vocabulary: Event, Actor, Operation, Target, Context
-├── alert/                # public: Result/Decision -> Alert, Evaluate, Sink, WebhookSink
-├── config/               # public: versioned YAML policy/alert config -> Validate -> CompilePolicy/CompileAlerts
-├── cmd/trustvian/        # CLI
-├── internal/
-│   ├── features/          # Event -> stable/volatile Features
-│   ├── fingerprint/       # Features -> deterministic Fingerprint
-│   ├── baseline/          # statistical model (EWMA mean/variance, maturity)
-│   ├── store/              # Baseline persistence port + in-memory and file-backed implementations
-│   ├── anomaly/            # Features + Baseline -> Anomaly (noisy-OR combination)
-│   ├── trust/               # Anomaly + identity + context -> Trust + RiskLevel
-│   ├── policy/               # data-driven rule evaluation -> Decision
-│   └── otel/                  # OpenTelemetry span -> Event adapter
-└── trustvian-project-spec.md, CLAUDE.md   # vision and engineering conventions
+**Through the Collector** — no application changes:
+
+```text
+OTLP → OpenTelemetry Collector → Trustvian processor → Engine
 ```
 
-Only the root package, `event`, `alert`, and `config` are importable
-from outside this module — everything else is intentionally
-`internal/`. `config` doesn't expose `internal/policy`'s types itself;
-it compiles its own public config structs into them, and a caller
-outside this module can still use the result via `WithPolicy` without
-importing `internal/policy` — see
-[ADR 0008](docs/adr/0008-policy-config-boundary.md). See
-[`.claude/rules/architecture.md`](.claude/rules/architecture.md) for
-the general reasoning behind this boundary.
+```yaml
+processors:
+  trustvian:
+    storage:
+      version: v1
+      type: postgres
+      postgres:
+        dsn: ${env:TRUSTVIAN_POSTGRES_DSN}
+```
 
-## Limitations
+Spans are enriched in place with `trustvian.anomaly.score`,
+`trustvian.trust.score`, `trustvian.risk.level`, `trustvian.decision`, and
+`trustvian.fingerprint.id`, then forwarded unchanged in shape.
 
-- **Persistent baseline storage exists but isn't the default.**
-  `store.FileStore` (a JSON file on disk, flushed synchronously after
-  every `Observe`) survives a process restart; `store.InMemory` remains
-  `NewEngine`'s default and does not. Switching is a one-line
-  `trustvian.WithStore(...)` change — see
-  [`docs/ARCHITECTURE.md` § storage boundary](docs/ARCHITECTURE.md#storage-boundary).
-  The CLI's `trustvian baseline build` still only proves out its
-  mechanism within a single invocation regardless of `Store`, since the
-  CLI itself doesn't yet expose a flag to select `FileStore`.
-- **A custom `Policy` now has a real external path; thresholds and
-  `Store` don't yet.** `WithAnomalyConfig`, `WithTrustConfig`, and
-  `WithStore` still take types from this module's `internal/` packages
-  that a separate Go module cannot construct — a custom
-  `anomaly.Config`/`trust.Config`, or a custom `store.Store`
-  implementation, still requires code living inside this module.
-  `WithPolicy` is the exception as of `v0.5`: the public `config`
-  package (`config.LoadFile`/`Load`/`Validate`/`CompilePolicy`) lets a
-  genuinely external caller declare a `Policy` in YAML and compile it
-  into the exact type `WithPolicy` accepts, without importing
-  `internal/policy` — see [Configuring a Policy](#configuring-a-policy)
-  above and [ADR 0008](docs/adr/0008-policy-config-boundary.md).
-  Promoting `anomaly.Config`/`trust.Config`/`Store` the same way is a
-  reasonable next step once a concrete external consumer needs it.
-- **Declarative *alert* configuration exists, but isn't wired into the
-  CLI or Collector processor.** `config.AlertConfig`/`CompileAlerts`
-  (see [Configuring Alerts](#configuring-alerts) above) let a Go SDK
-  caller declare `[]alert.Rule` in YAML, but there is no CLI
-  `--alert-config` flag and no Collector `alerts:` block — deliberately
-  deferred, since neither consumer has an alert-delivery flow today for
-  a compiled rule set to plug into. See
-  [`docs/tasks/023`](docs/tasks/023-declarative-alert-configuration.md)'s
-  own Non-Goals.
-- **Single-tenant.** Baseline/fingerprint keys are already scoped by
-  `(ActorID, Environment)`, but there is no multi-tenant access control
-  — that's explicitly a Trustvian Control/Cloud concern, not core-engine
-  scope.
+See the [OpenTelemetry adapter](docs/OPENTELEMETRY.md) and the
+[Collector processor](processor/README.md).
+
+## Configuration
+
+Three independent configuration documents, each with its own schema,
+loader, and compiler. They stay separate because they answer different
+questions.
+
+| Document | Question it answers | Guide |
+|---|---|---|
+| **Policy** | What decision should be made? | [policy-guide.md](docs/policy-guide.md) |
+| **Anomaly** | Which behavioral signals contribute, and how strongly? | [anomaly-config-guide.md](docs/anomaly-config-guide.md) |
+| **Alerts** | Which results should raise an alert, and where is it delivered? | [`examples/alert-webhook`](examples/alert-webhook/) |
+
+Each compiles through public API — `config.CompilePolicy`,
+`config.CompileAnomaly`, `config.CompileAlerts`, `config.CompileStorage` —
+so an external consumer configures the engine without importing anything
+internal. The CLI accepts the same documents through `--config`,
+`--anomaly-config`, and `--storage-config`.
+
+A misconfigured policy fails closed to `block` rather than falling through
+to a permissive default.
+
+## AI Agent Security
+
+AI agents run through the same pipeline as services and users — no second
+engine and no agent-specific detector. What agents add is context:
+
+| Field | Meaning |
+|---|---|
+| `SessionID` | Groups actions belonging to one conversation or task |
+| `DelegatedFrom` | The actor that delegated this action |
+| `ApprovalStatus` | Recorded approval evidence for this action |
+
+That makes agent-specific behavior measurable: unfamiliar tool sequences,
+delegation from a delegator this agent has not accepted work from before,
+and policy that distinguishes an approved sensitive action from an
+unapproved one.
+
+Two boundaries stated plainly:
+
+- Trustvian **evaluates** recorded delegation and approval evidence. It does
+  not authenticate that evidence, and it is not an approval workflow — a
+  `DelegatedFrom` value is a claim carried by your telemetry, not a verified
+  provenance chain.
+- Familiar is not the same as authorized, and unfamiliar is not the same as
+  malicious. Both are inputs to a decision you configure.
+
+See [use cases](docs/use-cases.md) and
+[sequence analysis](docs/sequence-analysis.md).
+
+## Reference Deployment
+
+A runnable Compose stack demonstrating the full production path:
+
+```bash
+cd deployments/docker-compose
+docker compose up -d --build
+docker compose run --rm demo-producer
+```
+
+```text
+demo producer → OTLP → Collector + Trustvian processor → PostgreSQL
+```
+
+The demo sends deterministic telemetry, the engine learns from it, and the
+baseline survives a full `docker compose down` and `up`. `./smoke-test.sh`
+verifies the whole path and exits non-zero on failure.
+
+This is a **reference deployment** for local evaluation, not hardened
+production orchestration: credentials are placeholders and TLS is off. Its
+[deployment guide](deployments/docker-compose/README.md) documents what to
+change first.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    A["Applications · Services · AI Agents"] -->|"telemetry"| B["OpenTelemetry Collector<br/>(optional)"]
+    A -->|"Go SDK, direct"| C
+    B --> C["Trustvian Engine"]
+    C --> D["Features → Fingerprint"]
+    D --> E["Baseline"]
+    E --> F["Anomaly"]
+    F --> G["Trust"]
+    G --> H["Policy → Decision"]
+    E <--> I["Store port"]
+    I --> J["InMemory"]
+    I --> K["FileStore"]
+    I --> L["PostgreSQL"]
+```
+
+The engine is a hexagonal core: each pipeline stage is a small package built
+around a pure function, and storage sits behind a two-method port. The core
+carries no database, OpenTelemetry, or transport dependency — adapters
+depend on the core, never the reverse.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and the
+[decision records](docs/adr/).
+
+## Security Model
+
+Design properties, each enforced by tests rather than convention:
+
+- **Explainable decisions** — every anomaly keeps its contributing signals; every decision carries a reason.
+- **Policy-controlled learning** — only actions that proceeded are eligible to be learned, so repeating a blocked action cannot poison a baseline.
+- **Bounded state** — every per-actor map has a cardinality cap.
+- **Fail-closed storage** — explicitly configured persistence never silently degrades to a non-durable store.
+- **Schema compatibility protection** — a newer schema version, or ambiguous metadata, aborts startup rather than being mutated.
+- **Parameterized SQL** — every value is a bound parameter; credentials are never logged or wrapped into errors.
+- **No raw telemetry warehouse** — current learned state is persisted, not event history. No prompts, tool arguments, request bodies, or SQL payloads.
+
+Identity confidence is an **input** Trustvian trusts, not something it
+computes; Trustvian is not an authenticator. See
+[docs/SECURITY.md](docs/SECURITY.md).
+
+## Documentation
+
+[docs/README.md](docs/README.md) is the full index. The most-used entries:
+
+| Topic | Document |
+|---|---|
+| Getting started | [getting-started.md](docs/getting-started.md) |
+| Architecture · Domain model | [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [DOMAIN.md](docs/DOMAIN.md) |
+| Go SDK · CLI | [sdk-guide.md](docs/sdk-guide.md) · [cli-guide.md](docs/cli-guide.md) |
+| Storage and persistence | [storage-guide.md](docs/storage-guide.md) |
+| Policy · Behavioral signals | [policy-guide.md](docs/policy-guide.md) · [anomaly-config-guide.md](docs/anomaly-config-guide.md) |
+| Sequence analysis | [sequence-analysis.md](docs/sequence-analysis.md) |
+| OpenTelemetry · Collector processor | [OPENTELEMETRY.md](docs/OPENTELEMETRY.md) · [processor/README.md](processor/README.md) |
+| Reference deployment | [deployments/docker-compose/README.md](deployments/docker-compose/README.md) |
+| Security · Performance | [SECURITY.md](docs/SECURITY.md) · [PERFORMANCE.md](docs/PERFORMANCE.md) |
+| Use cases · Decision records | [use-cases.md](docs/use-cases.md) · [adr/](docs/adr/) |
+
+## Examples
+
+Every example under [`examples/`](examples/) is a runnable Go program with
+its own README and real captured output. The directory is a separate Go
+module, which also proves the public API is usable from outside this
+repository.
+
+**Getting started** — [`basic`](examples/basic/)
+
+**Security scenarios** — [`credential-misuse`](examples/credential-misuse/),
+[`external-destination`](examples/external-destination/),
+[`unexpected-dependency`](examples/unexpected-dependency/),
+[`frequency-abuse`](examples/frequency-abuse/)
+
+**AI agents** — [`ai-agent`](examples/ai-agent/),
+[`ai-agent-security`](examples/ai-agent-security/)
+
+**Persistence** — [`persistent-baseline`](examples/persistent-baseline/)
+
+**Alerts** — [`alert-webhook`](examples/alert-webhook/)
 
 ## Development
 
 ```bash
-go build ./...
-go vet ./...
-go test -race ./...
-gofmt -l .   # must produce no output
+make check     # gofmt, vet, build, race tests
+make test      # all tests
+make bench     # benchmarks with allocation stats
+make examples  # run every example
 ```
 
-See [`CLAUDE.md`](CLAUDE.md) for the full development guide, and
-[`.claude/rules/`](.claude/rules/) for Go, architecture, testing, and
-security conventions specific to this codebase.
+PostgreSQL integration and stress tests are opt-in and skip without a
+database, so `go test ./...` never requires one:
+
+```bash
+make integration-postgres
+```
+
+`make help` lists every target. Engineering conventions are documented in
+[CLAUDE.md](CLAUDE.md) and [.claude/rules/](.claude/rules/).
+
+## Project Status & Releases
+
+Trustvian is under active development.
+
+- **Release history** — [CHANGELOG.md](CHANGELOG.md)
+- **Milestone status and planned work** — [docs/ROADMAP.md](docs/ROADMAP.md)
+- **Published releases** — [GitHub Releases](https://github.com/Trustvian/trustvian/releases)
+- **Product and technical vision** — [trustvian-project-spec.md](trustvian-project-spec.md)
+
+## Contributing
+
+Issues and pull requests are welcome. Before opening a PR, run `make check`
+and make sure new behavior is covered by tests. The conventions this
+codebase follows are documented in [CLAUDE.md](CLAUDE.md) and
+[.claude/rules/](.claude/rules/).
 
 ## License
 
