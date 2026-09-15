@@ -223,6 +223,20 @@ connections, database restarts, and unreadable schema metadata — and
 verified that **storage choice does not change behavior**: all three
 backends produce identical learned state and identical decisions.
 
+### Run it: reference Docker Compose deployment
+
+```bash
+cd deployments/docker-compose
+docker compose up -d --build            # PostgreSQL + OTel Collector + Trustvian
+docker compose run --rm demo-producer   # send 60 spans of routine behavior
+```
+
+Trustvian learns from the telemetry, persists the baseline to PostgreSQL,
+and scores against it again after a restart. `./smoke-test.sh` proves the
+whole path automatically. Full guide, including the persistence proof and
+the security caveats:
+[`deployments/docker-compose/README.md`](deployments/docker-compose/README.md).
+
 `InMemory` remains the default and `FileStore` is unchanged. See
 [`docs/storage-guide.md`](docs/storage-guide.md) for durability,
 concurrency, and failure semantics, [ADR

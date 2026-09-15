@@ -369,6 +369,47 @@ Callers type-assert (`if c, ok := s.(io.Closer); ok { defer c.Close() }`),
 which is a no-op for the other two backends — the same optional-capability
 shape, applied a second time rather than a new mechanism invented.
 
+## Deployment topology
+
+Until `v0.8` task 037 the repository described how Trustvian is *built* but
+never what a running deployment looks like. It now has one concrete,
+runnable shape ([`deployments/docker-compose/`](../deployments/docker-compose/)):
+
+```text
+   demo workload / instrumented service
+                │
+                │  OTLP/gRPC
+                ▼
+      OpenTelemetry Collector
+                │
+        Trustvian processor          (processor/, a separate Go module)
+                │
+         Trustvian Engine            (root package)
+                │
+        internal/store.Store         (the port)
+                │
+   internal/store/postgres.Store     (the adapter)
+                ▼
+            PostgreSQL
+```
+
+Two things about this diagram are load-bearing.
+
+**Trustvian is not a network service.** Nothing in this repository listens
+on a socket. The Collector does, and the Trustvian processor is a component
+inside it. The reference deployment containerizes an *existing* runtime
+shape rather than introducing a daemon — see
+[task 037](tasks/037-reference-docker-compose-deployment.md) § Runtime
+decision for why that mattered.
+
+**Dependency direction is unchanged by packaging.** The arrows point from
+the outside in: Collector → processor → Engine → port → adapter. Core knows
+nothing about Docker, Compose, the Collector, or PostgreSQL; the processor
+reaches storage only through the public `config.StorageConfig` /
+`CompileStorage` boundary, and holds no database code of its own. A
+deployment that inverted any of this would be a design regression, not a
+packaging detail.
+
 ## Relationship to Trustvian Control/Cloud
 
 Nothing in this repository implements Trustvian Control or Trustvian

@@ -155,11 +155,83 @@ actually depend on.
   `-short` flag rather than a new mechanism. `go test ./...` still requires
   no PostgreSQL.
 
+- **Reference Docker Compose deployment**
+  ([task 037](docs/tasks/037-reference-docker-compose-deployment.md),
+  fourth `v0.8` slice) — a runnable local stack demonstrating Trustvian
+  analyzing real OTLP telemetry against PostgreSQL-backed behavioral state
+  that survives a restart:
+
+  ```bash
+  cd deployments/docker-compose
+  docker compose up -d --build
+  docker compose run --rm demo-producer
+  ```
+
+  The topology is an OpenTelemetry Collector running the Trustvian
+  processor, writing baselines to PostgreSQL. **No standalone Trustvian
+  server was introduced** — the deployment containerizes the existing
+  Collector-processor runtime. Includes a deterministic `smoke-test.sh`
+  that proves the whole path (startup, analysis, persistence across
+  `down`/`up`, fail-closed on an unavailable database, and `down -v`
+  teardown) and exits non-zero on failure. Images are built locally from
+  source; nothing is published.
+
+  **The Collector processor can now select a Store.** `processors.trustvian`
+  gains a `storage:` block using the same `config.StorageConfig` schema the
+  Go SDK and CLI already accept:
+
+  ```yaml
+  processors:
+    trustvian:
+      storage:
+        version: v1
+        type: postgres
+        postgres:
+          dsn: ${env:TRUSTVIAN_POSTGRES_DSN}
+  ```
+
+  Before this, the processor called `NewEngine` with at most `WithPolicy`
+  and never `WithStore`, so **every Collector deployment silently ran on
+  the non-durable in-memory store and lost all learned baselines on
+  restart** — the same reachability gap task 034 fixed for the CLI, in the
+  one runtime that is actually long-lived. The block is decoded into
+  `config.StorageConfig` and compiled by `config.CompileStorage`; the
+  processor contains no database code, no DSN parsing, and no parallel
+  storage configuration model. An unreachable database now fails Collector
+  startup rather than falling back. `Shutdown` also releases the connection
+  pool, which it previously did not.
+
+  Omitting `storage:` preserves the previous in-memory behavior exactly.
+
+  The deployment's PostgreSQL service doubles as the documented environment
+  for the storage integration and stress suites (`make integration-postgres`),
+  reusing the existing `TRUSTVIAN_TEST_POSTGRES_DSN` variable with no test
+  changed.
+
 ### Changed
 
+- `processor/go.mod` now uses a `replace` directive against the repository
+  root instead of requiring `github.com/Trustvian/trustvian v0.5.0`, which
+  predates the storage configuration API the processor now needs. The
+  release-time decision (bump to a released `v0.8.0` and drop the replace,
+  or keep it) belongs to task 038.
+- `cmd/trustvian-collector` registers the Collector's upstream
+  `envprovider` alongside `fileprovider`, so `${env:VAR}` references in a
+  Collector config resolve. This is what lets a deployment keep its
+  database DSN out of its config file; no Trustvian-side interpolation
+  mechanism was added.
 - `newEngine` in `cmd/trustvian` now returns a cleanup function alongside
   the `Engine`, so the CLI releases the PostgreSQL connection pool on
   exit. Internal to the CLI; no public API change.
+
+### Fixed
+
+- A PostgreSQL integration test terminated *every* connection to the test
+  database to simulate connection loss. Because `go test ./...` runs
+  package binaries in parallel, it could kill connections belonging to
+  other packages' tests mid-transaction, failing them with SQLSTATE 57P01.
+  It now targets only its own store's connections, identified by
+  `application_name`. Test-only; no product behavior involved.
 
 ## v0.7.0 — AI Agent Behavioral Security
 

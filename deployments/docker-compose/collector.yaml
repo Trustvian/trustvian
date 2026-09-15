@@ -1,0 +1,72 @@
+# OpenTelemetry Collector configuration for the Trustvian reference
+# deployment: OTLP in, scored and enriched by Trustvian against a
+# PostgreSQL-backed baseline, logged to stdout.
+#
+# This is processor/config.yaml's pipeline plus the one thing that makes
+# the deployment meaningful: a `storage:` block. Without it the processor
+# runs on Trustvian's in-memory default and every learned baseline dies
+# with the container.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  trustvian:
+    # Behavioral state goes to PostgreSQL. This is the exact
+    # config.StorageConfig schema the Go SDK and
+    # `trustvian analyze --storage-config` consume — same version field,
+    # same type values, same nested postgres block. The processor decodes
+    # it into config.StorageConfig and hands it to config.CompileStorage;
+    # it contains no database code of its own.
+    #
+    # If this database is unreachable, the Collector FAILS TO START. It
+    # does not fall back to in-memory storage. See
+    # docs/SECURITY.md § Storage configuration and production persistence.
+    storage:
+      version: v1
+      type: postgres
+      postgres:
+        # Expanded by the Collector's own ${ENV} substitution from the
+        # environment compose.yaml sets. The DSN is a secret and is never
+        # logged — the processor logs only the backend type.
+        dsn: ${env:TRUSTVIAN_POSTGRES_DSN}
+
+    # A deliberately simple risk-graduated policy, so the demo produces
+    # visibly different decisions rather than "allow" for everything. Same
+    # schema as `trustvian analyze --config`; no new policy semantics.
+    policy:
+      version: v1
+      default_decision: allow
+      default_reason: risk within tolerance
+      rules:
+        - name: block-critical-risk
+          when:
+            min_risk_level: critical
+          decision: block
+          reason: critical behavioral risk
+        - name: challenge-high-risk
+          when:
+            min_risk_level: high
+          decision: challenge
+          reason: high behavioral risk
+        - name: alert-medium-risk
+          when:
+            min_risk_level: medium
+          decision: alert
+          reason: elevated behavioral risk
+
+exporters:
+  # stdout, so the demo needs no observability backend. Trustvian's
+  # decisions are visible in `docker compose logs otel-collector`.
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [trustvian]
+      exporters: [debug]

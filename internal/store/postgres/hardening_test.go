@@ -33,6 +33,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -771,10 +772,28 @@ func TestCloseSemantics(t *testing.T) {
 // missing.
 func TestConnectionLossDuringOperationFailsExplicitly(t *testing.T) {
 	dsn := requireDSN(t)
-	s, iso := newStore(t, dsn)
 	ctx := context.Background()
 	fp := testFingerprint()
 	key := hardeningKey("conn-loss-actor")
+
+	// Tag this store's connections with a unique application_name so the
+	// termination below can target *only* them.
+	//
+	// This matters more than it looks. An earlier version terminated every
+	// backend on the database (`WHERE datname = current_database()`), which
+	// is correct in isolation and wrong under `go test ./...`: package
+	// binaries run in parallel, so it killed connections belonging to other
+	// packages' tests mid-transaction and failed them with SQLSTATE 57P01.
+	// Schema isolation does not help here — schemas isolate *tables*, not
+	// connections. Targeting by application_name does.
+	appName := fmt.Sprintf("tv_connloss_%d_%d", os.Getpid(), time.Now().UnixNano())
+	iso := withApplicationName(t, isolatedSchemaDSN(t, dsn), appName)
+
+	s, err := postgres.NewStore(ctx, postgres.Config{DSN: iso})
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
 
 	const committed = 4
 	now := testTime
@@ -785,7 +804,8 @@ func TestConnectionLossDuringOperationFailsExplicitly(t *testing.T) {
 		now = now.Add(time.Second)
 	}
 
-	killer, err := pgx.Connect(ctx, iso)
+	// The killer connects without the tag, so it cannot terminate itself.
+	killer, err := pgx.Connect(ctx, isolatedSchemaDSN(t, dsn))
 	if err != nil {
 		t.Fatalf("pgx.Connect() error = %v", err)
 	}
@@ -795,11 +815,16 @@ func TestConnectionLossDuringOperationFailsExplicitly(t *testing.T) {
 	if err := killer.QueryRow(ctx, `
 		SELECT count(*) FROM (
 			SELECT pg_terminate_backend(pid) FROM pg_stat_activity
-			WHERE datname = current_database() AND pid <> pg_backend_pid()
-		) AS terminated`).Scan(&killed); err != nil {
+			WHERE datname = current_database()
+			  AND application_name = $1
+			  AND pid <> pg_backend_pid()
+		) AS terminated`, appName).Scan(&killed); err != nil {
 		t.Fatalf("terminate backends: %v", err)
 	}
-	t.Logf("terminated %d backend(s)", killed)
+	if killed == 0 {
+		t.Fatal("terminated 0 backends — the store's connections were not found, so this test proves nothing")
+	}
+	t.Logf("terminated %d backend(s) belonging to this store", killed)
 
 	acknowledged := 0
 	for range 3 {

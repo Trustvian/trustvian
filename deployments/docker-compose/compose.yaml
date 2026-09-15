@@ -1,0 +1,130 @@
+# Trustvian reference Docker Compose deployment.
+#
+# This is a LOCAL REFERENCE DEPLOYMENT, not production orchestration. It
+# exists to demonstrate one thing end to end: that Trustvian can analyze
+# real telemetry against behavioral state persisted in PostgreSQL, and that
+# the state survives a restart.
+#
+#   demo-producer --OTLP--> otel-collector (Trustvian processor) --> postgres
+#
+# See README.md in this directory for the quickstart, the persistence
+# proof, and the security caveats. Credentials here are deliberately
+# obvious development placeholders; see .env.example.
+
+name: trustvian-reference
+
+services:
+  # ---------------------------------------------------------------------
+  # PostgreSQL — the durable behavioral-state store.
+  #
+  # Pinned to 17, the version Trustvian's storage layer is tested against
+  # (docs/tasks/036-store-durability-concurrency-and-migration-hardening.md
+  # § PostgreSQL version support). Never `latest`: a reference deployment
+  # that silently changes database major version between runs is not a
+  # reference.
+  # ---------------------------------------------------------------------
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${TRUSTVIAN_POSTGRES_USER:-trustvian}
+      POSTGRES_PASSWORD: ${TRUSTVIAN_POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${TRUSTVIAN_POSTGRES_DB:-trustvian}
+    volumes:
+      # A named volume, so `docker compose down` keeps learned state and
+      # only `docker compose down -v` destroys it. That distinction is the
+      # whole persistence demonstration — see README § Restart semantics.
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      # Published on 127.0.0.1 only, and only so an operator can inspect
+      # state with psql and so the repository's own PostgreSQL integration
+      # tests can reuse this service (README § Reusing this database for
+      # integration tests). Service-to-service traffic does not need it —
+      # the collector reaches postgres over the Compose network by name.
+      #
+      # 5433 rather than 5432 to avoid colliding with a PostgreSQL the
+      # developer may already be running.
+      - "127.0.0.1:${TRUSTVIAN_POSTGRES_HOST_PORT:-5433}:5432"
+    healthcheck:
+      # Dependency startup coordination only — this is not the application
+      # health/readiness capability planned for v0.9. It exists so the
+      # collector does not race an initializing database, which would
+      # otherwise make it fail closed (correctly) on a perfectly healthy
+      # stack.
+      test: ["CMD-SHELL", "pg_isready -U ${TRUSTVIAN_POSTGRES_USER:-trustvian} -d ${TRUSTVIAN_POSTGRES_DB:-trustvian}"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 5s
+
+  # ---------------------------------------------------------------------
+  # OpenTelemetry Collector with the Trustvian processor.
+  #
+  # This is the Trustvian runtime. No standalone Trustvian server exists or
+  # is invented here: the Collector processor is the repository's existing
+  # long-lived runtime shape, and it already calls both Analyze and Observe
+  # so learning actually happens. See
+  # docs/tasks/037-reference-docker-compose-deployment.md § Runtime
+  # decision.
+  #
+  # Built from repository source rather than pulled: there is no published
+  # Trustvian image yet, and inventing a reference to one would be a lie.
+  # Official image publishing is v0.9's scope.
+  # ---------------------------------------------------------------------
+  otel-collector:
+    build:
+      # Repository root, because the processor module has a `replace`
+      # directive pointing at it and therefore needs the core module's
+      # source in the build context.
+      context: ../..
+      dockerfile: deployments/docker-compose/Dockerfile.collector
+    command: ["--config=/etc/trustvian/collector.yaml"]
+    environment:
+      # The DSN is assembled here, from the same variables postgres uses,
+      # so credentials live in exactly one place. Collector's own
+      # ${ENV} expansion substitutes it into collector.yaml — no
+      # Trustvian-side interpolation engine was added for this.
+      TRUSTVIAN_POSTGRES_DSN: >-
+        postgres://${TRUSTVIAN_POSTGRES_USER:-trustvian}:${TRUSTVIAN_POSTGRES_PASSWORD:-change-me}@postgres:5432/${TRUSTVIAN_POSTGRES_DB:-trustvian}?sslmode=disable
+    volumes:
+      - ./collector.yaml:/etc/trustvian/collector.yaml:ro
+    ports:
+      - "127.0.0.1:${TRUSTVIAN_OTLP_GRPC_PORT:-4317}:4317"
+    depends_on:
+      postgres:
+        # Wait for the health check, not merely for the container to exist.
+        # Plain `depends_on` would only guarantee start order, and the
+        # collector fails closed on an unreachable database — so without
+        # this condition a cold `up` would intermittently abort on a stack
+        # that is actually fine.
+        condition: service_healthy
+    # The collector must not silently tolerate a failed start. If Trustvian
+    # storage initialization fails, the process exits non-zero and stays
+    # down, which is the containerized form of failing closed.
+    restart: "no"
+
+  # ---------------------------------------------------------------------
+  # Demo telemetry producer — a one-shot job, not a service.
+  #
+  # Behind a profile so `docker compose up` brings up the stack without
+  # sending anything. Send telemetry deliberately:
+  #
+  #   docker compose run --rm demo-producer
+  # ---------------------------------------------------------------------
+  demo-producer:
+    profiles: ["demo"]
+    build:
+      context: ../..
+      dockerfile: deployments/docker-compose/Dockerfile.demo
+    environment:
+      OTLP_ENDPOINT: otel-collector:4317
+      SERVICE_NAME: ${TRUSTVIAN_DEMO_ACTOR:-demo-payments}
+      ENVIRONMENT: ${TRUSTVIAN_DEMO_ENVIRONMENT:-production}
+      SPAN_COUNT: ${TRUSTVIAN_DEMO_SPAN_COUNT:-60}
+      ANOMALY: ${TRUSTVIAN_DEMO_ANOMALY:-false}
+    depends_on:
+      - otel-collector
+    restart: "no"
+
+volumes:
+  # Named, so its lifetime is explicit and independent of the containers.
+  postgres-data:
