@@ -35,16 +35,6 @@ var (
 	ErrInvalidStorageType        = errors.New("config: invalid storage type")
 	ErrMissingStoragePath        = errors.New("config: file storage requires a path")
 	ErrMissingStorageDSN         = errors.New("config: postgres storage requires a dsn")
-	// ErrStorageTypeNotImplemented is returned for a storage type this
-	// package recognizes but cannot construct. No type is in that state
-	// today — PostgreSQL, the only value that ever was, is implemented
-	// as of `v0.8` task 035. Retained (rather than deleted) because it
-	// is exported API that a caller may already check with errors.Is,
-	// and because the next recognized-before-implemented backend should
-	// reuse this exact distinction: "that backend is real but this
-	// release doesn't ship it" reads very differently to an operator
-	// than "you typo'd the backend name."
-	ErrStorageTypeNotImplemented = errors.New("config: storage type not implemented in this release")
 
 	ErrUnsupportedAnomalyVersion = errors.New("config: unsupported anomaly config version")
 	// ErrInvalidZThreshold is distinct from ErrInvalidThreshold: a
@@ -398,11 +388,9 @@ func (cfg AnomalyConfig) Validate() error {
 }
 
 // validStorageTypes is the set of Type values StorageConfig recognizes.
-// StorageTypePostgres is present here on purpose: it is a *recognized*
-// type that fails at compile time with ErrStorageTypeNotImplemented
-// rather than at validation time with ErrInvalidStorageType — see
-// config/storage.go's own constant block for why that distinction
-// matters to an operator.
+// Every one of them is implemented and constructible as of `v0.8`; a Type
+// outside this set is a configuration error (ErrInvalidStorageType), which
+// is how an operator tells a typo'd backend name from a real one.
 var validStorageTypes = map[string]bool{
 	StorageTypeMemory:   true,
 	StorageTypeFile:     true,
@@ -414,12 +402,13 @@ var validStorageTypes = map[string]bool{
 // Type requires. Validate returns the first problem it finds, mirroring
 // every other config document's "first error wins" convention.
 //
-// Validate deliberately does *not* reject StorageTypePostgres — that is
-// a well-formed configuration this release cannot construct, which
-// CompileStorage reports separately (ErrStorageTypeNotImplemented).
-// Keeping the two distinct means a future release implementing
-// PostgreSQL changes CompileStorage only, with no validation change and
-// no behavior change for any config that already validated.
+// Validate checks only that the document is well-formed; it deliberately
+// performs no I/O. For StorageTypePostgres that means it requires a DSN
+// but neither parses nor dials it — reachability, authentication, and
+// schema compatibility are CompileStorage's to report. The split keeps
+// Validate pure (callable without touching a filesystem or a network) and,
+// just as importantly, keeps it from ever needing to quote a DSN — which
+// carries a password — back in an error message.
 //
 // Validate is called internally by CompileStorage, but is also exposed
 // standalone for the same reason every other document's Validate is: a
