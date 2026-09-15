@@ -91,10 +91,12 @@ or unopenable store aborts startup rather than degrading to memory. That
 matters more here than for Policy or anomaly config: silently
 substituting a non-durable store for an explicitly requested durable one
 would lose exactly the state the operator asked to keep. `type: postgres`
-is recognized but not implemented in this release, and returns
-`config.ErrStorageTypeNotImplemented` for the same reason — never a
-substitute. See
-[`main_test.go`](main_test.go)'s own `TestPublicConfigUnimplementedBackendFailsClosed`
+is fully implemented as of `v0.8`, and the same rule applies to it: a
+database that is unreachable, unauthenticated, or missing its DSN yields an
+error and no Store — never a substitute. See
+[`main_test.go`](main_test.go)'s own
+`TestPublicConfigPostgresFailsClosedWhenUnreachable`,
+`TestPublicConfigSelectsPostgresStoreAcrossRestart`,
 and `TestPublicConfigMemoryStoreDoesNotPersist` (the control proving the
 durable case is genuinely doing something).
 

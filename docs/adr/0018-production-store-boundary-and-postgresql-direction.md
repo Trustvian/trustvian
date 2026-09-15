@@ -89,6 +89,16 @@ never a fallback. Keeping validation and construction split this way
 means the next slice changes `CompileStorage` only: no validation
 change, and no config that already validated starts failing.
 
+> **Update (`v0.8` task 038).** `type: postgres` is implemented as of task
+> 035, so the recognized-but-unimplemented state this paragraph describes no
+> longer exists. `config.ErrStorageTypeNotImplemented` was removed during
+> release stabilization rather than frozen into the public API as a sentinel
+> nothing could ever return — it had never appeared in a released version,
+> so removal was free then and would have been a breaking change later. The
+> *distinction* it drew (a real backend this release does not ship, versus a
+> typo'd backend name) remains the right one; re-adding an error is
+> backward-compatible if a future backend needs it.
+
 There is also no default `Type`. Omitting it is an error, not an
 implicit choice of the non-durable backend — the same
 fail-closed-on-ambiguous-config discipline `policy.Policy.Evaluate`

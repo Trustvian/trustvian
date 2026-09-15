@@ -182,7 +182,11 @@ together — through public config alone, no `internal/*` import
 anywhere. **`v0.7.0` is shipped** (all five tasks — 014, 030, 031, 032,
 033 — done and released).
 
-**`v0.8` — Production Runtime & Storage is now in progress.** Its first
+**`v0.8` — Production Runtime & Storage is implementation-complete and
+release-ready; `v0.8.0` has not yet been published.** All five slices
+(034–038) are done: production persistence is selectable through public
+configuration, PostgreSQL is implemented and hardened, and a runnable
+reference deployment demonstrates the whole path. Its first
 slice ([task
 034](docs/tasks/034-production-store-contract-and-public-boundary.md))
 makes persistence *selectable* for the first time: `config.StorageConfig`
@@ -291,11 +295,10 @@ alert sink (Slack/Teams/PagerDuty) — declarative *alert* configuration
 itself is
 now implemented (see above); wiring it into the CLI or the Collector
 processor is deliberately deferred, since neither has an alert-delivery
-flow yet for it to plug into — a production-grade persistent store
-beyond `FileStore` (PostgreSQL, the next `v0.8` slice; the store
-*boundary* now exists, the backend does not), a reference Docker Compose
-deployment, and
-release/operational engineering (CI, Docker image, SBOM). See
+flow yet for it to plug into — and release/operational engineering (CI,
+official Docker image, SBOM), which is `v0.9`'s scope. Production
+persistence and a reference Docker Compose deployment are no longer on
+this list: both landed in `v0.8` (see above). See
 [`docs/ROADMAP.md`](docs/ROADMAP.md#the-oss--enterprise-product-boundary)
 for the explicit OSS/Control boundary and the full milestone sequence
 through `v1.0`. ML-based detection stays optional research, never a

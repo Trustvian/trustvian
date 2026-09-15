@@ -1580,8 +1580,11 @@ Why each step exists, not merely what it contains:
   Trustvian processor against PostgreSQL, with a documented persistence
   proof and an automated smoke test — which also required giving the
   Collector processor its first ability to select a Store at all. The
-  `v0.8` release gate remains **PLANNED**, so the milestone is **not**
-  release-ready. `InMemory` is still the default and `FileStore` is
+  `v0.8` release gate is **PASSED** (fifth slice): the milestone's exit
+  criteria are all met and its public storage API and configuration schema
+  have been reviewed for support after release. **`v0.8` is release-ready;
+  `v0.8.0` is not yet shipped** — the tag and GitHub release are a separate,
+  human-controlled step. `InMemory` is still the default and `FileStore` is
   unchanged.
 - **`v1.0`** is the point all of the above adds up to: a release gate,
   not a new capability, and not a claim this document makes today —

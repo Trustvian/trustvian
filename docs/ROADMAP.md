@@ -10,8 +10,9 @@ technical requirements, tests, benchmarks, documentation, and
 acceptance criteria. Milestones without a fully-scoped task sequence
 yet (`v0.9` below) are deliberately not pre-scoped in detail —
 this roadmap's own "small vertical slices" principle, applied to
-itself. `v0.8` is in progress: its slice sequence (034–038) is named,
-and only the active slice has a task file. Every earlier milestone through `v0.7` has each of its slices
+itself. `v0.8` is release-ready but not yet shipped: all five of its slices
+(034–038) are done, and each has its own task file. Every earlier milestone
+through `v0.7` has each of its slices
 either scoped and done, or explicitly named as the next slice, not
 left as a vague placeholder: `v0.5` has all five of its tasks scoped
 and done — [019](tasks/019-policy-config-model.md),
@@ -1641,13 +1642,17 @@ No specific response mechanism is designed here.
 
 ## v0.8 — Production Runtime & Storage
 
-**Status: IN PROGRESS.** Tasks
+**Status: RELEASE READY.** All five slices are done:
 [034](tasks/034-production-store-contract-and-public-boundary.md),
-[035](tasks/035-postgresql-store-implementation.md), and
+[035](tasks/035-postgresql-store-implementation.md),
 [036](tasks/036-store-durability-concurrency-and-migration-hardening.md),
-and [037](tasks/037-reference-docker-compose-deployment.md) are done; 038
-is named below and not yet task-filed. **`v0.8` is not release-ready** —
-038 remains.
+[037](tasks/037-reference-docker-compose-deployment.md), and
+[038](tasks/038-v08-stabilization-release-gate.md). The milestone's exit
+criteria below are all met.
+
+**`v0.8.0` is NOT YET SHIPPED.** The implementation is release-ready; the
+tag and GitHub release are a separate, human-controlled step. This document
+says SHIPPED only once that tag exists.
 
 **Objective.** OSS should be deployable as a real production system,
 not only a library and a CLI against a local file.
@@ -1664,7 +1669,7 @@ applied to itself:
 | [035](tasks/035-postgresql-store-implementation.md) | PostgreSQL Store implementation | **DONE** |
 | [036](tasks/036-store-durability-concurrency-and-migration-hardening.md) | Store durability / concurrency / migration hardening | **DONE** |
 | [037](tasks/037-reference-docker-compose-deployment.md) | Reference Docker Compose deployment | **DONE** |
-| 038 | `v0.8` stabilization & release gate | Next — not task-filed |
+| [038](tasks/038-v08-stabilization-release-gate.md) | `v0.8` stabilization & release gate | **DONE** |
 
 **Task 034 — Production Store Contract & Public Selection Boundary — is
 done.** Starting this milestone surfaced a gap more basic than choosing
@@ -1689,9 +1694,11 @@ while missing this milestone's objective:
   independent config document, alongside Policy/Alert/Anomaly, and the
   only way an external consumer can obtain a `store.Store`. Fails
   closed on every error (nil Store, never a silent downgrade to
-  non-durable storage), and `type: postgres` is *recognized but
-  unimplemented*, returning a distinct `ErrStorageTypeNotImplemented`
-  rather than an "unknown type" error or a substitute store.
+  non-durable storage). At the time of this slice `type: postgres` was
+  *recognized but unimplemented*, failing with a distinct error rather
+  than an "unknown type" error or a substitute store — task 035
+  implemented it, and task 038 removed that now-unreachable error from the
+  public API before it could be frozen by a release.
 - `TestStoreContract` (`internal/store/contract_test.go`) — the nine
   `Store` guarantees, executable against every implementation from one
   place. Adding a backend means adding one line to `storeFactories`.
@@ -1924,14 +1931,19 @@ precedent ([ADR 0008](adr/0008-policy-config-boundary.md), [ADR
 follows rather than reinvents; the milestone is otherwise independent of
 `v0.5`–`v0.7`.
 
-**Exit criteria.** All five slices done, and concretely: a production
-backend passing `TestStoreContract` unmodified; durability and
-lost-update behavior proven under concurrency rather than asserted;
-persistence selectable from the Go SDK, YAML, and the CLI; a runnable
-reference deployment; `InMemory`/`FileStore` still fully supported with
-`InMemory` still the default; and no new Core dependency on any
-database. Per-task acceptance criteria are fixed when each slice's task
-file is written — 034's are in its own file.
+**Exit criteria — all met**, verified by [task
+038](tasks/038-v08-stabilization-release-gate.md):
+
+| Criterion | Evidence |
+|---|---|
+| A production backend passing `TestStoreContract` unmodified | PostgreSQL passes all nine guarantees; no contract test was changed to accommodate it |
+| Durability and lost-update behavior proven under concurrency, not asserted | 32 writers × 100 observations on one key × 3 rounds, zero lost; 96 concurrent first-writes × 5 rounds, exactly one row; durability across a *verified* real PostgreSQL restart |
+| Persistence selectable from the Go SDK, YAML, and the CLI | `config.StorageConfig`/`CompileStorage`, `storage.yaml`, `--storage-config` — proven from an external module that cannot import `internal/*` |
+| A runnable reference deployment | [`deployments/docker-compose/`](../deployments/docker-compose/), with a 7-check smoke test passing from a clean clone |
+| `InMemory`/`FileStore` still fully supported, `InMemory` still the default | `NewEngine()` unchanged; all three backends proven to produce identical learned state, scores, and decisions |
+| No new Core dependency on any database | `go list -deps` reports zero pgx packages for `event`, `internal/features`…`internal/policy`, `internal/store`, and the root package |
+
+Per-task acceptance criteria are fixed in each slice's own task file.
 
 ## v0.9 — Operational Readiness
 
