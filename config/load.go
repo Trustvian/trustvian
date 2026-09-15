@@ -213,3 +213,66 @@ func LoadAnomalyFile(path string) (AnomalyConfig, error) {
 	}
 	return cfg, nil
 }
+
+// LoadStorage decodes data as a schema-v1 YAML document directly into a
+// StorageConfig, and validates the result before returning it — the
+// StorageConfig analogue of Load/LoadAlerts/LoadAnomaly, deliberately a
+// separate document (see config/storage.go's package comment and ADR
+// 0018). Same strictness as the others: unrecognized fields and
+// duplicate mapping keys are both rejected.
+//
+// Note LoadStorage validates but does not *construct* — it never opens
+// a file or dials a database. Building the Store is CompileStorage's
+// job, kept separate precisely so loading a config is side-effect-free.
+func LoadStorage(data []byte) (StorageConfig, error) {
+	if len(bytes.TrimSpace(data)) == 0 {
+		return StorageConfig{}, ErrEmptyInput
+	}
+
+	var cfg StorageConfig
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err != nil {
+		if errors.Is(err, io.EOF) {
+			return StorageConfig{}, ErrEmptyInput
+		}
+		return StorageConfig{}, fmt.Errorf("config: decode: %w", err)
+	}
+
+	if err := cfg.Validate(); err != nil {
+		return StorageConfig{}, err
+	}
+	return cfg, nil
+}
+
+// LoadStorageFile reads the file at path (bounded to maxConfigFileSize,
+// the same bound every other loader here uses) and calls LoadStorage on
+// its contents. Same caller-controlled-path discipline as the others: no
+// directory scanning, no auto-discovery.
+//
+// Note the two distinct paths in play when this is used for file
+// storage: `path` here is the *configuration* document, while
+// FileStorageConfig.Path inside it names the *baseline state* file. They
+// are deliberately separate — an operator may keep config in version
+// control and state on a data volume.
+func LoadStorageFile(path string) (StorageConfig, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return StorageConfig{}, fmt.Errorf("config: open %s: %w", path, err)
+	}
+	defer f.Close()
+
+	data, err := io.ReadAll(io.LimitReader(f, maxConfigFileSize+1))
+	if err != nil {
+		return StorageConfig{}, fmt.Errorf("config: read %s: %w", path, err)
+	}
+	if len(data) > maxConfigFileSize {
+		return StorageConfig{}, fmt.Errorf("%w: %s (max %d bytes)", ErrFileTooLarge, path, maxConfigFileSize)
+	}
+
+	cfg, err := LoadStorage(data)
+	if err != nil {
+		return StorageConfig{}, fmt.Errorf("config: %s: %w", path, err)
+	}
+	return cfg, nil
+}

@@ -44,7 +44,9 @@ func defaultPolicy() policy.Policy {
 // unchanged — the identical compatibility requirement, extended to
 // task 033's own new flag: an operator who never passes
 // --anomaly-config sees byte-for-byte the same behavior as before that
-// flag existed.
+// flag existed. With no storageConfigPath, the Engine keeps
+// NewEngine's own default in-memory store — the same requirement again,
+// extended to task 034's flag.
 //
 // With configPath/anomalyConfigPath set, it loads and compiles a real
 // Policy/AnomalyConfig from that file via the same public config
@@ -59,7 +61,7 @@ func defaultPolicy() policy.Policy {
 // explicitly requested config that cannot be safely loaded and
 // compiled must never result in analysis continuing under a different
 // configuration).
-func newEngine(configPath, anomalyConfigPath string) (*trustvian.Engine, error) {
+func newEngine(configPath, anomalyConfigPath, storageConfigPath string) (*trustvian.Engine, error) {
 	opts := []trustvian.Option{trustvian.WithPolicy(defaultPolicy())}
 
 	if configPath != "" {
@@ -84,6 +86,26 @@ func newEngine(configPath, anomalyConfigPath string) (*trustvian.Engine, error) 
 			return nil, fmt.Errorf("anomaly-config %s: %w", anomalyConfigPath, err)
 		}
 		opts = append(opts, trustvian.WithAnomalyConfig(ac))
+	}
+
+	// Storage selection is the one option here with durability
+	// consequences, so its failure handling matters most: any load or
+	// compile error aborts, and the command must never fall back to the
+	// default in-memory store after an explicit persistent-storage
+	// request. Falling back would silently discard everything the run
+	// learned — the exact data-loss-disguised-as-convenience failure
+	// docs/adr/0018-production-store-boundary-and-postgresql-direction.md
+	// rules out.
+	if storageConfigPath != "" {
+		scfg, err := config.LoadStorageFile(storageConfigPath)
+		if err != nil {
+			return nil, err
+		}
+		s, err := config.CompileStorage(scfg)
+		if err != nil {
+			return nil, fmt.Errorf("storage-config %s: %w", storageConfigPath, err)
+		}
+		opts = append(opts, trustvian.WithStore(s))
 	}
 
 	return trustvian.NewEngine(opts...), nil

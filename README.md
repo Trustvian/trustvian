@@ -179,9 +179,28 @@ public path to every `v0.6`/`v0.7` signal weight, and
 [`examples/ai-agent-security`](examples/ai-agent-security/) demonstrates
 the full combined scenario — delegation, sequence, and approval
 together — through public config alone, no `internal/*` import
-anywhere. **`v0.7` is now release-ready** (all five tasks — 014, 030,
-031, 032, 033 — done); tagging `v0.7.0` remains a separate, explicit
-human action, exactly like every prior milestone.
+anywhere. **`v0.7.0` is shipped** (all five tasks — 014, 030, 031, 032,
+033 — done and released).
+
+**`v0.8` — Production Runtime & Storage is now in progress.** Its first
+slice ([task
+034](docs/tasks/034-production-store-contract-and-public-boundary.md))
+makes persistence *selectable* for the first time: `config.StorageConfig`
++ `config.CompileStorage` are the public path to a durable `store.Store`,
+and `trustvian analyze`/`baseline build` gained `--storage-config`.
+Before this, `WithStore` was in-module-only in practice — `store.Store`
+lives under `internal/` with methods referencing internal types, so no
+external consumer could select any store, not even the `FileStore` that
+already shipped, and every deployment silently ran in memory and lost its
+baselines on restart. A durable store now survives restarts through
+public API alone (see
+[`examples/persistent-baseline`](examples/persistent-baseline/)), and the
+`Store` contract a future database backend must satisfy is written down
+and executable. PostgreSQL itself is **not yet implemented** — requesting
+it fails closed with a clear error rather than falling back. See [ADR
+0018](docs/adr/0018-production-store-boundary-and-postgresql-direction.md)
+and [`docs/ROADMAP.md` §
+v0.8](docs/ROADMAP.md#v08--production-runtime--storage).
 
 ### Configuring `v0.6`/`v0.7` behavioral signals
 
@@ -231,7 +250,9 @@ itself is
 now implemented (see above); wiring it into the CLI or the Collector
 processor is deliberately deferred, since neither has an alert-delivery
 flow yet for it to plug into — a production-grade persistent store
-beyond `FileStore`, and
+beyond `FileStore` (PostgreSQL, the next `v0.8` slice; the store
+*boundary* now exists, the backend does not), a reference Docker Compose
+deployment, and
 release/operational engineering (CI, Docker image, SBOM). See
 [`docs/ROADMAP.md`](docs/ROADMAP.md#the-oss--enterprise-product-boundary)
 for the explicit OSS/Control boundary and the full milestone sequence

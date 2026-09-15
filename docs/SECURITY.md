@@ -36,6 +36,7 @@ here, not moved or rewritten.
 | Alert/notification delivery integrity | `TestSendSignsPayloadCorrectly`, `TestSendTamperedPayloadFailsVerification`, `TestSendDoesNotLeakSecret`, `TestNewWebhookSinkRejectsNonHTTPS`, `TestNewWebhookSinkRejectsLoopbackDestination`, `TestSendRespectsTimeout`, `TestSendPayloadTooLargeMakesNoNetworkCall` in [`alert/webhook_test.go`](../alert/webhook_test.go) |
 | Configuration-input validation | `TestValidateRejectsUnsupportedVersion`, `TestValidateRejectsInvalidDefaultDecision`, `TestValidateRejectsInvalidRuleDecision`, `TestValidateRejectsInvalidActorType`, `TestValidateRejectsInvalidOperationCategory`, `TestValidateRejectsInvalidRiskLevel`, `TestValidateRejectsDuplicateRuleName`, `TestValidateRejectsEmptyRuleName`, `TestValidateRejectsTooManyRules`, `TestValidateRejectsOverlongName` in [`config/validate_test.go`](../config/validate_test.go); `TestLoadRejectsUnknownTopLevelField`, `TestLoadRejectsUnknownNestedField`, `TestLoadRejectsDuplicateYAMLKeys`, `TestLoadFileRejectsOversizedFile`, `TestLoadRejectsEmptyInput`, `TestLoadDoesNotPanicOnArbitraryInput`, `FuzzLoad` in [`config/load_test.go`](../config/load_test.go)/[`config/fuzz_test.go`](../config/fuzz_test.go) |
 | Anomaly configuration-input validation — weight/threshold ranges, negative-into-`uint64` rejection, backward-compatible zero-value default (`v0.7` task 033) | `TestValidateAnomalyConfigRejectsInvalidWeight`, `TestValidateAnomalyConfigRejectsInvalidPointerWeight`, `TestValidateAnomalyConfigRejectsInvalidZThreshold`, `TestValidateAnomalyConfigAcceptsZeroMinObservations`, `TestValidateAnomalyConfigRejectsInvalidSensitiveTargetFloor` in [`config/anomaly_test.go`](../config/anomaly_test.go); `TestCompileAnomalyZeroValueMatchesDefaultConfig`, `TestCompileAnomalyTranslatesEveryField` in [`config/anomaly_compile_test.go`](../config/anomaly_compile_test.go); `TestLoadAnomalyRejectsNegativeIntoUnsignedField`, `TestLoadAnomalyRejectsUnknownField`, `FuzzLoadAnomaly` in [`config/anomaly_load_test.go`](../config/anomaly_load_test.go) |
+| Storage configuration & persistence contract — fail-closed on unbuildable store, no implicit backend, no lost updates under concurrency, load-failure propagation (`v0.8` task 034) | `TestStoreContract` (incl. its same-key-concurrency guarantee), `TestStoreContractImplementationsAgreeOnLogicalState` in [`internal/store/contract_test.go`](../internal/store/contract_test.go); `TestCompileStoragePostgresFailsClosedNeverFallsBack`, `TestCompileStorageInvalidConfigReturnsNilStore`, `TestCompileStorageFilePropagatesLoadFailure`, `TestValidateStorageConfigRejectsMissingType`, `FuzzLoadStorage` in [`config/storage_test.go`](../config/storage_test.go); `TestRunAnalyzeUnimplementedStorageBackendFailsClosed`, `TestRunAnalyzeInvalidStorageConfigFailsClosed`, `TestBaselineBuildThenAnalyzePersistsAcrossCommands` in [`cmd/trustvian/main_test.go`](../cmd/trustvian/main_test.go) |
 | Alert configuration-input validation | `TestValidateAlertConfigRejectsUnsupportedVersion`, `TestValidateAlertConfigRejectsInvalidSeverity`, `TestValidateAlertConfigRejectsInvalidDecision`, `TestValidateAlertConfigRejectsInvalidRiskLevel`, `TestValidateAlertConfigRejectsInvalidActorType`, `TestValidateAlertConfigRejectsInvalidTargetCategory`, `TestValidateAlertConfigRejectsInvalidMinAnomalyScore`, `TestValidateAlertConfigRejectsInvalidMaxTrustScore`, `TestValidateAlertConfigRejectsDuplicateRuleName`, `TestValidateAlertConfigRejectsEmptyRuleName`, `TestValidateAlertConfigRejectsTooManyRules` in [`config/alert_test.go`](../config/alert_test.go); `TestLoadAlertsRejectsUnknownField`, `TestLoadAlertsRejectsDuplicateYAMLKeys`, `TestLoadAlertsFileRejectsOversizedFile`, `TestLoadAlertsRejectsEmptyInput`, `FuzzLoadAlerts` in [`config/alert_load_test.go`](../config/alert_load_test.go) |
 | Sequence state (memory bounds, ordering, cross-actor isolation) | `TestBaselineObservePredecessorCountsIsBounded`, `TestBaselineObserveOutOfOrderEventDoesNotRecordOrCorruptTransition`, `TestBaselineObservePredecessorCountsIsImmutable` in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestInMemoryObserveConcurrentTransitionTracking` in [`internal/store/store_test.go`](../internal/store/store_test.go); `TestDefaultConfigTransitionWeightIsOptIn`, `TestScoreTransitionDeviation` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeTransitionDeviationEndToEnd` in [`engine_test.go`](../engine_test.go) |
 | Transition rarity — cold start, counter overflow, poisoning, actor isolation (`v0.6` task 026) | `TestBaselineObserveManyDistinctTransitionsStayBounded`, `TestBaselineObserveOutgoingTransitionTotalIsImmutable` in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestScoreTransitionRarityColdStart`, `TestScoreTransitionRarityNeverExceedsBounds`, `TestDefaultConfigTransitionRarityWeightIsOptIn` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeTransitionRarityCrossActorIsolation`, `TestAnalyzeTransitionRarityScoresBeforeLearning`, `TestObserveTransitionRarityLearnsOnlyFromEligibleDecisions` in [`engine_test.go`](../engine_test.go) |
@@ -655,6 +656,78 @@ a caller who forgets to set `NoveltyWeight` unintentionally disabling
 `categorical_novelty`) would be exactly the "never silently weaken a
 security policy" violation CLAUDE.md warns against, just one layer
 removed from `Policy` itself.
+
+### Storage configuration and production persistence
+
+**Threat:** an explicitly requested durable store that cannot be built
+silently degrades to a non-durable one, and the deployment appears
+healthy while learning nothing that survives a restart. This failure
+mode is worse than the config-typo threats above: a misconfigured
+`Policy` or `AnomalyConfig` produces *different decisions*, which an
+operator can observe, whereas a silently substituted store produces
+*data loss*, invisible until the restart that needed the data.
+
+**Status: implemented for the boundary, partially future for the
+backend** ([task 034](tasks/034-production-store-contract-and-public-boundary.md),
+[ADR 0018](adr/0018-production-store-boundary-and-postgresql-direction.md)).
+
+Implemented now:
+
+- **Fail closed, never degrade.** `config.CompileStorage` returns a
+  **nil** `Store` on every error path, so a caller who ignores the error
+  cannot proceed on a substituted store. Proven by
+  `TestCompileStoragePostgresFailsClosedNeverFallsBack` and, at the CLI
+  boundary, `TestRunAnalyzeUnimplementedStorageBackendFailsClosed` —
+  which additionally asserts no analysis output is produced at all.
+- **No implicit backend.** An omitted `type` is a validation error, not
+  a silent choice of the non-durable in-memory store — the same
+  fail-closed-on-ambiguous-config discipline `policy.Policy.Evaluate`
+  applies to a missing default decision.
+- **Recognized-but-unimplemented is distinct from invalid.**
+  `type: postgres` returns `ErrStorageTypeNotImplemented`, never
+  `ErrInvalidStorageType` and never a substitute store, so an operator
+  can tell a typo from an unshipped backend.
+- **Load failures surface at construction.** A corrupt or unreadable
+  state file fails `CompileStorage` rather than starting empty and
+  silently discarding existing history — `FileStore`'s loader already
+  refused unknown snapshot versions rather than misreading them
+  (`fileSnapshotVersion`), and that now aborts startup instead of being
+  swallowed. Proven by `TestCompileStorageFilePropagatesLoadFailure`.
+- **Concurrent update loss is a tested contract, not an assumption.**
+  `TestStoreContract`'s same-key-concurrency guarantee requires N
+  goroutines × M observations to yield exactly N×M. This is the
+  assertion a naive read-then-compute-then-write database
+  implementation fails, and it exists before that implementation does.
+- **Same config-input hardening as every other document.** Strict
+  decoding (unknown fields, duplicate keys), bounded file read,
+  `ErrEmptyInput`, and `FuzzLoadStorage` — reusing the identical
+  `go.yaml.in/yaml/v3` path, not a second parser.
+- **Bounded state unchanged.** Persistence stores current learned
+  `Baseline` state only. Every existing cardinality bound
+  (`maxPredecessors`, `maxTrigramPredecessors`, `maxDelegators`, all 64)
+  applies unchanged, and no raw-event history is persisted — Trustvian
+  is not a SIEM or event lake, so there is no unbounded write path and
+  no retention policy to get wrong.
+- **Privacy unchanged.** No new raw data is persisted: no prompt text,
+  tool arguments, secret values, HTTP bodies, or raw SQL. `Baseline`
+  holds none of these, and the storage layer persists `Baseline`,
+  nothing more.
+
+Explicitly future, owned by task 035 and recorded as constraints in ADR
+0018 rather than left to discretion:
+
+- **Credential leakage.** A database DSN contains a password. 035 must
+  never log it or wrap it into a returned error. (No DSN exists in this
+  release — `FileStorageConfig.Path` is not sensitive and is safe to
+  echo in errors, which is why it appears in them today.)
+- **SQL injection.** Parameterized queries only; the sole
+  caller-influenced values are `ActorID`/`Environment` from an already
+  validated `Event`, plus a serialized `Baseline`.
+- **Database unavailable.** Fail fast at startup. No degraded mode, no
+  queue, no unbounded internal retry loop hiding a prolonged outage —
+  retry ownership sits with the deployment platform.
+- **Database privilege scope.** DML on its own tables; DDL only at
+  migration time.
 
 ### Malformed events / extreme input values
 

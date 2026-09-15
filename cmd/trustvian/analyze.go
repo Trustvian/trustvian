@@ -11,13 +11,14 @@ import (
 	trustvian "github.com/Trustvian/trustvian"
 )
 
-const analyzeUsage = "usage: trustvian analyze [--config <path>] [--anomaly-config <path>] <events.json>"
+const analyzeUsage = "usage: trustvian analyze [--config <path>] [--anomaly-config <path>] [--storage-config <path>] <events.json>"
 
 func runAnalyze(args []string) error {
 	fs := flag.NewFlagSet("analyze", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	configPath := fs.String("config", "", "path to a Trustvian policy config file (schema v1 YAML)")
 	anomalyConfigPath := fs.String("anomaly-config", "", "path to a Trustvian anomaly config file (schema v1 YAML)")
+	storageConfigPath := fs.String("storage-config", "", "path to a Trustvian storage config file (schema v1 YAML)")
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("%s", analyzeUsage)
 	}
@@ -31,7 +32,7 @@ func runAnalyze(args []string) error {
 		return err
 	}
 
-	engine, err := newEngine(*configPath, *anomalyConfigPath)
+	engine, err := newEngine(*configPath, *anomalyConfigPath, *storageConfigPath)
 	if err != nil {
 		return err
 	}

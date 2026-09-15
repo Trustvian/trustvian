@@ -678,10 +678,10 @@ byte-for-byte unchanged behavior, proven by test, and the CLI gaining a
 matching `--anomaly-config` flag.
 [examples/ai-agent-security](examples/ai-agent-security/) now
 demonstrates the full combined scenario (delegation + sequence +
-approval) through public config alone. **`v0.7` is release-ready**: all
-five tasks (014, 030, 031, 032, 033) are done, and the one blocker task
-032 found is resolved, not deferred. Tagging `v0.7.0` remains a
-separate, explicit action.
+approval) through public config alone. **`v0.7.0` is shipped**: all five
+tasks (014, 030, 031, 032, 033) are done, the one blocker task 032 found
+was resolved rather than deferred, and the release is tagged and
+published.
 
 Not yet built, and not any of these five tasks' job: delegation
 provenance verification (signed claims, a trusted orchestration layer,
@@ -1496,9 +1496,9 @@ v0.5  Policy & Configuration            SHIPPED (v0.5.0)
         ↓
 v0.6  Behavioral Detection Depth        SHIPPED (v0.6.0)
         ↓
-v0.7  AI Agent Behavioral Security      RELEASE-READY (all 5 tasks done, not yet tagged)
+v0.7  AI Agent Behavioral Security      SHIPPED (v0.7.0)
         ↓
-v0.8  Production Runtime & Storage      PLANNED
+v0.8  Production Runtime & Storage      IN PROGRESS (task 034 done; 035-038 named)
         ↓
 v0.9  Operational Readiness             PLANNED
         ↓
@@ -1542,7 +1542,19 @@ Why each step exists, not merely what it contains:
   v0.7.
 - **`v0.8`–`v0.9`** exist because a complete OSS product is not just a
   correct algorithm — it is something an operator can actually run,
-  persist state for, upgrade, and trust operationally.
+  persist state for, upgrade, and trust operationally. `v0.8` is in
+  progress, and its first slice made a sharper point than "add a
+  database": persistence was **unreachable**, not merely limited. A
+  durable `FileStore` had shipped since `v0.1`, but `store.Store` lives
+  under `internal/` with methods referencing internal types, so no
+  external consumer could select it — nor could the CLI, which never
+  called `WithStore` at all. Every deployment silently ran in memory.
+  `config.StorageConfig`/`CompileStorage` fixed that (**IMPLEMENTED**),
+  and the `Store` contract a production backend must satisfy is now
+  executable. A PostgreSQL backend and a reference Docker Compose
+  deployment are **PLANNED**, not implemented — requesting PostgreSQL
+  today fails closed with a clear error rather than degrading to
+  non-durable storage.
 - **`v1.0`** is the point all of the above adds up to: a release gate,
   not a new capability, and not a claim this document makes today —
   see [§ OSS v1.0 — Production-Ready Definition](#oss-v10--production-ready-definition)
