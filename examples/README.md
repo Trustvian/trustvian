@@ -1,6 +1,6 @@
 # Examples
 
-Eight small, runnable `package main` programs demonstrating the full
+Nine small, runnable `package main` programs demonstrating the full
 `Event -> Features -> Fingerprint -> Baseline -> Anomaly -> Trust ->
 Policy -> Decision` pipeline — and, since v0.4, the downstream Alert &
 Notification Foundation — against the real
@@ -26,12 +26,13 @@ README below has real, `go run`-captured output, not hand-written output.
 | [ai-agent](ai-agent/) | An AI agent's baseline matures against a benign CRM-lookup tool call, then the same agent reaches for a credentials store | [ai-agent/README.md](ai-agent/README.md) |
 | [alert-webhook](alert-webhook/) | A cold-start, highly novel event resolves to `OBSERVE_ONLY`, but an `alert.Rule` matching on anomaly score alone still produces a `HIGH`-severity `Alert`, signed and delivered over HTTPS to a webhook — proving `Decision != Alert` end to end via the direct Go SDK, no OTel involved | [alert-webhook/README.md](alert-webhook/README.md) |
 | [ai-agent-security](ai-agent-security/) | An AI agent's `shell.execute` matures into fully familiar behavior; a `config.PolicyConfig`-compiled approval requirement still blocks it when `ApprovalStatus` isn't `approved` — the one example here with a genuinely differentiated `Decision`, since `Policy` (unlike `anomaly.Config`) has a public configuration path | [ai-agent-security/README.md](ai-agent-security/README.md) |
+| [persistent-baseline](persistent-baseline/) | A learned baseline survives a process restart: a durable store selected through `config.StorageConfig`/`CompileStorage`, an `Engine` discarded entirely, and a fresh one reading the same state back off disk — the only example that persists anything, and impossible to write externally before `v0.8` | [persistent-baseline/README.md](persistent-baseline/README.md) |
 
 ## Running them
 
 ```bash
 cd examples/basic && go run .
-# ...or all seven at once, from the repository root:
+# ...or all nine at once, from the repository root:
 make examples
 ```
 
@@ -45,14 +46,15 @@ beyond `go run`.
 
 ## A note on `Decision`
 
-Seven of the eight examples here use `trustvian.NewEngine()` with no
-options, so their printed `Decision` is always `observe_only` —
-`NewEngine()`'s default `Policy` has no rules and always falls through
-to its `observe_only` default (see
+Eight of the nine examples here use a `Policy`-less `Engine`, so their
+printed `Decision` is always `observe_only` — `NewEngine()`'s default
+`Policy` has no rules and always falls through to its `observe_only`
+default (see
 [docs/sdk-guide.md § Constructing an Engine](../docs/sdk-guide.md#constructing-an-engine)).
-This is deliberate, not a limitation: these seven are each demonstrating
-one specific `Anomaly`/`Trust` reading, and a custom `Policy` would be
-one more moving part than the scenario needs.
+This is deliberate, not a limitation: those eight each demonstrate one
+specific `Anomaly`/`Trust` reading (or, for
+[persistent-baseline](persistent-baseline/), one storage behavior), and
+a custom `Policy` would be one more moving part than the scenario needs.
 
 `policy.Policy` itself is a type that lives under `internal/` — per
 [ADR 0002](../docs/adr/0002-public-api-boundary.md), a true external

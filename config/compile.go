@@ -1,10 +1,13 @@
 package config
 
 import (
+	"fmt"
+
 	"github.com/Trustvian/trustvian/alert"
 	"github.com/Trustvian/trustvian/event"
 	"github.com/Trustvian/trustvian/internal/anomaly"
 	"github.com/Trustvian/trustvian/internal/policy"
+	"github.com/Trustvian/trustvian/internal/store"
 	"github.com/Trustvian/trustvian/internal/trust"
 )
 
@@ -188,4 +191,64 @@ func CompileAnomaly(cfg AnomalyConfig) (anomaly.Config, error) {
 	}
 
 	return out, nil
+}
+
+// CompileStorage validates cfg and constructs the store.Store it
+// describes — the exact type trustvian.WithStore accepts. Like every
+// other compiler here, it validates cfg itself first.
+//
+// CompileStorage is the one compiler in this package that is *not*
+// pure, and deliberately so: constructing a persistent Store has real
+// side effects (StorageTypeFile reads the file at
+// FileStorageConfig.Path, creating nothing but failing loudly if the
+// path exists and is unreadable or holds an unsupported snapshot
+// version). That is the correct place for those effects — a caller
+// wiring up an Engine at startup wants a load failure surfaced then,
+// not on the first Observe. Callers who want validity checked *without*
+// touching the filesystem call cfg.Validate() directly.
+//
+// Failure is always closed, never degraded: any error returns a nil
+// Store, so a caller that forgets to check err cannot accidentally run
+// on a silently-substituted in-memory store and lose the durable state
+// it asked for. StorageTypePostgres specifically returns
+// ErrStorageTypeNotImplemented — recognized configuration this release
+// cannot honor — rather than quietly falling back; see
+// docs/adr/0018-production-store-boundary-and-postgresql-direction.md.
+//
+// The returned store.Store is safe for a caller outside this module to
+// receive and pass straight into trustvian.WithStore via type
+// inference, identical to CompilePolicy's and CompileAnomaly's own
+// return values — and this is the only way an external consumer can
+// select a Store at all, since store.Store's methods reference internal
+// types that make the interface both unnameable and unimplementable
+// from outside (see ADR 0018).
+func CompileStorage(cfg StorageConfig) (store.Store, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
+	switch cfg.Type {
+	case StorageTypeMemory:
+		return store.NewInMemory(), nil
+
+	case StorageTypeFile:
+		// cfg.Validate has already guaranteed cfg.File != nil and a
+		// non-empty Path for this Type.
+		s, err := store.NewFileStore(cfg.File.Path)
+		if err != nil {
+			return nil, err
+		}
+		return s, nil
+
+	case StorageTypePostgres:
+		return nil, fmt.Errorf("%w: %q (see docs/ROADMAP.md § v0.8)", ErrStorageTypeNotImplemented, cfg.Type)
+
+	default:
+		// Unreachable: Validate rejects every unrecognized Type before
+		// this switch runs. Kept as a fail-closed guard so a future
+		// contributor adding a value to validStorageTypes without a
+		// matching case here gets an explicit error rather than a nil
+		// Store and a nil error.
+		return nil, fmt.Errorf("%w: %q", ErrInvalidStorageType, cfg.Type)
+	}
 }

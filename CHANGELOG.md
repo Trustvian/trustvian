@@ -8,10 +8,50 @@ actually depend on.
 
 ## Unreleased
 
-> Same convention `v0.6`'s own entry established: `v0.7` is expected to
-> span multiple slices before it tags, so entries accumulate here as
-> each slice lands. This section is renamed to the milestone's actual
-> version heading only once a real tag exists — never before.
+> Same convention every milestone since `v0.6` has followed: `v0.8` is
+> expected to span multiple slices before it tags, so entries accumulate
+> here as each slice lands. This section is renamed to the milestone's
+> actual version heading only once a real tag exists — never before.
+
+### Added
+
+- **Production Store Contract & Public Selection Boundary**
+  ([task 034](docs/tasks/034-production-store-contract-and-public-boundary.md),
+  first `v0.8` slice) — `config.StorageConfig` +
+  `config.CompileStorage` (plus `LoadStorage`/`LoadStorageFile`) make
+  persistence selectable through public API for the first time. Before
+  this, `store.Store` lived in `internal/store` with methods referencing
+  internal types, so an external consumer could neither name nor
+  implement it and no exported function returned one — `WithStore` was
+  in-module-only in practice, silently pinning every external deployment
+  to the in-memory default and losing all learned baselines on restart.
+  Supported backends are `memory` and `file`; `postgres` is recognized
+  but **not implemented in this release** and fails closed with
+  `ErrStorageTypeNotImplemented` rather than falling back. Any
+  compile error yields a nil Store — never a silent downgrade to
+  non-durable storage, which would lose exactly the state an operator
+  asked to keep.
+  `trustvian analyze` / `baseline build` gain `--storage-config <path>`,
+  which makes `baseline build` genuinely useful: a corpus learned by one
+  invocation is now scored against by a separate one. Also adds
+  `TestStoreContract` — the nine `Store` guarantees, executable against
+  every implementation from one place, including a
+  same-key-concurrency (no-lost-updates) test that a naive
+  read-then-compute-then-write database backend would fail — and a new
+  [`examples/persistent-baseline`](examples/persistent-baseline/)
+  demonstrating restart survival through public API alone. No new
+  dependency, no schema, no PostgreSQL code, no change to
+  `store.Store`/`InMemory`/`FileStore` behavior, and `NewEngine`'s
+  in-memory default is unchanged. See [ADR
+  0018](docs/adr/0018-production-store-boundary-and-postgresql-direction.md).
+
+## v0.7.0 — AI Agent Behavioral Security
+
+Makes AI agents first-class behavioral actors in the existing engine —
+no second pipeline, no agent-specific detector — then validates the
+combined result and closes the public-configuration gap that validation
+surfaced: five vertical slices, all additive, with `v0.5`/`v0.6`
+behavior preserved by default.
 
 ### Added
 

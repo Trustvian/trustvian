@@ -31,6 +31,18 @@ var (
 	ErrUnsupportedAlertVersion = errors.New("config: unsupported alert config version")
 	ErrInvalidApprovalStatus   = errors.New("config: invalid approval_status")
 
+	ErrUnsupportedStorageVersion = errors.New("config: unsupported storage config version")
+	ErrInvalidStorageType        = errors.New("config: invalid storage type")
+	ErrMissingStoragePath        = errors.New("config: file storage requires a path")
+	// ErrStorageTypeNotImplemented is returned for a storage type this
+	// package recognizes but cannot yet construct — today, only
+	// StorageTypePostgres. Deliberately distinct from
+	// ErrInvalidStorageType so an operator can tell "you typo'd the
+	// backend name" apart from "that backend is real but this release
+	// doesn't ship it yet." Either way it fails closed: never a silent
+	// downgrade to a non-durable store.
+	ErrStorageTypeNotImplemented = errors.New("config: storage type not implemented in this release")
+
 	ErrUnsupportedAnomalyVersion = errors.New("config: unsupported anomaly config version")
 	// ErrInvalidZThreshold is distinct from ErrInvalidThreshold: a
 	// z-score threshold is a standard-deviation multiple (e.g. 3.0),
@@ -376,6 +388,57 @@ func (cfg AnomalyConfig) Validate() error {
 	for target, floor := range cfg.SensitiveTargetFloor {
 		if !validThreshold(floor) {
 			return fmt.Errorf("sensitive_target_floor[%q]: %w: %v", target, ErrInvalidThreshold, floor)
+		}
+	}
+
+	return nil
+}
+
+// validStorageTypes is the set of Type values StorageConfig recognizes.
+// StorageTypePostgres is present here on purpose: it is a *recognized*
+// type that fails at compile time with ErrStorageTypeNotImplemented
+// rather than at validation time with ErrInvalidStorageType — see
+// config/storage.go's own constant block for why that distinction
+// matters to an operator.
+var validStorageTypes = map[string]bool{
+	StorageTypeMemory:   true,
+	StorageTypeFile:     true,
+	StorageTypePostgres: true,
+}
+
+// Validate reports whether cfg is a well-formed StorageConfig: a
+// recognized schema version, a recognized Type, and the options that
+// Type requires. Validate returns the first problem it finds, mirroring
+// every other config document's "first error wins" convention.
+//
+// Validate deliberately does *not* reject StorageTypePostgres — that is
+// a well-formed configuration this release cannot construct, which
+// CompileStorage reports separately (ErrStorageTypeNotImplemented).
+// Keeping the two distinct means a future release implementing
+// PostgreSQL changes CompileStorage only, with no validation change and
+// no behavior change for any config that already validated.
+//
+// Validate is called internally by CompileStorage, but is also exposed
+// standalone for the same reason every other document's Validate is: a
+// caller can check a config without building a Store (which, for a file
+// or database backend, has real side effects — opening files, dialing a
+// database — that a pure validity check should not trigger).
+func (cfg StorageConfig) Validate() error {
+	if cfg.Version != StorageSchemaVersionV1 {
+		return fmt.Errorf("%w: %q (supported: %q)", ErrUnsupportedStorageVersion, cfg.Version, StorageSchemaVersionV1)
+	}
+
+	if !validStorageTypes[cfg.Type] {
+		return fmt.Errorf("%w: %q (supported: %q, %q, %q)", ErrInvalidStorageType, cfg.Type,
+			StorageTypeMemory, StorageTypeFile, StorageTypePostgres)
+	}
+
+	// Only the selected backend's own options are required. A config
+	// carrying an unused `file:` block while running `type: memory` is
+	// valid — see StorageConfig's doc comment.
+	if cfg.Type == StorageTypeFile {
+		if cfg.File == nil || cfg.File.Path == "" {
+			return fmt.Errorf("file.path: %w", ErrMissingStoragePath)
 		}
 	}
 

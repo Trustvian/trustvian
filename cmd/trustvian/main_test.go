@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -347,5 +348,142 @@ func TestRunBaselineMissingBuildSubcommand(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "usage") {
 		t.Fatalf("stderr = %q, want a usage message", stderr)
+	}
+}
+
+// --- Task 034: --storage-config ---
+
+func TestRunAnalyzeAcceptsStorageConfigFlag(t *testing.T) {
+	stdout, stderr, code := captureOutput(t, func() int {
+		return run([]string{"analyze", "--storage-config", "testdata/storage-memory.yaml", "testdata/normal.json"})
+	})
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "Decision:") {
+		t.Fatalf("stdout = %q, want a rendered report", stdout)
+	}
+}
+
+// TestRunAnalyzeInvalidStorageConfigFailsClosed mirrors the equivalent
+// --config/--anomaly-config regressions, and matters more here than for
+// either of those: silently continuing after a failed *storage* request
+// would discard learned state rather than merely scoring differently.
+func TestRunAnalyzeInvalidStorageConfigFailsClosed(t *testing.T) {
+	stdout, stderr, code := captureOutput(t, func() int {
+		return run([]string{"analyze", "--storage-config", "testdata/storage-invalid.yaml", "testdata/normal.json"})
+	})
+
+	if code == 0 {
+		t.Fatalf("exit code = 0, want non-zero for an invalid storage config file")
+	}
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty — no analysis must run when the storage config fails to load", stdout)
+	}
+	if !strings.Contains(stderr, "typ") {
+		t.Fatalf("stderr = %q, want it to identify the unrecognized field", stderr)
+	}
+}
+
+func TestRunAnalyzeMissingStorageConfigFailsClosed(t *testing.T) {
+	stdout, _, code := captureOutput(t, func() int {
+		return run([]string{"analyze", "--storage-config", "testdata/does-not-exist.yaml", "testdata/normal.json"})
+	})
+
+	if code == 0 {
+		t.Fatalf("exit code = 0, want non-zero for a missing storage config file")
+	}
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty", stdout)
+	}
+}
+
+// TestRunAnalyzeUnimplementedStorageBackendFailsClosed is the CLI-level
+// half of config.CompileStorage's own fail-closed guarantee: requesting
+// a recognized-but-unimplemented backend aborts the command rather than
+// running on a silently substituted in-memory store.
+func TestRunAnalyzeUnimplementedStorageBackendFailsClosed(t *testing.T) {
+	stdout, stderr, code := captureOutput(t, func() int {
+		return run([]string{"analyze", "--storage-config", "testdata/storage-postgres.yaml", "testdata/normal.json"})
+	})
+
+	if code == 0 {
+		t.Fatalf("exit code = 0, want non-zero for an unimplemented storage backend")
+	}
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty — no analysis must run on a store that could not be built", stdout)
+	}
+	if !strings.Contains(stderr, "not implemented") {
+		t.Fatalf("stderr = %q, want it to say the backend is not implemented", stderr)
+	}
+}
+
+// TestBaselineBuildThenAnalyzePersistsAcrossCommands is task 034's
+// central end-to-end proof, and the first time this CLI can demonstrate
+// it at all: `baseline build` writes learned state to a file store, and
+// a *separate* `analyze` invocation reads it back.
+//
+// The assertion targets categorical_novelty's own Detail string, which
+// distinguishes the two states precisely — "never observed" on a cold
+// store versus "observed N/20 times" once the persisted baseline is
+// loaded. Before --storage-config existed, the second run could only
+// ever report the former, because nothing survived the first process.
+func TestBaselineBuildThenAnalyzePersistsAcrossCommands(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "baseline.json")
+	storageCfgPath := filepath.Join(dir, "storage.yaml")
+	storageCfg := "version: v1\ntype: file\nfile:\n  path: " + statePath + "\n"
+	if err := os.WriteFile(storageCfgPath, []byte(storageCfg), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	// Cold store: the fingerprint has never been seen.
+	coldStdout, stderr, code := captureOutput(t, func() int {
+		return run([]string{"analyze", "--storage-config", storageCfgPath, "testdata/normal.json"})
+	})
+	if code != 0 {
+		t.Fatalf("cold analyze: exit code = %d, want 0; stderr = %q", code, stderr)
+	}
+	if !strings.Contains(coldStdout, "never observed") {
+		t.Fatalf("cold analyze stdout = %q, want it to report the fingerprint as never observed", coldStdout)
+	}
+
+	// Learn from the corpus, persisting to the same file store.
+	_, stderr, code = captureOutput(t, func() int {
+		return run([]string{"baseline", "build", "--storage-config", storageCfgPath, "testdata/corpus.json"})
+	})
+	if code != 0 {
+		t.Fatalf("baseline build: exit code = %d, want 0; stderr = %q", code, stderr)
+	}
+	if _, err := os.Stat(statePath); err != nil {
+		t.Fatalf("state file %s not written: %v", statePath, err)
+	}
+
+	// A separate invocation now scores against the persisted baseline.
+	warmStdout, stderr, code := captureOutput(t, func() int {
+		return run([]string{"analyze", "--storage-config", storageCfgPath, "testdata/normal.json"})
+	})
+	if code != 0 {
+		t.Fatalf("warm analyze: exit code = %d, want 0; stderr = %q", code, stderr)
+	}
+	if strings.Contains(warmStdout, "never observed") {
+		t.Fatalf("warm analyze stdout = %q, want the persisted baseline to have been loaded — the fingerprint should no longer read as never observed", warmStdout)
+	}
+	if !strings.Contains(warmStdout, "times required for maturity") {
+		t.Fatalf("warm analyze stdout = %q, want it to report partial maturity from the persisted baseline", warmStdout)
+	}
+}
+
+func TestRunBaselineBuildAcceptsStorageConfigFlag(t *testing.T) {
+	stdout, stderr, code := captureOutput(t, func() int {
+		return run([]string{"baseline", "build", "--storage-config", "testdata/storage-memory.yaml", "testdata/corpus.json"})
+	})
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "Events processed:") {
+		t.Fatalf("stdout = %q, want a rendered summary", stdout)
 	}
 }

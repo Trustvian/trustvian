@@ -202,6 +202,41 @@ says to add only when needed, not speculatively.
   distribution. See `internal/anomaly`'s `time_pattern_deviation` signal
   below, and [task 017](tasks/017-baseline-time-patterns.md).
 
+### What persists, and the contract it persists under
+
+A `Baseline` is **current learned state**, not an event history — it is
+bounded by construction (one `FingerprintStats` per distinct
+`Fingerprint`, with every per-entry map capped: `maxPredecessors`,
+`maxTrigramPredecessors`, `maxDelegators`, all 64). Nothing persists raw
+events, prompt text, tool arguments, secret values, or request bodies;
+there is no retention policy because there is no growing history to
+retain. Trustvian is not a SIEM or event lake.
+
+`internal/store.Store` is the port that state flows through, with two
+operations — `Get` (read the current snapshot) and `Observe` (apply one
+observation). Since `v0.8` task 034 the guarantees every implementation
+owes are written down and executable (`TestStoreContract`,
+`internal/store/contract_test.go`): a missing key reads as a
+zero-value-but-keyed `Baseline` plus `false` (never nil, never an error
+— `internal/anomaly` scores a never-seen actor against exactly that
+value); `Observe` is *incremental*, applying one observation rather than
+writing back a caller-computed `Baseline`; a value already returned by
+`Get` never mutates under a later `Observe`; keys are isolated; and
+concurrent `Observe` calls for the same key lose no updates.
+
+That last guarantee is why the port's shape matters. Because `Observe`
+receives the observation rather than a finished `Baseline`, the whole
+read-modify-write cycle happens inside one implementation call and can
+be made atomic there — a per-key mutex in `store.InMemory` today, a
+row-locked transaction in a future database backend. See [ADR
+0018](adr/0018-production-store-boundary-and-postgresql-direction.md).
+
+Which implementation an `Engine` uses is selected via public
+configuration (`config.StorageConfig` → `config.CompileStorage` →
+`trustvian.WithStore`), and failure there is always closed: an
+unbuildable store yields no store, never a silent downgrade to
+non-durable memory.
+
 ## Anomaly
 
 `internal/anomaly.Score(Features, Fingerprint, Baseline, Config)

@@ -768,6 +768,46 @@ already-compiled `anomaly.Config` value `WithAnomalyConfig` received.
 copy for a populated `SensitiveTargetFloor`; a config with none
 allocates nothing.
 
+### v0.8 task 034 (Production Store Contract & Public Boundary)
+
+**No hot-path change, and no new numbers to publish.** This slice added
+a public configuration boundary and a contract test suite; it changed
+no code on `Engine.Analyze`'s or `Engine.Observe`'s path.
+`config.CompileStorage` runs exactly once, at `Engine` construction,
+alongside `CompilePolicy`/`CompileAnomaly` — see [§ v0.7 task
+033](#v07-task-033-public-anomaly-configuration--stabilization) for the
+same compile-once-not-per-event discipline.
+
+The relevant existing baselines are therefore unchanged and remain the
+reference: `BenchmarkEngineAnalyze` (456 B/op, 17 allocs/op) and
+`internal/store`'s own `BenchmarkInMemoryObserveSameKey` /
+`BenchmarkInMemoryObserveDistinctKeys` /
+`BenchmarkFileStoreObserveSameKey` /
+`BenchmarkFileStoreObserveDistinctKeys` (see [§ Measured
+results](#measured-results)). No storage benchmark was added, because
+nothing about storage performance changed.
+
+**Measurement plan for task 035 (PostgreSQL), recorded now so it is not
+improvised later:**
+
+- **Compare like with like.** `FileStore` and a database serve different
+  roles; their raw ns/op are not meant to match, and presenting them as
+  a head-to-head would be misleading. The useful comparisons are
+  `Observe` latency, `Get` latency, and — the one that actually
+  distinguishes a production backend — *concurrent same-key update
+  throughput*, where `FileStore` serializes every write behind a
+  whole-file rewrite while a row-locked database serializes only
+  same-key writes.
+- **Keep database timing out of unit tests.** `go test ./...` must not
+  require a running PostgreSQL, so database benchmarks and integration
+  tests sit behind an explicit opt-in and reuse `v0.8`'s planned Docker
+  Compose reference deployment rather than adding a
+  container-orchestration dependency. A network-dependent benchmark in
+  the default suite would be flaky, not informative.
+- **Publish real numbers only.** No invented figures for an
+  unimplemented backend — this section stays empty of PostgreSQL results
+  until task 035 measures them.
+
 ## Reading the numbers
 
 **Session-to-session `ns/op` moved broadly; allocation counts didn't —

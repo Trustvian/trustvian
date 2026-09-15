@@ -43,9 +43,9 @@ func usage(w *os.File) {
 	fmt.Fprintln(w, `Trustvian - behavioral security and trust engine
 
 Usage:
-  trustvian analyze [--config <path>] [--anomaly-config <path>] <events.json>
+  trustvian analyze [--config <path>] [--anomaly-config <path>] [--storage-config <path>] <events.json>
       Score each event and print a report
-  trustvian baseline build [--config <path>] [--anomaly-config <path>] <events.json>
+  trustvian baseline build [--config <path>] [--anomaly-config <path>] [--storage-config <path>] <events.json>
       Learn a baseline from a corpus of events
 
 --config <path> loads a schema-v1 YAML policy config (see config.LoadFile)
@@ -58,6 +58,13 @@ default anomaly scoring (anomaly.DefaultConfig) — this is how v0.6/v0.7
 signals (transition/n-gram/Markov/delegation deviation, all opt-in and
 disabled by default) get enabled from the CLI. Without it, behavior is
 unchanged from before this flag existed.
+
+--storage-config <path> loads a schema-v1 YAML storage config (see
+config.LoadStorageFile) selecting where learned baselines live — this is
+how a baseline survives past a single command. Without it, the CLI uses
+an in-memory store and learns nothing durable, unchanged from before
+this flag existed. An explicitly requested store that cannot be opened
+fails the command; it never silently falls back to memory.
 
 <events.json> is a JSON array of events, e.g.:
   [{"id":"evt-1","timestamp":"2026-01-01T12:00:00Z","actor":{"id":"svc-payment","type":"service","identity_confidence":0.95},"operation":{"category":"http","name":"POST /payment"},"target":{"name":"payment-db"},"context":{"environment":"production"}}]`)

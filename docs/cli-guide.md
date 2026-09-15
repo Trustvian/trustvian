@@ -6,8 +6,8 @@ go install github.com/Trustvian/trustvian/cmd/trustvian@latest
 ```
 
 ```
-trustvian analyze [--config <path>] [--anomaly-config <path>] <events.json>
-trustvian baseline build [--config <path>] [--anomaly-config <path>] <events.json>
+trustvian analyze [--config <path>] [--anomaly-config <path>] [--storage-config <path>] <events.json>
+trustvian baseline build [--config <path>] [--anomaly-config <path>] [--storage-config <path>] <events.json>
 trustvian help
 ```
 
@@ -74,6 +74,49 @@ report — never a silent fallback to `anomaly.DefaultConfig()`. Without
 it, behavior is exactly what it was before this flag existed.
 `--config` and `--anomaly-config` are independent — pass either, both,
 or neither.
+
+## `--storage-config <path>`
+
+Both subcommands accept `--storage-config <path>`, selecting where
+learned baselines live (`config.LoadStorageFile` +
+`config.CompileStorage`, then `trustvian.WithStore`). **This is what
+makes a baseline survive past a single command.** Without it the CLI
+uses an in-memory store and learns nothing durable — unchanged from
+before the flag existed, and the reason `baseline build` was close to a
+dry run until `v0.8` ([task
+034](tasks/034-production-store-contract-and-public-boundary.md)).
+
+```yaml
+# storage.yaml
+version: v1
+type: file
+file:
+  path: /var/lib/trustvian/baseline.json
+```
+
+```bash
+# Learn from a corpus, persisting what it learns:
+trustvian baseline build --storage-config storage.yaml corpus.json
+
+# A separate invocation now scores against that persisted baseline:
+trustvian analyze --storage-config storage.yaml event.json
+```
+
+`type` is required — there is no implicit default, because silently
+choosing the non-durable backend is exactly the failure this flag
+exists to prevent. Supported values are `memory` and `file`;
+`postgres` is recognized but not implemented in this release and fails
+with a clear error rather than falling back (see
+[ROADMAP.md § v0.8](ROADMAP.md#v08--production-runtime--storage)).
+
+Fail-closed discipline is strictest here: a missing, unparseable, or
+invalid `--storage-config`, an unopenable or corrupt state file, or a
+recognized-but-unimplemented backend all fail the whole command —
+non-zero exit, no analysis report, and **never** a silent fallback to
+in-memory storage. Substituting a non-durable store for an explicitly
+requested durable one would lose precisely the state you asked to keep.
+
+All three config flags are independent — pass any combination.
 
 ## `trustvian analyze`
 

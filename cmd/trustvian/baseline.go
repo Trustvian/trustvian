@@ -8,7 +8,7 @@ import (
 	"os"
 )
 
-const baselineUsage = "usage: trustvian baseline build [--config <path>] [--anomaly-config <path>] <events.json>"
+const baselineUsage = "usage: trustvian baseline build [--config <path>] [--anomaly-config <path>] [--storage-config <path>] <events.json>"
 
 func runBaseline(args []string) error {
 	if len(args) == 0 || args[0] != "build" {
@@ -27,17 +27,21 @@ func runBaseline(args []string) error {
 // when every event is in fact benign, and it is one less thing an
 // operator has to get right when it is not.
 //
-// The engine's in-memory Store does not persist beyond this process (see
-// internal/store), so this command's result is only visible within its
-// own single run — a documented MVP limitation, not a bug: a real
-// deployment builds its baseline once, in the long-running process that
-// then serves Analyze calls, not by piping state between CLI
-// invocations.
+// Persistence depends on --storage-config. Without it, the engine uses
+// NewEngine's default in-memory Store, so what this command learns is
+// visible only within its own single run — which made the command
+// largely a dry run before task 034. With `--storage-config` naming a
+// file-backed store, the learned baseline is durably written and a
+// later `trustvian analyze --storage-config <same file>` scores against
+// it, which is what makes building a baseline from a corpus offline and
+// then serving analysis against it a real workflow rather than a
+// documented limitation.
 func runBaselineBuild(args []string) error {
 	fs := flag.NewFlagSet("baseline build", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	configPath := fs.String("config", "", "path to a Trustvian policy config file (schema v1 YAML)")
 	anomalyConfigPath := fs.String("anomaly-config", "", "path to a Trustvian anomaly config file (schema v1 YAML)")
+	storageConfigPath := fs.String("storage-config", "", "path to a Trustvian storage config file (schema v1 YAML)")
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("%s", baselineUsage)
 	}
@@ -51,7 +55,7 @@ func runBaselineBuild(args []string) error {
 		return err
 	}
 
-	engine, err := newEngine(*configPath, *anomalyConfigPath)
+	engine, err := newEngine(*configPath, *anomalyConfigPath, *storageConfigPath)
 	if err != nil {
 		return err
 	}

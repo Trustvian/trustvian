@@ -200,6 +200,14 @@ a method signature:
   one stage earlier in the pipeline: an external caller constructs
   this to configure behavioral scoring, never
   `internal/anomaly.Config` directly.
+- `config.StorageConfig` (`v0.8` task 034) — the same pattern again,
+  for persistence. `store.Store` is the one case where pass-through
+  alone was *not* enough even in principle: it is an interface whose
+  methods reference internal types, so an external caller could neither
+  name it nor implement it, and before task 034 no exported function
+  returned one. `WithStore` was therefore in-module-only in practice,
+  silently pinning every external deployment to the in-memory default.
+  See [ADR 0018](adr/0018-production-store-boundary-and-postgresql-direction.md).
 
 `policy.Policy`/`Condition`/`Rule`/`Decision`, `anomaly.Config`,
 `trust.Config`, and `store.Store` implementations all stay
@@ -214,7 +222,14 @@ pass-through use — the identical boundary [ADR
 ```text
 config.PolicyConfig  → CompilePolicy  → policy.Policy   → Engine
 config.AnomalyConfig → CompileAnomaly → anomaly.Config   → Engine
+config.StorageConfig → CompileStorage → store.Store      → Engine
 ```
+
+`CompileStorage` is the one of the three that is deliberately *not*
+pure — it opens the store, so a load failure surfaces at construction
+rather than on the first `Observe`. All three fail closed; for storage
+that specifically means a nil `Store` on any error, never a silent
+downgrade to non-durable storage.
 
 `trust.Config` is the one config type this pattern has not yet reached
 — see [Go SDK Guide § the public/internal boundary
@@ -382,7 +397,19 @@ allocations. See [ADR 0005](adr/0005-fingerprint-computed-once-per-analyze.md).
   0015](adr/0015-approval-as-policy-evidence-not-behavioral-anomaly.md).
 - **`Store` is a narrow port**, not a generic repository:
   `Get`/`Observe`, nothing else. It matches `Baseline`'s actual access
-  pattern (read the snapshot, apply one incremental update).
+  pattern (read the snapshot, apply one incremental update). `v0.8` task
+  034 found this pays off in a way that was not the original
+  motivation: because `Observe` takes an *observation*
+  (`key, fp, vol, now`) rather than a caller-computed `Baseline`, the
+  entire read-modify-write cycle sits inside one implementation call,
+  where a database backend can wrap it in a row-locked transaction. A
+  `Save(ctx, key, bl)`-shaped port would have split that cycle across
+  two calls with engine code in between, making lost updates
+  structurally unavoidable without adding versioning to the domain
+  model. The contract every implementation must satisfy is now
+  executable — `TestStoreContract` in `internal/store/contract_test.go`
+  — rather than implied by each backend's own tests. See [ADR
+  0018](adr/0018-production-store-boundary-and-postgresql-direction.md).
 - **No global engine state.** `Engine` is always constructed
   explicitly via `NewEngine(...)` and passed around; there's no
   default/singleton engine for convenience. This is deliberate, not an

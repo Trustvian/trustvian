@@ -8,9 +8,10 @@ in [`docs/tasks/`](tasks/); each task file is independently
 understandable and carries its own objective, scope, non-goals,
 technical requirements, tests, benchmarks, documentation, and
 acceptance criteria. Milestones without a fully-scoped task sequence
-yet (`v0.8`–`v0.9` below) are deliberately not pre-scoped in detail —
+yet (`v0.9` below) are deliberately not pre-scoped in detail —
 this roadmap's own "small vertical slices" principle, applied to
-itself. Every earlier milestone through `v0.7` has each of its slices
+itself. `v0.8` is in progress: its slice sequence (034–038) is named,
+and only the active slice has a task file. Every earlier milestone through `v0.7` has each of its slices
 either scoped and done, or explicitly named as the next slice, not
 left as a vague placeholder: `v0.5` has all five of its tasks scoped
 and done — [019](tasks/019-policy-config-model.md),
@@ -1319,12 +1320,14 @@ passed under `go test ./... -race -count=1` with zero changes to
 **Acceptance criteria.** See
 [033-v07-stabilization-release-gate.md](tasks/033-v07-stabilization-release-gate.md).
 
-**`v0.7` is release-ready.** All five tasks (014, 030, 031, 032, 033)
-are done; the one blocker task 032 found is resolved, not deferred.
-`v0.7.0` has not been tagged — tagging and publishing the release
-remain a separate, explicit human action, matching every prior
-milestone's own gate (`v0.5.0`'s [task 024](tasks/024-v05-release-gate.md),
-`v0.6.0`'s [task 029](tasks/029-v06-stabilization-release-gate.md)).
+**`v0.7.0` is shipped.** All five tasks (014, 030, 031, 032, 033) are
+done, the one blocker task 032 found was resolved rather than deferred,
+and `v0.7.0` is a real, tagged, published release (`refs/tags/v0.7.0`
+on origin; `gh release list` shows it marked `Latest`) — matching the
+same tag-and-publish step every prior milestone's gate required before
+it could be called shipped (`v0.5.0`'s [task
+024](tasks/024-v05-release-gate.md), `v0.6.0`'s [task
+029](tasks/029-v06-stabilization-release-gate.md)).
 
 **015** and **016** remain reserved for MCP and Control respectively —
 neither was touched or reused by any `v0.7` task.
@@ -1638,40 +1641,121 @@ No specific response mechanism is designed here.
 
 ## v0.8 — Production Runtime & Storage
 
+**Status: IN PROGRESS.** Task [034](tasks/034-production-store-contract-and-public-boundary.md)
+is done; 035–038 are named below and not yet task-filed.
+
 **Objective.** OSS should be deployable as a real production system,
 not only a library and a CLI against a local file.
 
-**Scope** (no task file yet):
+### Slice sequence
 
-- **A production-grade persistent `Store` candidate.** Today:
-  `store.InMemory`, `store.FileStore` (JSON, synchronous `fsync`,
-  documented as the MVP's *only* persistent implementation — see
-  [ADR 0006](adr/0006-file-backed-persistent-store.md)). This
-  milestone documents — does not yet implement — the preferred next
-  `Store` implementation:
+Small vertical slices, in dependency order. Only the active one gets a
+task file, per this roadmap's own "small vertical slices" principle
+applied to itself:
+
+| Task | Title | Status |
+|---|---|---|
+| [034](tasks/034-production-store-contract-and-public-boundary.md) | Production Store Contract & Public Selection Boundary | **DONE** |
+| 035 | PostgreSQL Store implementation | Next — not task-filed |
+| 036 | Store durability / concurrency / migration hardening | Planned |
+| 037 | Reference Docker Compose deployment | Planned |
+| 038 | `v0.8` stabilization & release gate | Planned |
+
+**Task 034 — Production Store Contract & Public Selection Boundary — is
+done.** Starting this milestone surfaced a gap more basic than choosing
+a database: **no external consumer could select *any* `Store`
+implementation, not even the durable `FileStore` that already ships.**
+`store.Store` lives in `internal/store`, its methods reference internal
+types (so an outside module can neither name nor implement it), and no
+exported function returned one for pass-through — making
+`trustvian.WithStore` in-module-only in practice. Every external
+deployment silently ran on the default in-memory store and lost every
+learned baseline on restart. Trustvian's own CLI was in the same
+position: neither `analyze` nor `baseline build` called `WithStore`,
+which made `baseline build` close to a dry run.
+
+Task 034 closed that and wrote down the contract a database backend will
+have to satisfy, deliberately *before* adding one — shipping PostgreSQL
+first would have produced a backend only this module's own tests could
+instantiate, satisfying the letter of "production-grade persistence"
+while missing this milestone's objective:
+
+- `config.StorageConfig` + `config.CompileStorage` — a fourth
+  independent config document, alongside Policy/Alert/Anomaly, and the
+  only way an external consumer can obtain a `store.Store`. Fails
+  closed on every error (nil Store, never a silent downgrade to
+  non-durable storage), and `type: postgres` is *recognized but
+  unimplemented*, returning a distinct `ErrStorageTypeNotImplemented`
+  rather than an "unknown type" error or a substitute store.
+- `TestStoreContract` (`internal/store/contract_test.go`) — the nine
+  `Store` guarantees, executable against every implementation from one
+  place. Adding a backend means adding one line to `storeFactories`.
+  Its same-key-concurrency subtest is the one a naive
+  read-then-compute-then-write database implementation fails, which is
+  why it exists before the database does.
+- `trustvian analyze|baseline build --storage-config <path>` — so the
+  CLI can persist at all. `TestBaselineBuildThenAnalyzePersistsAcrossCommands`
+  proves a corpus learned by one invocation is scored against by a
+  separate one.
+- [`examples/persistent-baseline`](../examples/persistent-baseline/) —
+  the external-consumer proof, run as a real test from the separate
+  `examples` module with no `internal/*` import.
+
+A key structural finding, recorded in [ADR
+0018](adr/0018-production-store-boundary-and-postgresql-direction.md):
+`Store.Observe` takes an *observation* (`key, fp, vol, now`), not a
+caller-computed `Baseline`, so the whole read-modify-write cycle lives
+inside one implementation call and a PostgreSQL backend can wrap it in a
+row-locked transaction. Had the port been `Save(ctx, key, bl)`, lost
+updates would have been structurally unavoidable without adding
+versioning to the domain model — [ADR
+0004](adr/0004-narrow-store-port-in-memory-only.md)'s narrow port is
+what makes a correct transactional backend possible, years before one
+was written.
+
+**Acceptance criteria.** See
+[034-production-store-contract-and-public-boundary.md](tasks/034-production-store-contract-and-public-boundary.md).
+
+### Remaining scope (not yet task-filed)
+
+- **A production-grade persistent `Store` (task 035).** Today:
+  `store.InMemory`, `store.FileStore` (JSON, synchronous `fsync` — see
+  [ADR 0006](adr/0006-file-backed-persistent-store.md)), both now
+  selectable through public configuration since task 034:
 
   ```text
   Store interface (internal/store)
-   ├─ InMemory      (existing)
-   ├─ FileStore     (existing)
-   └─ PostgreSQLStore   (documented candidate, this milestone)
+   ├─ InMemory        (existing, selectable via config.StorageConfig)
+   ├─ FileStore       (existing, selectable via config.StorageConfig)
+   └─ PostgreSQLStore (task 035 — recognized in config today, fails
+                       closed with ErrStorageTypeNotImplemented)
   ```
 
-  PostgreSQL is the preferred candidate specifically for: durability
-  and transactional guarantees `FileStore`'s single-file-plus-rename
-  approach can't offer at higher write volume; broad operational
-  familiarity (most teams already run and back up Postgres); real
-  queryability (ad hoc inspection of learned baselines without writing
-  a custom tool against `FileStore`'s JSON blob); and OSS-friendliness
-  (no proprietary licensing, a mature Go driver ecosystem). This is a
-  documented preference, not a commitment made blindly — the actual
-  schema/transaction design is this milestone's own task file's job,
-  not this roadmap edit's.
-- **A production-like deployment path**: `Docker` + `Docker Compose`
-  wiring together the OTel Collector, Trustvian (as a library inside a
-  consuming service, or via the Collector processor), and the
+  PostgreSQL remains the preferred candidate specifically for:
+  durability and transactional guarantees `FileStore`'s
+  single-file-plus-rename approach can't offer at higher write volume;
+  broad operational familiarity (most teams already run and back up
+  Postgres); real queryability (ad hoc inspection of learned baselines
+  without writing a custom tool against `FileStore`'s JSON blob); and
+  OSS-friendliness (no proprietary licensing, a mature Go driver
+  ecosystem). Task 034 confirmed that preference and recorded the
+  constraints 035 inherits — transaction scope, the row-lock strategy
+  the narrow port permits, schema-versioning direction, credential
+  handling, and fail-fast-on-unavailable — in [ADR
+  0018](adr/0018-production-store-boundary-and-postgresql-direction.md).
+  The actual schema and driver choice remain 035's own task file's job.
+  `FileStore` is **not** deprecated by any of this and stays a
+  first-class option for single-process and local use.
+- **A production-like deployment path (task 037)**: `Docker` + `Docker
+  Compose` wiring together the OTel Collector, Trustvian (as a library
+  inside a consuming service, or via the Collector processor), and the
   persistent store above — a documented, runnable reference deployment,
-  not a Helm chart.
+  not a Helm chart. Deliberately sequenced *after* the store work: it
+  packages something, and that something has to exist and be
+  configurable first. It is also the intended home for 035's
+  integration-test environment, so a database-backed test suite reuses
+  the reference deployment rather than adding a
+  container-orchestration test dependency.
 
 **Non-goals.** No Redis, Kafka, ClickHouse, or OpenSearch — none of
 these have a concrete milestone justification today, and introducing
@@ -1681,13 +1765,31 @@ constraints](#the-oss--enterprise-product-boundary) and
 [CLAUDE.md](../CLAUDE.md)'s "avoid... premature microservices").
 Kubernetes/Helm support explicitly follows *only* once a real
 deployment need justifies it — not scoped here, not a `v1.0` blocker.
+Also explicitly not part of this milestone: any strategic capability
+from [§ Beyond v0.7](#beyond-v07--strategic-capability-direction) — MCP
+or tool behavioral security, runtime provenance, numeric behavioral
+baselines, and the Control plane are all priorities *awaiting*
+reconciliation with this milestone sequence, not scope absorbed into it.
+Nor is Trustvian a SIEM or event lake: this milestone persists current
+learned `Baseline` state, never a raw-event history, so no retention
+policy and no event warehouse.
 
 **Dependencies.** `v0.1` (the `Store` interface already exists and is
 narrow — [ADR 0004](adr/0004-narrow-store-port-in-memory-only.md)).
-Independent of `v0.5`–`v0.7`.
+Task 034 additionally depends on `v0.5`/`v0.7`'s config-boundary
+precedent ([ADR 0008](adr/0008-policy-config-boundary.md), [ADR
+0017](adr/0017-public-anomaly-configuration-boundary.md)), which it
+follows rather than reinvents; the milestone is otherwise independent of
+`v0.5`–`v0.7`.
 
-**Acceptance criteria.** Defined when this milestone's own task file is
-written — not before.
+**Exit criteria.** All five slices done, and concretely: a production
+backend passing `TestStoreContract` unmodified; durability and
+lost-update behavior proven under concurrency rather than asserted;
+persistence selectable from the Go SDK, YAML, and the CLI; a runnable
+reference deployment; `InMemory`/`FileStore` still fully supported with
+`InMemory` still the default; and no new Core dependency on any
+database. Per-task acceptance criteria are fixed when each slice's task
+file is written — 034's are in its own file.
 
 ## v0.9 — Operational Readiness
 
