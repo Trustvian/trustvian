@@ -34,13 +34,16 @@ var (
 	ErrUnsupportedStorageVersion = errors.New("config: unsupported storage config version")
 	ErrInvalidStorageType        = errors.New("config: invalid storage type")
 	ErrMissingStoragePath        = errors.New("config: file storage requires a path")
+	ErrMissingStorageDSN         = errors.New("config: postgres storage requires a dsn")
 	// ErrStorageTypeNotImplemented is returned for a storage type this
-	// package recognizes but cannot yet construct — today, only
-	// StorageTypePostgres. Deliberately distinct from
-	// ErrInvalidStorageType so an operator can tell "you typo'd the
-	// backend name" apart from "that backend is real but this release
-	// doesn't ship it yet." Either way it fails closed: never a silent
-	// downgrade to a non-durable store.
+	// package recognizes but cannot construct. No type is in that state
+	// today — PostgreSQL, the only value that ever was, is implemented
+	// as of `v0.8` task 035. Retained (rather than deleted) because it
+	// is exported API that a caller may already check with errors.Is,
+	// and because the next recognized-before-implemented backend should
+	// reuse this exact distinction: "that backend is real but this
+	// release doesn't ship it" reads very differently to an operator
+	// than "you typo'd the backend name."
 	ErrStorageTypeNotImplemented = errors.New("config: storage type not implemented in this release")
 
 	ErrUnsupportedAnomalyVersion = errors.New("config: unsupported anomaly config version")
@@ -436,9 +439,27 @@ func (cfg StorageConfig) Validate() error {
 	// Only the selected backend's own options are required. A config
 	// carrying an unused `file:` block while running `type: memory` is
 	// valid — see StorageConfig's doc comment.
-	if cfg.Type == StorageTypeFile {
+	switch cfg.Type {
+	case StorageTypeFile:
 		if cfg.File == nil || cfg.File.Path == "" {
 			return fmt.Errorf("file.path: %w", ErrMissingStoragePath)
+		}
+	case StorageTypePostgres:
+		if cfg.Postgres == nil || cfg.Postgres.DSN == "" {
+			return fmt.Errorf("postgres.dsn: %w", ErrMissingStorageDSN)
+		}
+		// Deliberately no DSN *syntax* validation here: parsing it is
+		// the driver's job, and Validate must stay pure and
+		// side-effect-free (a caller uses it to check a config without
+		// dialing anything). Syntax failures surface from
+		// CompileStorage as ErrInvalidDSN. Note also that a validation
+		// error must never quote the DSN — it is a secret; the field
+		// path alone identifies the problem.
+		if cfg.Postgres.MaxConnections < 0 {
+			return fmt.Errorf("postgres.max_connections: %w: %d (must not be negative)", ErrInvalidThreshold, cfg.Postgres.MaxConnections)
+		}
+		if cfg.Postgres.ConnectTimeoutSeconds < 0 {
+			return fmt.Errorf("postgres.connect_timeout_seconds: %w: %d (must not be negative)", ErrInvalidThreshold, cfg.Postgres.ConnectTimeoutSeconds)
 		}
 	}
 

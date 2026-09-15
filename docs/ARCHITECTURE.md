@@ -207,7 +207,10 @@ a method signature:
   name it nor implement it, and before task 034 no exported function
   returned one. `WithStore` was therefore in-module-only in practice,
   silently pinning every external deployment to the in-memory default.
-  See [ADR 0018](adr/0018-production-store-boundary-and-postgresql-direction.md).
+  Task 035 added `PostgresStorageConfig` to the same document, so
+  selecting a production database is a YAML edit rather than a new
+  mechanism. See [ADR
+  0018](adr/0018-production-store-boundary-and-postgresql-direction.md).
 
 `policy.Policy`/`Condition`/`Rule`/`Decision`, `anomaly.Config`,
 `trust.Config`, and `store.Store` implementations all stay
@@ -282,26 +285,71 @@ type Store interface {
 ```
 
 Two methods, matching `Baseline`'s actual access pattern exactly — not
-a generic repository. Two implementations exist: `store.InMemory`
-(baselines do not survive a process restart — still the default) and
-`store.FileStore` (a JSON file on disk, flushed synchronously after
-every `Observe`; baselines survive a restart, at the cost of `Observe`
-being roughly four orders of magnitude slower than against `InMemory`
-— see [PERFORMANCE.md](PERFORMANCE.md) for measured numbers and
-[ADR 0006](adr/0006-file-backed-persistent-store.md) for why that
-tradeoff was chosen). No database driver is imported anywhere in this
-module — `FileStore` uses only `encoding/json` and `os`. Switching is
-a one-line `trustvian.WithStore(...)` change; every pipeline package
-remains unaffected — none of them know `Store` exists, only `Engine`
-does, and neither implementation changed that.
+a generic repository. Three implementations exist:
+
+- `store.InMemory` — baselines do not survive a process restart. Still
+  the default.
+- `store.FileStore` — a JSON file on disk, flushed synchronously after
+  every `Observe`; baselines survive a restart, at the cost of `Observe`
+  being roughly four orders of magnitude slower than against `InMemory`
+  (see [PERFORMANCE.md](PERFORMANCE.md) and [ADR
+  0006](adr/0006-file-backed-persistent-store.md)).
+- `internal/store/postgres.Store` (`v0.8` task 035) — shared,
+  transactional persistence: one row per `baseline.Key`, `Observe`
+  wrapped in a row-locked transaction, state readable by other
+  processes. This is the backend that makes several Trustvian instances
+  agree on one baseline instead of each holding its own.
+
+The PostgreSQL backend lives in its **own package**, not in new files
+under `internal/store`, and that placement is the point: it is the only
+package in this module allowed to import `github.com/jackc/pgx/v5`. This
+is the same containment `internal/otel` applies to the OpenTelemetry SDK,
+for the same reason — `internal/store` itself still uses nothing but
+`encoding/json` and `os`.
+
+Verified, not asserted: `go list -deps` reports zero pgx packages in the
+dependency graph of `event`, `internal/features`, `internal/fingerprint`,
+`internal/baseline`, `internal/anomaly`, `internal/trust`,
+`internal/policy`, `internal/store`, **and the root `trustvian` package**.
+Embedding the engine does not pull a database driver.
+
+Where the driver *does* reach is `config`, because `config/compile.go`
+holds `CompileStorage` — and therefore any consumer importing `config` for
+*any* document, Policy included, links pgx transitively. The OTel
+processor module is the concrete case: it imports `config` for policy
+configuration and so acquires the driver it makes no use of. This is a
+consequence of `CompileStorage` living in the same package as
+`CompilePolicy` (task 034's boundary decision), not of the backend's
+placement. It is recorded here as a known cost rather than described as
+containment it does not have; splitting storage compilation into its own
+public subpackage would resolve it and is a boundary change, not a
+storage change.
+
+Switching backends is a one-line `trustvian.WithStore(...)` change, or a
+one-line edit to a `config.StorageConfig` document; every pipeline package
+remains unaffected — none of them know `Store` exists, only `Engine` does,
+and adding a third implementation did not change that. See
+[storage-guide.md](storage-guide.md).
 
 A separate, narrower `store.Freezer` interface (`Freeze`/`Unfreeze`/
-`IsFrozen`) is implemented by both `InMemory` and `FileStore` — a
+`IsFrozen`) is implemented by `InMemory` and `FileStore` — a
 per-`Key` capability to suspend learning without discarding history,
 deliberately *not* part of `Store` itself, since `Engine` and every
 pipeline package have no need to know it exists. Freeze state is never
 persisted, even by `FileStore` — it's a live, current-process
-operational flag, not learned behavioral history.
+operational flag, not learned behavioral history. The PostgreSQL store
+deliberately does **not** implement `Freezer`: freeze is a per-process
+concept, and one that silently applied to a single replica of a *shared*
+store would misrepresent what it guaranteed.
+
+`Freezer` is also the precedent for how `Close` was added. The PostgreSQL
+store holds a connection pool and satisfies `io.Closer`; `Store` itself
+gained no `Close` method, because only database-backed stores hold a
+releasable resource and widening the port would have forced every
+implementation and caller to change for a capability most do not need.
+Callers type-assert (`if c, ok := s.(io.Closer); ok { defer c.Close() }`),
+which is a no-op for the other two backends — the same optional-capability
+shape, applied a second time rather than a new mechanism invented.
 
 ## Relationship to Trustvian Control/Cloud
 
@@ -408,7 +456,10 @@ allocations. See [ADR 0005](adr/0005-fingerprint-computed-once-per-analyze.md).
   structurally unavoidable without adding versioning to the domain
   model. The contract every implementation must satisfy is now
   executable — `TestStoreContract` in `internal/store/contract_test.go`
-  — rather than implied by each backend's own tests. See [ADR
+  — rather than implied by each backend's own tests. Task 035 supplied
+  the database backend that prediction was made about, and it passes all
+  nine guarantees **unmodified**: the contract written before the
+  implementation needed no weakening to accommodate it. See [ADR
   0018](adr/0018-production-store-boundary-and-postgresql-direction.md).
 - **No global engine state.** `Engine` is always constructed
   explicitly via `NewEngine(...)` and passed around; there's no

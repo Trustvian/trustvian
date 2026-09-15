@@ -33,23 +33,24 @@ package config
 // SchemaVersionV1's own doc comment and ADR 0008 § Schema versioning).
 const StorageSchemaVersionV1 = "v1"
 
-// Storage type values accepted by StorageConfig.Type.
+// Storage type values accepted by StorageConfig.Type:
 //
-// StorageTypePostgres is deliberately *recognized but not yet
-// implemented*: CompileStorage returns ErrStorageTypeNotImplemented for
-// it rather than ErrInvalidStorageType. This is a more honest failure
-// than "unknown type" for an operator who read docs/ROADMAP.md § v0.8
-// (which names PostgreSQL as the preferred persistent candidate) and
-// reasonably tried it — and it reserves the exact config spelling, so
-// the milestone's next slice is a purely additive change to
-// CompileStorage, not a rename operators would have to migrate.
+//   - StorageTypeMemory — ephemeral; nothing survives the process.
+//     NewEngine's own default when WithStore is not passed at all.
+//   - StorageTypeFile — local, single-process durable (store.FileStore).
+//   - StorageTypePostgres — production, multi-process concurrent durable
+//     (internal/store/postgres), implemented in `v0.8` task 035. The
+//     config spelling was reserved by task 034, which recognized the
+//     value and failed closed on it, so enabling it required no rename
+//     and no migration for anyone who had already written it.
 //
-// Critically, it fails *closed*: an explicit request for an
-// unimplemented backend is a startup error, never a silent downgrade to
-// memory or file storage. Silently substituting a non-durable store for
-// an explicitly requested durable one would lose exactly the learned
-// state the operator asked to persist — see
-// TestCompileStoragePostgresFailsClosedNeverFallsBack.
+// Every backend fails *closed*: a store that cannot be constructed
+// yields an error and a nil Store, never a silent downgrade to a
+// different backend. Substituting a non-durable store for an explicitly
+// requested durable one would lose exactly the learned state the
+// operator asked to persist — see
+// TestCompileStorageUnknownTypeFailsClosedNeverFallsBack and, for
+// PostgreSQL specifically, TestCompileStoragePostgresUnreachableFailsClosed.
 const (
 	StorageTypeMemory   = "memory"
 	StorageTypeFile     = "file"
@@ -93,6 +94,47 @@ type StorageConfig struct {
 	// File carries StorageTypeFile's options. Required when Type is
 	// "file", ignored otherwise.
 	File *FileStorageConfig `yaml:"file,omitempty"`
+
+	// Postgres carries StorageTypePostgres's options. Required when Type
+	// is "postgres", ignored otherwise.
+	Postgres *PostgresStorageConfig `yaml:"postgres,omitempty"`
+}
+
+// PostgresStorageConfig configures the PostgreSQL-backed store — the
+// production-concurrency option, alongside `memory` (ephemeral) and
+// `file` (local, single-process durable). Deliberately three fields:
+// pgx exposes a large tuning surface, and each knob here had to justify
+// itself as something an operator genuinely cannot set another way (see
+// docs/adr/0018-production-store-boundary-and-postgresql-direction.md).
+type PostgresStorageConfig struct {
+	// DSN is the connection string, in URL
+	// (`postgres://user:pw@host:5432/db`) or keyword/value
+	// (`host=... user=...`) form. Required.
+	//
+	// **This value is a secret.** It typically embeds a password.
+	// Nothing in this package or the store implementation logs it,
+	// returns it inside an error, or writes it into persisted state —
+	// including on a parse failure, which is the one case the driver's
+	// own error message would otherwise echo it verbatim. See
+	// docs/SECURITY.md § Storage configuration and production
+	// persistence.
+	DSN string `yaml:"dsn"`
+
+	// MaxConnections caps the connection pool. Omitted or zero means the
+	// driver default (the greater of 4 and GOMAXPROCS). Set it when the
+	// deployment's own PostgreSQL connection limit, or the number of
+	// Trustvian replicas sharing it, makes that default wrong in either
+	// direction.
+	MaxConnections int32 `yaml:"max_connections,omitempty"`
+
+	// ConnectTimeoutSeconds bounds the startup connectivity check.
+	// Omitted or zero means 10 seconds. This is what keeps fail-fast
+	// startup *fast*: unbounded, an unreachable database would leave
+	// construction waiting out the OS-level TCP timeout. Expressed in
+	// whole seconds rather than a duration string to keep the YAML
+	// schema free of format ambiguity, matching how every other numeric
+	// field in this package is a plain number.
+	ConnectTimeoutSeconds int `yaml:"connect_timeout_seconds,omitempty"`
 }
 
 // FileStorageConfig configures the JSON-file-backed store

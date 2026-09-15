@@ -1,0 +1,8 @@
+version: v1
+type: postgres
+postgres:
+  # Deliberately unreachable: port 1 on the loopback interface is never
+  # a PostgreSQL server. The point of this fixture is that the command
+  # must ABORT here, not silently fall back to an in-memory store.
+  dsn: postgres://trustvian:unused@127.0.0.1:1/trustvian?sslmode=disable
+  connect_timeout_seconds: 2

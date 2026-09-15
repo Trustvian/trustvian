@@ -25,12 +25,11 @@ actually depend on.
   implement it and no exported function returned one — `WithStore` was
   in-module-only in practice, silently pinning every external deployment
   to the in-memory default and losing all learned baselines on restart.
-  Supported backends are `memory` and `file`; `postgres` is recognized
-  but **not implemented in this release** and fails closed with
-  `ErrStorageTypeNotImplemented` rather than falling back. Any
-  compile error yields a nil Store — never a silent downgrade to
-  non-durable storage, which would lose exactly the state an operator
-  asked to keep.
+  Supported backends at the time of this slice were `memory` and `file`;
+  `postgres` was recognized but not yet implemented (see the next entry,
+  which implemented it). Any compile error yields a nil Store — never a
+  silent downgrade to non-durable storage, which would lose exactly the
+  state an operator asked to keep.
   `trustvian analyze` / `baseline build` gain `--storage-config <path>`,
   which makes `baseline build` genuinely useful: a corpus learned by one
   invocation is now scored against by a separate one. Also adds
@@ -44,6 +43,65 @@ actually depend on.
   `store.Store`/`InMemory`/`FileStore` behavior, and `NewEngine`'s
   in-memory default is unchanged. See [ADR
   0018](docs/adr/0018-production-store-boundary-and-postgresql-direction.md).
+
+- **PostgreSQL Store implementation**
+  ([task 035](docs/tasks/035-postgresql-store-implementation.md), second
+  `v0.8` slice) — `type: postgres` is now functional. The new
+  `internal/store/postgres` package implements the existing
+  `internal/store.Store` port against PostgreSQL and passes all nine of
+  `TestStoreContract`'s guarantees **unmodified** — no contract test was
+  weakened to accommodate it. This is the backend that makes a
+  horizontally-scaled deployment coherent: several Trustvian instances
+  share one baseline instead of each holding its own opinion of what
+  "normal" means for the same actor.
+
+  Configuration is a new `postgres:` block on the existing
+  `StorageConfig` document (`dsn`, optional `max_connections` and
+  `connect_timeout_seconds`), so selecting a production database is a
+  YAML edit rather than a new mechanism — usable from the Go SDK, a YAML
+  file, and `--storage-config` on both CLI subcommands.
+
+  `Observe` is atomic and lost-update-free, **including the first
+  observation for a key that does not exist yet**: it runs `INSERT ...
+  ON CONFLICT DO NOTHING` before `SELECT ... FOR UPDATE`, because
+  `FOR UPDATE` locks nothing when no row matches. Both protections are
+  verified by mutation testing rather than asserted. State lives in one
+  row per `baseline.Key`, authoritative in a single `jsonb` column using
+  the identical encoding `FileStore` already writes, with derived
+  inspection-only scalar columns (`fingerprint_count`,
+  `observation_count`, `last_observed`, ...) so an operator can query
+  learned state with plain SQL. Schema creation is automatic,
+  idempotent, transactional, and safe under concurrent startup; a
+  mismatched recorded version aborts with `ErrSchemaVersionMismatch`
+  rather than being silently upgraded.
+
+  Fail-closed throughout: an unreachable, unauthenticated, or
+  schema-incompatible database returns an error and a nil Store from
+  `CompileStorage`, with **no fallback** to the file or memory backend at
+  any layer. The DSN is never logged and never wrapped into an error —
+  `pgxpool.ParseConfig`'s error specifically is not wrapped, because pgx
+  echoes an unparseable DSN verbatim while redacting parseable ones, and
+  there is a regression test for exactly that. Every SQL value is a bound
+  parameter.
+
+  Also adds `Close()` on the PostgreSQL store via `io.Closer` — an
+  optional, type-asserted capability following the existing
+  `store.Freezer` precedent, so `store.Store` itself gained no method —
+  and [`docs/storage-guide.md`](docs/storage-guide.md).
+
+  One new direct dependency: `github.com/jackc/pgx/v5`, confined to the
+  new package (only `config/compile.go` imports it), so the driver stays
+  out of the build of everything that imports `internal/store`.
+  `InMemory` remains the default, `FileStore` is unchanged and not
+  deprecated, and `go test ./...` passes with no PostgreSQL installed —
+  every test needing a server skips on an unset
+  `TRUSTVIAN_TEST_POSTGRES_DSN`.
+
+### Changed
+
+- `newEngine` in `cmd/trustvian` now returns a cleanup function alongside
+  the `Engine`, so the CLI releases the PostgreSQL connection pool on
+  exit. Internal to the CLI; no public API change.
 
 ## v0.7.0 — AI Agent Behavioral Security
 

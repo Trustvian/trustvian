@@ -104,17 +104,17 @@ trustvian analyze --storage-config storage.yaml event.json
 
 `type` is required — there is no implicit default, because silently
 choosing the non-durable backend is exactly the failure this flag
-exists to prevent. Supported values are `memory` and `file`;
-`postgres` is recognized but not implemented in this release and fails
-with a clear error rather than falling back (see
-[ROADMAP.md § v0.8](ROADMAP.md#v08--production-runtime--storage)).
+exists to prevent. Supported values are `memory`, `file`, and
+`postgres`; see [`storage-guide.md`](storage-guide.md) for how to choose
+between them and for the full `postgres` configuration reference.
 
 Fail-closed discipline is strictest here: a missing, unparseable, or
-invalid `--storage-config`, an unopenable or corrupt state file, or a
-recognized-but-unimplemented backend all fail the whole command —
-non-zero exit, no analysis report, and **never** a silent fallback to
-in-memory storage. Substituting a non-durable store for an explicitly
-requested durable one would lose precisely the state you asked to keep.
+invalid `--storage-config`, an unopenable or corrupt state file, a
+`postgres` block with no DSN, or an unreachable database all fail the
+whole command — non-zero exit, no analysis report, and **never** a silent
+fallback to in-memory storage. Substituting a non-durable store for an
+explicitly requested durable one would lose precisely the state you asked
+to keep.
 
 All three config flags are independent — pass any combination.
 

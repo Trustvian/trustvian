@@ -1,13 +1,16 @@
 package config
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/Trustvian/trustvian/alert"
 	"github.com/Trustvian/trustvian/event"
 	"github.com/Trustvian/trustvian/internal/anomaly"
 	"github.com/Trustvian/trustvian/internal/policy"
 	"github.com/Trustvian/trustvian/internal/store"
+	"github.com/Trustvian/trustvian/internal/store/postgres"
 	"github.com/Trustvian/trustvian/internal/trust"
 )
 
@@ -199,21 +202,26 @@ func CompileAnomaly(cfg AnomalyConfig) (anomaly.Config, error) {
 //
 // CompileStorage is the one compiler in this package that is *not*
 // pure, and deliberately so: constructing a persistent Store has real
-// side effects (StorageTypeFile reads the file at
+// side effects. StorageTypeFile reads the file at
 // FileStorageConfig.Path, creating nothing but failing loudly if the
 // path exists and is unreadable or holds an unsupported snapshot
-// version). That is the correct place for those effects — a caller
-// wiring up an Engine at startup wants a load failure surfaced then,
-// not on the first Observe. Callers who want validity checked *without*
-// touching the filesystem call cfg.Validate() directly.
+// version; StorageTypePostgres connects, verifies connectivity, and
+// runs its schema migration. That is the correct place for those
+// effects — a caller wiring up an Engine at startup wants a load or
+// connection failure surfaced then, not on the first Observe. Callers
+// who want validity checked *without* touching the filesystem or the
+// network call cfg.Validate() directly.
 //
 // Failure is always closed, never degraded: any error returns a nil
 // Store, so a caller that forgets to check err cannot accidentally run
 // on a silently-substituted in-memory store and lose the durable state
-// it asked for. StorageTypePostgres specifically returns
-// ErrStorageTypeNotImplemented — recognized configuration this release
-// cannot honor — rather than quietly falling back; see
-// docs/adr/0018-production-store-boundary-and-postgresql-direction.md.
+// it asked for. In particular an unreachable, misconfigured, or
+// schema-incompatible PostgreSQL database is an error — never a silent
+// fallback to the file or memory backend, which would downgrade
+// persistence exactly when an operator is least likely to notice. See
+// docs/adr/0018-production-store-boundary-and-postgresql-direction.md
+// and docs/SECURITY.md § Storage configuration and production
+// persistence.
 //
 // The returned store.Store is safe for a caller outside this module to
 // receive and pass straight into trustvian.WithStore via type
@@ -222,6 +230,30 @@ func CompileAnomaly(cfg AnomalyConfig) (anomaly.Config, error) {
 // select a Store at all, since store.Store's methods reference internal
 // types that make the interface both unnameable and unimplementable
 // from outside (see ADR 0018).
+//
+// # Lifecycle
+//
+// Some backends hold OS resources — the PostgreSQL store owns a
+// connection pool. Because store.Store itself has no Close method (and
+// adding one would force every implementation and caller to change for a
+// capability only database-backed stores need), releasing those
+// resources is an optional, type-asserted capability, exactly as
+// store.Freezer already is:
+//
+//	s, err := config.CompileStorage(cfg)
+//	if err != nil {
+//		return err
+//	}
+//	if c, ok := s.(io.Closer); ok {
+//		defer c.Close()
+//	}
+//	engine := trustvian.NewEngine(trustvian.WithStore(s))
+//
+// The assertion is a no-op for the memory and file backends, neither of
+// which holds a resource beyond the file it rewrites synchronously — so
+// the snippet above is correct for every backend and is what
+// cmd/trustvian does. A long-lived process that never closes the pool
+// leaks connections on shutdown; see docs/storage-guide.md § Lifecycle.
 func CompileStorage(cfg StorageConfig) (store.Store, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -241,7 +273,27 @@ func CompileStorage(cfg StorageConfig) (store.Store, error) {
 		return s, nil
 
 	case StorageTypePostgres:
-		return nil, fmt.Errorf("%w: %q (see docs/ROADMAP.md § v0.8)", ErrStorageTypeNotImplemented, cfg.Type)
+		// cfg.Validate has already guaranteed cfg.Postgres != nil and a
+		// non-empty DSN for this Type.
+		//
+		// context.Background() rather than a caller-supplied ctx:
+		// CompileStorage's signature was frozen by task 034 and is used
+		// by the CLI and by external consumers, so widening it here
+		// would be a breaking change for a capability nothing has asked
+		// for. The startup work is bounded regardless — postgres.NewStore
+		// applies ConnectTimeout (10s by default) to its connectivity
+		// check and migration — so this cannot hang indefinitely, which
+		// was the only real risk. A cancellable variant can be added
+		// additively if a caller ever needs one.
+		s, err := postgres.NewStore(context.Background(), postgres.Config{
+			DSN:            cfg.Postgres.DSN,
+			MaxConnections: cfg.Postgres.MaxConnections,
+			ConnectTimeout: time.Duration(cfg.Postgres.ConnectTimeoutSeconds) * time.Second,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return s, nil
 
 	default:
 		// Unreachable: Validate rejects every unrecognized Type before

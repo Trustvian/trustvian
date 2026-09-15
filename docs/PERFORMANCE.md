@@ -808,6 +808,60 @@ improvised later:**
   unimplemented backend — this section stays empty of PostgreSQL results
   until task 035 measures them.
 
+### v0.8 task 035 (PostgreSQL Store)
+
+**No hot-path change to the engine.** `internal/store/postgres` adds a
+third `Store` implementation; `Engine.Analyze`/`Observe` and every
+pipeline package are byte-for-byte unchanged, so
+`BenchmarkEngineAnalyze` and all per-stage numbers above still stand.
+What changed is the cost of the `Store.Get` and `Store.Observe` calls
+*within* them, when a deployment selects this backend.
+
+`internal/store/postgres/postgres_bench_test.go` follows the measurement
+plan recorded above, unchanged. Benchmarks are gated on
+`TRUSTVIAN_TEST_POSTGRES_DSN` and skip without it, so `go test -bench=.`
+never requires a database.
+
+Measured against PostgreSQL 17 in Docker over loopback, Apple M3 Pro
+(`-benchtime=200x`, 12-way parallel):
+
+| Benchmark | ns/op | B/op | allocs/op |
+|---|---|---|---|
+| `BenchmarkGet` | 152,408 | 11,649 | 56 |
+| `BenchmarkObserveDistinctKeys` | 238,181 | 21,081 | 100 |
+| `BenchmarkObserveSameKey` | 599,961 | 19,605 | 95 |
+
+**How to read these.** Every figure is dominated by network round-trips
+and is a property of the deployment — network latency, server tuning,
+pool size — not of this code. They are useful as *ratios* and as
+regression signals (an extra round-trip per `Observe` would show up
+immediately), never as advertised latencies. A remote database will be
+slower; a tuned one on a fast link, faster.
+
+Two ratios do carry meaning:
+
+**Same-key is ~2.5× distinct-keys.** That gap is the row lock doing its
+job: concurrent observations of one actor serialize, concurrent
+observations of different actors do not. If that ratio ever collapsed to
+1.0, the lock would have stopped working; if it grew sharply, something
+would be contending that should not be.
+
+**PostgreSQL is ~6–17× *faster* than `FileStore` under concurrent
+writes** — 600 µs versus `BenchmarkFileStoreObserveSameKey`'s ~3.4–4.7 ms,
+and 238 µs versus `BenchmarkFileStoreObserveDistinctKeys`'s ~3.9–4.7 ms.
+This inverts the expectation the task-034 plan above was written with, and
+the reason is structural rather than incidental: `FileStore` rewrites its
+*entire* contents on every `Observe`, so its cost scales with total store
+size, while PostgreSQL updates exactly one row. The plan anticipated the
+concurrent-same-key case being the distinguishing one and it was — just
+more decisively, and in the other direction.
+
+The practical consequence for the guidance below: `FileStore` is no longer
+the "faster durable option." It is the *zero-setup* durable option for a
+single process. Once durability matters at all under load, PostgreSQL is
+both the faster and the shareable choice. See
+[storage-guide.md](storage-guide.md).
+
 ## Reading the numbers
 
 **Session-to-session `ns/op` moved broadly; allocation counts didn't —
@@ -895,7 +949,10 @@ ns/op) — entirely attributable to a synchronous `fsync` on every call
 (see [ADR 0006](adr/0006-file-backed-persistent-store.md)). This is
 large enough that it matters which `Store` a deployment chooses:
 `InMemory` for throughput, `FileStore` when surviving a restart is
-worth the cost. Note `FileStoreObserveDistinctKeys`'s 12-way-parallel
+worth the cost — and, since task 035, PostgreSQL when the cost is worth
+paying *and* more than one process must share the result, at roughly a
+sixth to a seventeenth of `FileStore`'s per-`Observe` cost (see [§ v0.8
+task 035](#v08-task-035-postgresql-store)). Note `FileStoreObserveDistinctKeys`'s 12-way-parallel
 row shows both higher `ns/op` *and* much higher `B/op`/`allocs/op`
 (16,891 B, 51 allocs) than its sequential counterpart (3,890 B, 24
 allocs) — this specific benchmark's store grows as concurrent

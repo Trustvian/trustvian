@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 
 	trustvian "github.com/Trustvian/trustvian"
 	"github.com/Trustvian/trustvian/config"
@@ -61,17 +62,26 @@ func defaultPolicy() policy.Policy {
 // explicitly requested config that cannot be safely loaded and
 // compiled must never result in analysis continuing under a different
 // configuration).
-func newEngine(configPath, anomalyConfigPath, storageConfigPath string) (*trustvian.Engine, error) {
+//
+// The returned cleanup function releases any OS resources the selected
+// store holds — today that means the PostgreSQL backend's connection
+// pool. It is never nil, so every caller can `defer cleanup()`
+// unconditionally, and it is a no-op for the memory and file backends.
+// Releasing is an optional, type-asserted capability rather than a
+// method on store.Store itself; see config.CompileStorage's Lifecycle
+// section for why, and docs/storage-guide.md § Lifecycle.
+func newEngine(configPath, anomalyConfigPath, storageConfigPath string) (*trustvian.Engine, func(), error) {
 	opts := []trustvian.Option{trustvian.WithPolicy(defaultPolicy())}
+	cleanup := func() {}
 
 	if configPath != "" {
 		cfg, err := config.LoadFile(configPath)
 		if err != nil {
-			return nil, err
+			return nil, cleanup, err
 		}
 		p, err := config.CompilePolicy(cfg)
 		if err != nil {
-			return nil, fmt.Errorf("config %s: %w", configPath, err)
+			return nil, cleanup, fmt.Errorf("config %s: %w", configPath, err)
 		}
 		opts[0] = trustvian.WithPolicy(p)
 	}
@@ -79,11 +89,11 @@ func newEngine(configPath, anomalyConfigPath, storageConfigPath string) (*trustv
 	if anomalyConfigPath != "" {
 		acfg, err := config.LoadAnomalyFile(anomalyConfigPath)
 		if err != nil {
-			return nil, err
+			return nil, cleanup, err
 		}
 		ac, err := config.CompileAnomaly(acfg)
 		if err != nil {
-			return nil, fmt.Errorf("anomaly-config %s: %w", anomalyConfigPath, err)
+			return nil, cleanup, fmt.Errorf("anomaly-config %s: %w", anomalyConfigPath, err)
 		}
 		opts = append(opts, trustvian.WithAnomalyConfig(ac))
 	}
@@ -99,14 +109,17 @@ func newEngine(configPath, anomalyConfigPath, storageConfigPath string) (*trustv
 	if storageConfigPath != "" {
 		scfg, err := config.LoadStorageFile(storageConfigPath)
 		if err != nil {
-			return nil, err
+			return nil, cleanup, err
 		}
 		s, err := config.CompileStorage(scfg)
 		if err != nil {
-			return nil, fmt.Errorf("storage-config %s: %w", storageConfigPath, err)
+			return nil, cleanup, fmt.Errorf("storage-config %s: %w", storageConfigPath, err)
+		}
+		if c, ok := s.(io.Closer); ok {
+			cleanup = func() { _ = c.Close() }
 		}
 		opts = append(opts, trustvian.WithStore(s))
 	}
 
-	return trustvian.NewEngine(opts...), nil
+	return trustvian.NewEngine(opts...), cleanup, nil
 }

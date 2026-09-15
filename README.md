@@ -194,11 +194,32 @@ external consumer could select any store, not even the `FileStore` that
 already shipped, and every deployment silently ran in memory and lost its
 baselines on restart. A durable store now survives restarts through
 public API alone (see
-[`examples/persistent-baseline`](examples/persistent-baseline/)), and the
-`Store` contract a future database backend must satisfy is written down
-and executable. PostgreSQL itself is **not yet implemented** — requesting
-it fails closed with a clear error rather than falling back. See [ADR
-0018](docs/adr/0018-production-store-boundary-and-postgresql-direction.md)
+[`examples/persistent-baseline`](examples/persistent-baseline/)), against
+an executable `Store` contract that every backend must satisfy.
+
+Task 035 added the **PostgreSQL backend**, which passes all nine of those
+contract guarantees unmodified:
+
+```yaml
+version: v1
+type: postgres
+postgres:
+  dsn: postgres://trustvian:${PGPASSWORD}@db.internal:5432/trustvian?sslmode=require
+```
+
+This is what makes a horizontally-scaled deployment coherent: several
+Trustvian instances sharing one baseline, rather than each replica holding
+its own opinion of what "normal" means for the same actor. `Observe` is
+atomic and lost-update-free (including the first observation for a brand-new
+key), state is inspectable with plain SQL, and an unreachable database
+fails closed — there is no path from "PostgreSQL is unavailable" to a
+silently substituted in-memory store. It is also ~6–17× *faster* than the
+file backend under concurrent writes, since it updates one row instead of
+rewriting everything.
+
+`InMemory` remains the default and `FileStore` is unchanged. See
+[`docs/storage-guide.md`](docs/storage-guide.md), [ADR
+0018](docs/adr/0018-production-store-boundary-and-postgresql-direction.md),
 and [`docs/ROADMAP.md` §
 v0.8](docs/ROADMAP.md#v08--production-runtime--storage).
 

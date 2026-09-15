@@ -1,11 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // captureOutput redirects os.Stdout/os.Stderr for the duration of fn,
@@ -399,23 +401,61 @@ func TestRunAnalyzeMissingStorageConfigFailsClosed(t *testing.T) {
 	}
 }
 
-// TestRunAnalyzeUnimplementedStorageBackendFailsClosed is the CLI-level
-// half of config.CompileStorage's own fail-closed guarantee: requesting
-// a recognized-but-unimplemented backend aborts the command rather than
-// running on a silently substituted in-memory store.
-func TestRunAnalyzeUnimplementedStorageBackendFailsClosed(t *testing.T) {
+// TestRunAnalyzeIncompleteStorageConfigFailsClosed is the CLI-level half
+// of config.CompileStorage's own fail-closed guarantee for a
+// *misconfigured* backend: storage-postgres.yaml names type: postgres
+// but supplies no DSN, so the command must abort rather than run on a
+// silently substituted in-memory store.
+//
+// Before task 035 this fixture proved something different — that
+// postgres was recognized but unimplemented. That state no longer
+// exists, so the assertion moved to the invariant that outlasted it:
+// configuration this CLI cannot honor stops the command.
+func TestRunAnalyzeIncompleteStorageConfigFailsClosed(t *testing.T) {
 	stdout, stderr, code := captureOutput(t, func() int {
 		return run([]string{"analyze", "--storage-config", "testdata/storage-postgres.yaml", "testdata/normal.json"})
 	})
 
 	if code == 0 {
-		t.Fatalf("exit code = 0, want non-zero for an unimplemented storage backend")
+		t.Fatalf("exit code = 0, want non-zero for an incomplete storage config")
 	}
 	if stdout != "" {
 		t.Fatalf("stdout = %q, want empty — no analysis must run on a store that could not be built", stdout)
 	}
-	if !strings.Contains(stderr, "not implemented") {
-		t.Fatalf("stderr = %q, want it to say the backend is not implemented", stderr)
+	if !strings.Contains(stderr, "requires a dsn") {
+		t.Fatalf("stderr = %q, want it to name the missing dsn", stderr)
+	}
+}
+
+// TestRunAnalyzeUnreachablePostgresFailsClosed is the invariant task 035
+// exists to protect, asserted at the outermost layer a user touches: an
+// operator who asks for PostgreSQL and cannot get PostgreSQL gets an
+// error, never a quiet downgrade to in-memory storage. A fallback here
+// would mean every decision that followed was made against state the
+// operator believed was durable and shared, and none of it would
+// survive the process — silent persistence downgrade, which
+// docs/SECURITY.md prohibits outright.
+//
+// This test needs no database: it depends on PostgreSQL being *absent*,
+// which is exactly what a developer machine with no container running
+// provides, so it runs everywhere rather than being DSN-gated.
+func TestRunAnalyzeUnreachablePostgresFailsClosed(t *testing.T) {
+	stdout, stderr, code := captureOutput(t, func() int {
+		return run([]string{"analyze", "--storage-config", "testdata/storage-postgres-unreachable.yaml", "testdata/normal.json"})
+	})
+
+	if code == 0 {
+		t.Fatalf("exit code = 0, want non-zero when PostgreSQL is unreachable")
+	}
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty — no analysis must run against a store that could not be reached", stdout)
+	}
+	if !strings.Contains(stderr, "unavailable") {
+		t.Fatalf("stderr = %q, want it to report the database as unavailable", stderr)
+	}
+	// The DSN carries a password. It must not reach the terminal.
+	if strings.Contains(stderr, "unused") {
+		t.Fatalf("stderr leaked the DSN password: %q", stderr)
 	}
 }
 
@@ -486,4 +526,97 @@ func TestRunBaselineBuildAcceptsStorageConfigFlag(t *testing.T) {
 	if !strings.Contains(stdout, "Events processed:") {
 		t.Fatalf("stdout = %q, want a rendered summary", stdout)
 	}
+}
+
+// TestBaselineBuildThenAnalyzePersistsAcrossCommandsPostgres is the
+// PostgreSQL twin of TestBaselineBuildThenAnalyzePersistsAcrossCommands,
+// and it is the proof that matters most for task 035: the backend is not
+// "done" because its own package tests pass, it is done when an operator
+// running two ordinary CLI commands gets learned state carried between
+// them. This exercises the whole public path — YAML document →
+// config.LoadStorageFile → config.CompileStorage → postgres.Store →
+// Engine — with no internal import anywhere in the flow.
+//
+// DSN-gated: it skips when TRUSTVIAN_TEST_POSTGRES_DSN is unset, so
+// `go test ./...` on a machine with no database still passes. See
+// docs/storage-guide.md § Running the integration tests.
+func TestBaselineBuildThenAnalyzePersistsAcrossCommandsPostgres(t *testing.T) {
+	dsn := os.Getenv("TRUSTVIAN_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("TRUSTVIAN_TEST_POSTGRES_DSN not set; see docs/storage-guide.md")
+	}
+
+	// A unique actor per run keys this test's baseline away from any other
+	// test sharing the database, so the cold-store assertion below holds
+	// without this test truncating a table other tests are using.
+	corpus, normal := postgresFixturePair(t)
+
+	dir := t.TempDir()
+	storageCfgPath := filepath.Join(dir, "storage.yaml")
+	storageCfg := "version: v1\ntype: postgres\npostgres:\n  dsn: " + dsn + "\n"
+	if err := os.WriteFile(storageCfgPath, []byte(storageCfg), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	coldStdout, stderr, code := captureOutput(t, func() int {
+		return run([]string{"analyze", "--storage-config", storageCfgPath, normal})
+	})
+	if code != 0 {
+		t.Fatalf("cold analyze: exit code = %d, want 0; stderr = %q", code, stderr)
+	}
+	if !strings.Contains(coldStdout, "never observed") {
+		t.Fatalf("cold analyze stdout = %q, want it to report the fingerprint as never observed", coldStdout)
+	}
+
+	_, stderr, code = captureOutput(t, func() int {
+		return run([]string{"baseline", "build", "--storage-config", storageCfgPath, corpus})
+	})
+	if code != 0 {
+		t.Fatalf("baseline build: exit code = %d, want 0; stderr = %q", code, stderr)
+	}
+
+	warmStdout, stderr, code := captureOutput(t, func() int {
+		return run([]string{"analyze", "--storage-config", storageCfgPath, normal})
+	})
+	if code != 0 {
+		t.Fatalf("warm analyze: exit code = %d, want 0; stderr = %q", code, stderr)
+	}
+	if strings.Contains(warmStdout, "never observed") {
+		t.Fatalf("warm analyze stdout = %q, want the persisted baseline to have been loaded from PostgreSQL", warmStdout)
+	}
+	if !strings.Contains(warmStdout, "times required for maturity") {
+		t.Fatalf("warm analyze stdout = %q, want it to report partial maturity from the persisted baseline", warmStdout)
+	}
+}
+
+// postgresFixturePair copies testdata/corpus.json and testdata/normal.json
+// into the test's temp dir with every actor.id rewritten to a value unique
+// to this run, and returns the two new paths. Rewriting the fixture rather
+// than truncating the table is what lets this test share a database with
+// the store package's own integration tests without either interfering
+// with the other.
+func postgresFixturePair(t *testing.T) (corpus, normal string) {
+	t.Helper()
+
+	dir := t.TempDir()
+	actor := fmt.Sprintf("cli-e2e-%d-%d", time.Now().UnixNano(), os.Getpid())
+
+	out := make([]string, 0, 2)
+	for _, name := range []string{"corpus.json", "normal.json"} {
+		data, err := os.ReadFile(filepath.Join("testdata", name))
+		if err != nil {
+			t.Fatalf("ReadFile %s: %v", name, err)
+		}
+		// The fixtures use a single actor id; swap it for the unique one.
+		rewritten := strings.ReplaceAll(string(data), `"id": "svc-payment"`, `"id": "`+actor+`"`)
+		if rewritten == string(data) {
+			t.Fatalf("fixture %s: actor id placeholder not found — fixture shape changed", name)
+		}
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(rewritten), 0o600); err != nil {
+			t.Fatalf("WriteFile %s: %v", path, err)
+		}
+		out = append(out, path)
+	}
+	return out[0], out[1]
 }
