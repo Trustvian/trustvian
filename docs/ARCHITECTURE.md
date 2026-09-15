@@ -294,11 +294,29 @@ a generic repository. Three implementations exist:
   being roughly four orders of magnitude slower than against `InMemory`
   (see [PERFORMANCE.md](PERFORMANCE.md) and [ADR
   0006](adr/0006-file-backed-persistent-store.md)).
-- `internal/store/postgres.Store` (`v0.8` task 035) — shared,
-  transactional persistence: one row per `baseline.Key`, `Observe`
-  wrapped in a row-locked transaction, state readable by other
+- `internal/store/postgres.Store` (`v0.8` task 035, hardened by task
+  036) — shared, transactional persistence: one row per `baseline.Key`,
+  `Observe` wrapped in a row-locked transaction, state readable by other
   processes. This is the backend that makes several Trustvian instances
   agree on one baseline instead of each holding its own.
+
+  Three durable architectural properties, each verified rather than
+  intended (task 036):
+
+  - **Transaction boundary.** Exactly one transaction per `Observe`, and
+    nothing outside `Observe` is ever inside one — not `Analyze`, not
+    policy evaluation, not alert delivery. This is what keeps a database
+    from sitting on the decision path.
+  - **Same-key serialization.** `INSERT ... ON CONFLICT DO NOTHING` to
+    materialize the row, then `SELECT ... FOR UPDATE` to lock it, at READ
+    COMMITTED. Correctness comes from the explicit row lock, not from
+    isolation level. Exactly one row is locked per transaction, so
+    deadlock is structurally impossible and no lock-ordering discipline is
+    required.
+  - **Schema version boundary.** A recorded version that differs from the
+    binary's `SchemaVersion`, or metadata that cannot be interpreted at
+    all, fails startup closed. An older binary never mutates state whose
+    layout it does not understand.
 
 The PostgreSQL backend lives in its **own package**, not in new files
 under `internal/store`, and that placement is the point: it is the only

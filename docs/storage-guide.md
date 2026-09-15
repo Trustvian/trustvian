@@ -163,6 +163,26 @@ operation. `pgxpool` reconnects as ordinary pool behavior. Trustvian adds
 no retry layer of its own, no reconnect loop, and no degraded mode — a
 failed `Observe` returns an error to its caller, who decides.
 
+### Failure semantics, one row at a time
+
+Each of these is asserted by a test, not inferred:
+
+| Condition | Behavior |
+|---|---|
+| Database unreachable at startup | `CompileStorage` errors, nil Store, **no fallback** |
+| Connection lost mid-operation | explicit error wrapping `ErrUnavailable`; stored state equals exactly the acknowledged writes |
+| Transaction fails before commit | full rollback; the previous baseline is intact, byte for byte |
+| Context cancelled | error satisfying `errors.Is(err, context.Canceled)`; nothing committed |
+| Deadline exceeded | error satisfying `errors.Is(err, context.DeadlineExceeded)` |
+| Waiting on a row lock, then cancelled | returns promptly (measured 5.4 ms), leaves no lock, no partial write, and no stranded connection |
+| Connection pool exhausted | waits for capacity, then fails on the caller's deadline (measured: 2.0001 s against a 2 s deadline) |
+| Store used after `Close` | operations fail; `Close` itself is idempotent |
+| Stored baseline unreadable | `ErrCorruptState` on `Observe`; the row is **never** silently replaced |
+
+A failed operation never strands a connection. That is verified on every
+failure path against a pool sized to one connection, where a single leak
+would make the next operation impossible.
+
 ## Concurrency semantics
 
 `Observe` for a given key is **atomic and lost-update-free**, including
@@ -182,10 +202,48 @@ concurrent observations, and removing the insert fails the
 first-observation race test.
 
 Distinct keys are distinct rows and never contend — different actors do
-not serialize against each other.
+not serialize against each other. Measured: 32 keys × 100 observations
+runs at roughly **2.1× the throughput** of the same load on one key, which
+is the evidence that nothing serializes globally. If a table lock or
+advisory lock sat on the write path, both figures would match.
 
 Transactions are confined to `Observe`. Nothing else is ever inside one:
 not `Analyze`, not policy evaluation, not alert delivery.
+
+### Isolation level and deadlocks
+
+`Observe` runs at **READ COMMITTED**, PostgreSQL's default. It sets no
+isolation level, and that is deliberate: correctness comes from the
+*explicit* `FOR UPDATE` row lock, not from isolation. A stricter level
+would add serialization-failure retries to handle in exchange for a
+guarantee the row lock already provides.
+
+**Deadlocks are structurally impossible**, not merely unobserved. A
+deadlock needs two transactions each holding a lock the other wants;
+`Observe` acquires exactly one row lock and never a second, so no cycle
+can form regardless of arrival order.
+
+**Trustvian performs no transaction retries**, and needs none.
+Serialization failures (SQLSTATE 40001) cannot occur under READ COMMITTED,
+and deadlocks (40P01) cannot occur with single-row locking — the two
+transient classes a retry loop would exist for are both unreachable by
+construction. Connection-level transience is `pgxpool`'s concern and is
+handled there.
+
+### Verified under load
+
+Measured against PostgreSQL 17 (task
+[036](tasks/036-store-durability-concurrency-and-migration-hardening.md)).
+Read the rates as ratios and regression signals, not as advertised
+throughput — they are dominated by network round-trips:
+
+| Scenario | Result |
+|---|---|
+| 32 writers × 100 observations, one key, 3 rounds | 3200/3200 each round, **0 lost** |
+| 96 concurrent *first* writes, 5 rounds | 96/96 each round, exactly 1 row |
+| 32 keys × 100 observations | 3200/3200, ~2.1× same-key rate |
+| Mixed committing and cancelled writers | acknowledged count == stored count, exactly |
+| 200 actors × 10 observations | 200 rows, 2 tables — row count tracks keys, never observation volume |
 
 ## Credentials
 
@@ -264,19 +322,54 @@ a live system.
 - **transactional** — DDL and the version row commit together;
 - **safe under concurrent startup** — a transaction-scoped advisory lock
   serializes racing processes;
-- **fail-closed** — a recorded version that differs from this build's
-  `SchemaVersion` aborts with `ErrSchemaVersionMismatch` rather than
-  being silently upgraded or misread.
+- **fail-closed** — metadata this build cannot interpret with confidence
+  aborts startup rather than being guessed at, and **atomic** — a
+  migration that fails leaves nothing behind, verified by aborting one
+  mid-flight and confirming no table was created.
+
+### Schema compatibility, case by case
+
+| Recorded state | Behavior |
+|---|---|
+| Matches `SchemaVersion` | proceeds |
+| **Newer** than this build | `ErrSchemaVersionMismatch` — startup fails |
+| Older / unrecognized | `ErrSchemaVersionMismatch` — startup fails |
+| Absent, **and no baseline data** | treated as a fresh database; version recorded |
+| Absent, **but baseline data exists** | `ErrAmbiguousSchemaState` — startup fails |
+| More than one version row | `ErrAmbiguousSchemaState` — startup fails |
+
+The newer-than-this-build case is the one that matters most: an older
+binary must never mutate state whose layout it does not understand.
+
+The last two cases are fail-closed deliberately, and both were
+silently-accepted gaps until task
+[036](tasks/036-store-durability-concurrency-and-migration-hardening.md).
+"No recorded version" only means "new database" when there is also no
+data — otherwise it is data of unknown provenance, which is what a partial
+restore or an accidental `DELETE FROM trustvian_schema_version` produces.
+Recovery is deliberately your decision, not Trustvian's: restore a
+consistent backup, or set the version table to the single correct value.
+Guessing is exactly what the version check exists to prevent.
+
+### Migration privileges
 
 Automatic creation is chosen for the smallest safe OSS experience: one
-connection string and it works. The cost is that the runtime role needs
-table-creation rights on first run. To separate privileges, run one
-startup with a migrating role, then switch the DSN to a role with only
-`SELECT`/`INSERT`/`UPDATE` on the two tables — subsequent startups only
-read the version row.
+connection string and it works. The cost is explicit: **the runtime role
+needs table-creation rights on its first run.** Trustvian never needs
+superuser.
 
-Evolution across multiple schema versions is [task
-036](ROADMAP.md#v08--production-runtime--storage)'s scope, not this one's.
+To separate migration from runtime identity, run one startup with a role
+that can create tables, then switch the DSN to a role with only
+`SELECT`, `INSERT`, and `UPDATE` on the two tables. Subsequent startups
+only read the version row, so they need no DDL rights. A runtime role
+lacking the privileges it needs fails startup with PostgreSQL's own
+permission error — actionable, and carrying no credentials.
+
+Multi-version evolution has no upgrade path yet because there has only
+ever been one schema version; what is exercised today is re-migration
+against a populated database, which is what every process restart does.
+Inventing a v1→v2 upgrade to demonstrate the machinery would test a
+fiction.
 
 ### What is *not* stored
 
@@ -286,6 +379,31 @@ behavioral state**, not history — `PredecessorCounts`, `TrigramCounts`,
 and `DelegatorCounts` are all capped by `internal/baseline`, so a hostile
 actor cannot grow a row without limit. Storing raw event history would
 create a new, far more sensitive data asset than the one Trustvian needs.
+
+Both halves of that are tested: 200 actors × 10 observations produces
+exactly 200 rows and exactly 2 tables (row count tracks distinct keys,
+never observation volume), and a baseline driven well past every
+cardinality cap serializes to about **13 KB** and round-trips through a
+separate store with no truncation. A single row therefore has a
+predictable ceiling regardless of how long an actor lives or how hard
+someone tries to inflate it.
+
+### Corrupt or unreadable state
+
+If a row's stored JSON is not a valid `Baseline` — a bad restore, a
+hand-edited row — the behavior is deliberately asymmetric:
+
+- **`Observe` fails** with `ErrCorruptState` and **does not overwrite the
+  row.** An implementation that "recovered" by writing a fresh baseline
+  would silently erase that actor's entire learned history and destroy the
+  evidence needed to diagnose the problem.
+- **`Get` reports no baseline**, because the `Store` port gives it no
+  error return. This is fail-safe in the direction that matters — the
+  actor reads as *unfamiliar*, which raises its anomaly score rather than
+  suppressing it — and `Get` never writes, so the row survives for
+  `Observe` to report on the next learning call.
+
+There is no code path that silently resets a corrupt baseline.
 
 ## Running the integration tests
 
@@ -308,6 +426,45 @@ go test -race ./...
 docker rm -f trustvian-pg
 ```
 
+### Three tiers
+
+Selected with the standard `-short` flag rather than a second gating
+mechanism:
+
+```bash
+go test ./...                                          # unit only — no database needed
+TRUSTVIAN_TEST_POSTGRES_DSN=... go test -short ./...   # + integration
+TRUSTVIAN_TEST_POSTGRES_DSN=... go test ./...          # + stress (the release gate)
+```
+
+The stress tier drives 32 writers × 100 observations at a single key over
+three rounds, 96 concurrent first-writes over five rounds, and a
+200-actor row-count check. It takes seconds, not minutes, so the release
+gate stays practical.
+
+### Database restart durability
+
+One test restarts the database itself, and it needs to be told how:
+
+```bash
+TRUSTVIAN_TEST_POSTGRES_DSN='...' \
+TRUSTVIAN_TEST_POSTGRES_RESTART_CMD='docker restart trustvian-pg' \
+  go test -run TestDatabaseRestartPreservesCommittedBaseline ./internal/store/postgres/
+```
+
+It is a **separate variable** because restarting a server is destructive
+to whatever the DSN points at — nobody should bounce a shared database by
+exporting one connection string. Leave it unset for ordinary runs.
+
+**Run it on its own**, as above. A restart disrupts every other connection
+to that server, and `go test ./...` runs package binaries in parallel, so
+enabling it for a whole-repository run can fail unrelated tests through no
+fault of their own.
+
+The test verifies the restart actually happened, by comparing
+`pg_postmaster_start_time()` before and after. A restart command that
+silently does nothing fails the test rather than passing it vacuously.
+
 Each integration test creates a **private PostgreSQL schema** and drops it
 afterwards, so tests never disturb each other — `go test ./...` runs
 separate packages' binaries concurrently, and two packages here use
@@ -317,6 +474,50 @@ already holds data.
 A reference Docker Compose environment is [task
 037](ROADMAP.md#v08--production-runtime--storage)'s deliverable; the
 command above is the minimum for running the tests today.
+
+## Pool sizing
+
+`max_connections` caps the pool. Left at `0`, pgx uses its own default —
+the greater of 4 and `GOMAXPROCS`.
+
+Guidance, deliberately brief because there is little to tune:
+
+- **Too small** throttles a busy Engine. When every connection is busy, a
+  further operation waits for capacity and then fails on its caller's
+  deadline. That is bounded and reportable, never an unbounded hang — but
+  it is still a failed request.
+- **Too large** can exhaust PostgreSQL's own `max_connections`, especially
+  with several replicas. Total connections across all Trustvian instances
+  must fit inside the server's limit with room for everything else
+  connecting to it.
+- **Contention does not scale with pool size.** Concurrent observations of
+  the *same* actor serialize on that row's lock no matter how many
+  connections are available; only concurrency across *different* actors
+  benefits from a bigger pool.
+
+Start with the default. Raise it only in response to measured waiting, and
+never to make a test pass.
+
+## Database TLS
+
+Configure TLS through the DSN, the same way any PostgreSQL client does:
+
+```text
+postgres://user:pw@db.internal:5432/trustvian?sslmode=require
+```
+
+Trustvian passes the DSN to pgx unmodified. It **never weakens
+PostgreSQL's security defaults programmatically** — there is no code that
+downgrades `sslmode`, disables verification, or silently retries without
+TLS. Whatever the DSN asks for is what the driver does.
+
+For production, prefer `sslmode=verify-full` with a pinned root
+certificate, supplied through the DSN and your environment's certificate
+store. Certificate management is deliberately out of scope here: it
+belongs to your deployment, not to a behavioral security engine.
+
+`sslmode=disable` appears in this document's test commands only, against a
+throwaway container on loopback.
 
 ## Related reading
 
@@ -331,5 +532,8 @@ command above is the minimum for running the tests today.
 - [ADR 0006](adr/0006-file-backed-persistent-store.md) — `FileStore`
 - [ADR 0018](adr/0018-production-store-boundary-and-postgresql-direction.md)
   — the public selection boundary and the PostgreSQL direction
+- [Task 036](tasks/036-store-durability-concurrency-and-migration-hardening.md)
+  — the hardening evidence behind every guarantee on this page, including
+  the two schema-metadata defects it found and fixed
 - [`examples/persistent-baseline`](../examples/persistent-baseline/) — a
   runnable external-consumer example

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -109,9 +108,35 @@ CREATE TABLE IF NOT EXISTS ` + versionTable + ` (
 // initialized by a different schema version than this build expects.
 // It is deliberately fatal rather than auto-upgrading: silently
 // rewriting a layout written by another version is how state gets
-// corrupted, and evolution across versions is task 036's scope, not
-// this one's.
+// corrupted. A *newer* recorded version is the dangerous direction —
+// an older binary must never mutate state whose layout it does not
+// understand — and an older recorded version has no upgrade path to
+// take while SchemaVersion is still 1.
 var ErrSchemaVersionMismatch = errors.New("store/postgres: database schema version mismatch")
+
+// ErrAmbiguousSchemaState reports a database whose schema metadata
+// cannot be interpreted with confidence, as distinct from one whose
+// version is simply wrong. Two cases produce it, both found by task
+// 036's hardening pass rather than reasoned about in advance:
+//
+//   - The baseline table holds rows but the version table is empty.
+//     Before task 036 this was silently treated as a fresh database and
+//     stamped with the current SchemaVersion — meaning an operator who
+//     restored a partial backup, or ran `DELETE FROM
+//     trustvian_schema_version`, could have an older binary adopt state
+//     written by a newer one. "No recorded version" is only safe to
+//     interpret as "new database" when there is also no data.
+//   - The version table holds more than one row. The version column is
+//     a primary key, so several *different* versions can coexist, and
+//     reading one with `LIMIT 1` and no ordering picked arbitrarily
+//     between them — a database marked version 99 was observed being
+//     accepted because a leftover version 1 row was read instead.
+//
+// Both fail closed. Recovery is an operator decision (restore a
+// consistent backup, or set the version table to the single correct
+// value); guessing on Trustvian's side risks corrupting learned state,
+// which is exactly what a version check exists to prevent.
+var ErrAmbiguousSchemaState = errors.New("store/postgres: ambiguous schema metadata")
 
 // Migrate brings an empty database up to SchemaVersion and verifies an
 // already-initialized one matches. It is:
@@ -123,7 +148,12 @@ var ErrSchemaVersionMismatch = errors.New("store/postgres: database schema versi
 //     serializes racing processes, and the second one observes the first
 //     one's committed version rather than re-creating anything;
 //   - fail-closed — an unrecognized recorded version aborts with
-//     ErrSchemaVersionMismatch instead of being upgraded or ignored.
+//     ErrSchemaVersionMismatch instead of being upgraded or ignored, and
+//     metadata that cannot be interpreted at all aborts with
+//     ErrAmbiguousSchemaState rather than being guessed at. "Absent
+//     version" counts as fresh only when the baseline table is also
+//     empty; see ErrAmbiguousSchemaState for why that distinction
+//     matters.
 //
 // Automatic initialization is chosen over requiring an operator to run
 // DDL by hand because it is the smallest safe OSS experience: one
@@ -151,18 +181,45 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		return fmt.Errorf("store/postgres: create baseline table: %w", err)
 	}
 
-	var recorded int
-	err = tx.QueryRow(ctx, `SELECT version FROM `+versionTable+` LIMIT 1`).Scan(&recorded)
+	// Count first, rather than reading one row and inferring from
+	// pgx.ErrNoRows. The count distinguishes the three states that
+	// matter — none, exactly one, more than one — where a `LIMIT 1` read
+	// collapses "none" and "several" into "whatever came back", which is
+	// how both ErrAmbiguousSchemaState cases used to slip through.
+	var versionRows int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM `+versionTable).Scan(&versionRows); err != nil {
+		return fmt.Errorf("store/postgres: read schema version: %w", err)
+	}
+
 	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		// Fresh database: record the version we just created.
+	case versionRows > 1:
+		return fmt.Errorf("%w: %s holds %d rows, expected exactly 1 — cannot determine the database's schema version",
+			ErrAmbiguousSchemaState, versionTable, versionRows)
+
+	case versionRows == 0:
+		// No recorded version. Safe to treat as a fresh database *only* if
+		// it is genuinely empty — otherwise this is data of unknown
+		// provenance and stamping it would be a silent adoption.
+		var baselineRows int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM `+baselineTable).Scan(&baselineRows); err != nil {
+			return fmt.Errorf("store/postgres: count existing baselines: %w", err)
+		}
+		if baselineRows > 0 {
+			return fmt.Errorf("%w: %s holds %d baseline row(s) but %s is empty — refusing to assume this data matches schema version %d",
+				ErrAmbiguousSchemaState, baselineTable, baselineRows, versionTable, SchemaVersion)
+		}
 		if _, err := tx.Exec(ctx, `INSERT INTO `+versionTable+` (version) VALUES ($1)`, SchemaVersion); err != nil {
 			return fmt.Errorf("store/postgres: record schema version: %w", err)
 		}
-	case err != nil:
-		return fmt.Errorf("store/postgres: read schema version: %w", err)
-	case recorded != SchemaVersion:
-		return fmt.Errorf("%w: database is at version %d, this build expects %d", ErrSchemaVersionMismatch, recorded, SchemaVersion)
+
+	default:
+		var recorded int
+		if err := tx.QueryRow(ctx, `SELECT version FROM `+versionTable).Scan(&recorded); err != nil {
+			return fmt.Errorf("store/postgres: read schema version: %w", err)
+		}
+		if recorded != SchemaVersion {
+			return fmt.Errorf("%w: database is at version %d, this build expects %d", ErrSchemaVersionMismatch, recorded, SchemaVersion)
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {

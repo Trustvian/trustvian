@@ -217,8 +217,15 @@ silently substituted in-memory store. It is also ~6–17× *faster* than the
 file backend under concurrent writes, since it updates one row instead of
 rewriting everything.
 
+Task 036 hardened that backend against the conditions production actually
+produces — heavy contention, cancelled lock waits, exhausted pools, lost
+connections, database restarts, and unreadable schema metadata — and
+verified that **storage choice does not change behavior**: all three
+backends produce identical learned state and identical decisions.
+
 `InMemory` remains the default and `FileStore` is unchanged. See
-[`docs/storage-guide.md`](docs/storage-guide.md), [ADR
+[`docs/storage-guide.md`](docs/storage-guide.md) for durability,
+concurrency, and failure semantics, [ADR
 0018](docs/adr/0018-production-store-boundary-and-postgresql-direction.md),
 and [`docs/ROADMAP.md` §
 v0.8](docs/ROADMAP.md#v08--production-runtime--storage).
