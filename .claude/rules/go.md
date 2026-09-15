@@ -57,11 +57,22 @@ style.
 
 ## What to avoid
 
-- No reflection. No code generation. No third-party dependency beyond
-  `go.opentelemetry.io/otel{,/sdk,/trace}`, and that dependency is
-  confined to `internal/otel` — nothing else in the module may import
-  it, which is what keeps the core engine OTel-independent (a CLAUDE.md
-  requirement, not a preference).
+- No reflection. No code generation. Three third-party dependencies, and
+  each is **confined to exactly one package**:
+
+  | Dependency | Only importable from | Why the confinement |
+  |---|---|---|
+  | `go.opentelemetry.io/otel{,/sdk,/trace}` | `internal/otel` | Keeps the core engine OTel-independent (a CLAUDE.md requirement, not a preference) |
+  | `go.yaml.in/yaml/v3` | `config` | Config parsing is an adapter; no domain package knows YAML exists |
+  | `github.com/jackc/pgx/v5` | `internal/store/postgres` | Keeps the driver out of the build of `internal/store` and every core package (`v0.8` task 035) |
+
+  The confinement is the rule, not the count. Adding a fourth means
+  naming the single package that may import it and saying why nothing
+  else may — and verifying it with `go list -deps`, which today reports
+  zero pgx and zero OTel packages in the dependency graph of `event`,
+  `internal/features` through `internal/policy`, `internal/store`, and
+  the root `trustvian` package. If a dependency cannot be contained that
+  way, that is an argument against adding it.
 - No package-level mutable state. `Engine` is always constructed
   explicitly and passed around; there is no default global engine for
   ergonomics, per Architecture Risk #8 in the project's design notes.

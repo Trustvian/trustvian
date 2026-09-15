@@ -1379,6 +1379,20 @@ detection engine** (`event`, `internal/features` through
 Slack SDK · Teams SDK · an HTTP client · Kafka · Redis · PostgreSQL · a PagerDuty SDK
 ```
 
+This constraint is about what the **core detection engine** may depend on,
+not about what the module may contain. `v0.8`'s PostgreSQL store is the
+worked example of the distinction: `github.com/jackc/pgx/v5` is a
+dependency of exactly one package, `internal/store/postgres`, which only
+`config/compile.go` imports. `event`, `internal/features` through
+`internal/policy`, and the root `Engine` remain unaware the driver exists
+— verified with `go list -deps`, not assumed — the same containment
+`internal/otel` applies to the OpenTelemetry SDK. A storage adapter behind
+a port is permitted; a core that imports a database is not. (The driver
+does reach anything importing the public `config` package, since
+`CompileStorage` lives there beside `CompilePolicy`; see
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for why that is a boundary
+cost rather than a core dependency.)
+
 Trustvian Core stays:
 
 ```text
@@ -1551,10 +1565,13 @@ Why each step exists, not merely what it contains:
   called `WithStore` at all. Every deployment silently ran in memory.
   `config.StorageConfig`/`CompileStorage` fixed that (**IMPLEMENTED**),
   and the `Store` contract a production backend must satisfy is now
-  executable. A PostgreSQL backend and a reference Docker Compose
-  deployment are **PLANNED**, not implemented — requesting PostgreSQL
-  today fails closed with a clear error rather than degrading to
-  non-durable storage.
+  executable. The **PostgreSQL backend is IMPLEMENTED** (second slice),
+  passing all nine of those contract guarantees unmodified: shared,
+  transactional persistence with lost-update-free `Observe`, SQL-queryable
+  learned state, and fail-closed behavior with no fallback to non-durable
+  storage when the database is unavailable. A reference Docker Compose
+  deployment remains **PLANNED**. `InMemory` is still the default and
+  `FileStore` is unchanged.
 - **`v1.0`** is the point all of the above adds up to: a release gate,
   not a new capability, and not a claim this document makes today —
   see [§ OSS v1.0 — Production-Ready Definition](#oss-v10--production-ready-definition)

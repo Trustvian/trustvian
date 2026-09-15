@@ -667,9 +667,12 @@ mode is worse than the config-typo threats above: a misconfigured
 operator can observe, whereas a silently substituted store produces
 *data loss*, invisible until the restart that needed the data.
 
-**Status: implemented for the boundary, partially future for the
-backend** ([task 034](tasks/034-production-store-contract-and-public-boundary.md),
-[ADR 0018](adr/0018-production-store-boundary-and-postgresql-direction.md)).
+**Status: implemented** ([task
+034](tasks/034-production-store-contract-and-public-boundary.md), [task
+035](tasks/035-postgresql-store-implementation.md), [ADR
+0018](adr/0018-production-store-boundary-and-postgresql-direction.md)).
+See [`storage-guide.md`](storage-guide.md) for the operator-facing
+version of everything below.
 
 Implemented now:
 
@@ -677,16 +680,27 @@ Implemented now:
   **nil** `Store` on every error path, so a caller who ignores the error
   cannot proceed on a substituted store. Proven by
   `TestCompileStoragePostgresFailsClosedNeverFallsBack` and, at the CLI
-  boundary, `TestRunAnalyzeUnimplementedStorageBackendFailsClosed` —
-  which additionally asserts no analysis output is produced at all.
+  boundary, `TestRunAnalyzeUnreachablePostgresFailsClosed` and
+  `TestRunAnalyzeIncompleteStorageConfigFailsClosed` — which additionally
+  assert no analysis output is produced at all. Task 035 extended this to
+  the case that actually occurs in production: a *reachable-in-config but
+  unreachable-in-fact* database. There is no code path from "PostgreSQL is
+  unavailable" to a working in-memory or file store. **Silent persistence
+  downgrade is prohibited**, because it would mean every subsequent
+  decision was made against state the operator believed was durable and
+  shared, with the loss discovered long after it mattered. The same
+  assertion is made from the external `examples` module
+  (`TestPublicConfigPostgresFailsClosedWhenUnreachable`), so it is a
+  guarantee to consumers, not an internal convention.
 - **No implicit backend.** An omitted `type` is a validation error, not
   a silent choice of the non-durable in-memory store — the same
   fail-closed-on-ambiguous-config discipline `policy.Policy.Evaluate`
   applies to a missing default decision.
-- **Recognized-but-unimplemented is distinct from invalid.**
-  `type: postgres` returns `ErrStorageTypeNotImplemented`, never
-  `ErrInvalidStorageType` and never a substitute store, so an operator
-  can tell a typo from an unshipped backend.
+- **A misconfigured backend is distinct from an unknown one.** A missing
+  `postgres.dsn` returns `ErrMissingStorageDSN` and an unreachable
+  database returns a connectivity error — never `ErrInvalidStorageType`,
+  which is reserved for a `type` Trustvian does not recognize. An operator
+  can therefore tell a typo from a misconfiguration from an outage.
 - **Load failures surface at construction.** A corrupt or unreadable
   state file fails `CompileStorage` rather than starting empty and
   silently discarding existing history — `FileStore`'s loader already
@@ -713,21 +727,45 @@ Implemented now:
   holds none of these, and the storage layer persists `Baseline`,
   nothing more.
 
-Explicitly future, owned by task 035 and recorded as constraints in ADR
-0018 rather than left to discretion:
+Implemented by task 035, against the constraints ADR 0018 recorded rather
+than left to discretion:
 
-- **Credential leakage.** A database DSN contains a password. 035 must
-  never log it or wrap it into a returned error. (No DSN exists in this
-  release — `FileStorageConfig.Path` is not sensitive and is safe to
-  echo in errors, which is why it appears in them today.)
-- **SQL injection.** Parameterized queries only; the sole
-  caller-influenced values are `ActorID`/`Environment` from an already
-  validated `Event`, plus a serialized `Baseline`.
-- **Database unavailable.** Fail fast at startup. No degraded mode, no
-  queue, no unbounded internal retry loop hiding a prolonged outage —
-  retry ownership sits with the deployment platform.
-- **Database privilege scope.** DML on its own tables; DDL only at
-  migration time.
+- **Credential leakage.** A DSN contains a password. It is never logged
+  and never wrapped into a returned error. One specific hazard was found
+  empirically rather than assumed: pgx redacts passwords in parseable
+  URL DSNs and in connection errors, but echoes an **unparseable** DSN
+  back *verbatim*. `pgxpool.ParseConfig`'s error is therefore deliberately
+  **not** wrapped — `ErrInvalidDSN` reports that parsing failed and
+  withholds the detail. `TestNewStoreUnparseableDSNDoesNotLeakCredentials`
+  is the regression test; the CLI and `examples` fail-closed tests
+  additionally assert no password reaches stderr.
+- **No credential in persisted state.** Nothing from the storage config is
+  serialized into a row. The `baseline` column holds a
+  `baseline.Baseline` and nothing else.
+- **SQL injection.** Every value is a bound parameter. The only parts of
+  any statement assembled from Go strings are the two table-name
+  constants in `internal/store/postgres/schema.go`, which are compile-time
+  literals — actor IDs, environments, fingerprint IDs, target names,
+  operations, and serialized baselines are all parameters. Test-only
+  schema names, which cannot be parameterized (PostgreSQL has no
+  placeholder for an identifier), are generated locally and checked
+  against a strict `^[a-z][a-z0-9_]{0,48}$` whitelist before use.
+- **Database unavailable.** Fail fast at startup, as above. No degraded
+  mode, no queue, no unbounded internal retry loop hiding a prolonged
+  outage — `pgxpool` reconnects within a pool as ordinary pool behavior,
+  and Trustvian adds no layer above it. Retry ownership sits with the
+  deployment platform.
+- **Schema version mismatch fails closed.** A database recorded at a
+  different `SchemaVersion` aborts startup with
+  `ErrSchemaVersionMismatch` rather than being silently upgraded or
+  misread — the same discipline `FileStore` already applied to an unknown
+  `fileSnapshotVersion`. Migration is transactional and serialized across
+  concurrently starting processes by a transaction-scoped advisory lock.
+- **Database privilege scope.** DML on its own two tables; DDL only at
+  migration time. Automatic creation means the runtime role needs
+  table-creation rights on first run; [`storage-guide.md`](storage-guide.md)
+  documents how to split migration from runtime privileges for deployments
+  that care.
 
 ### Malformed events / extreme input values
 

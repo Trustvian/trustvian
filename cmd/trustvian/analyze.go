@@ -32,7 +32,8 @@ func runAnalyze(args []string) error {
 		return err
 	}
 
-	engine, err := newEngine(*configPath, *anomalyConfigPath, *storageConfigPath)
+	engine, cleanup, err := newEngine(*configPath, *anomalyConfigPath, *storageConfigPath)
+	defer cleanup()
 	if err != nil {
 		return err
 	}

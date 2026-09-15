@@ -15,6 +15,7 @@ engineering conventions this codebase follows, see
 | [CLI Guide](cli-guide.md) | `trustvian analyze` / `trustvian baseline build`, the event JSON format |
 | [Policy Guide](policy-guide.md) | Writing `Rule`/`Condition` policies, fail-closed behavior, worked examples |
 | [Anomaly Configuration Guide](anomaly-config-guide.md) | Public `AnomalyConfig` field reference, defaults/ranges, Go/YAML/CLI configuration |
+| [Storage Guide](storage-guide.md) | The three Store backends (memory/file/PostgreSQL), when to use each, configuration, lifecycle, fail-closed behavior, concurrency, credentials, schema |
 | [Sequence Analysis](sequence-analysis.md) | Order-aware detection (`transition_deviation`), the bounded state model, cold start, activation |
 | [OpenTelemetry Adapter](OPENTELEMETRY.md) | How `internal/otel` maps a span to an `Event`, the attribute mapping table, what's not yet implemented |
 | [Security Model](SECURITY.md) | Threats considered (spoofing, baseline poisoning, policy bypass, ...), implemented vs. future |

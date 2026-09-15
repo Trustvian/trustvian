@@ -30,6 +30,7 @@ package store_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"sync"
@@ -41,6 +42,7 @@ import (
 	"github.com/Trustvian/trustvian/internal/features"
 	"github.com/Trustvian/trustvian/internal/fingerprint"
 	"github.com/Trustvian/trustvian/internal/store"
+	"github.com/Trustvian/trustvian/internal/store/postgres"
 )
 
 // storeFactory builds a fresh, empty Store for one contract subtest.
@@ -48,12 +50,22 @@ import (
 // state — contract subtests assume they start empty.
 type storeFactory func(t *testing.T) store.Store
 
+// postgresDSNEnv gates the PostgreSQL entry in storeFactories. Unset —
+// the default for any developer without a local database — means the
+// contract runs against the two in-process implementations only, so
+// `go test ./...` never requires a server. Set, it adds PostgreSQL to
+// the *same* assertions, rather than a parallel suite: that shared
+// execution is the whole point of this file (see ADR 0018 § Integration
+// testing, and docs/storage-guide.md for the one-line docker command).
+const postgresDSNEnv = "TRUSTVIAN_TEST_POSTGRES_DSN"
+
 // storeFactories enumerates every implementation the contract applies
-// to. A future PostgreSQL implementation is added here, guarded by
-// whatever integration-test gate that slice chooses (see ADR 0018 §
-// Integration testing) — the contract assertions below need no change.
+// to. Adding a backend is one entry here and nothing else — the
+// assertions below are untouched by this task, which is what makes them
+// a contract rather than a description of whatever the backends happen
+// to do.
 func storeFactories() map[string]storeFactory {
-	return map[string]storeFactory{
+	factories := map[string]storeFactory{
 		"InMemory": func(t *testing.T) store.Store {
 			t.Helper()
 			return store.NewInMemory()
@@ -67,6 +79,45 @@ func storeFactories() map[string]storeFactory {
 			return s
 		},
 	}
+
+	if dsn := os.Getenv(postgresDSNEnv); dsn != "" {
+		factories["PostgreSQL"] = func(t *testing.T) store.Store {
+			t.Helper()
+			return newCleanPostgresStore(t, dsn)
+		}
+	}
+	return factories
+}
+
+// newCleanPostgresStore returns a PostgreSQL-backed Store whose tables
+// live in a schema private to this test, satisfying storeFactory's
+// "starts empty" requirement.
+//
+// Isolation is by schema, not by truncating a shared table. The first
+// version of this helper truncated, on the reasoning that the contract
+// subtests run sequentially — which is true, and which missed that
+// `go test ./...` runs *separate packages' binaries concurrently*.
+// internal/store/postgres also exercises PostgreSQL, so its truncation
+// and this one wiped each other's rows mid-test, producing "lost update"
+// failures against a provably correct implementation. A private schema
+// removes the shared resource rather than trying to time-share it — and
+// as a bonus, these tests no longer destroy data in a database that
+// happens to hold some.
+//
+// Emptying baselines still has no business being a method on the
+// production Store type: there is no legitimate production caller for
+// it, and the schema-per-test approach means tests do not need one.
+func newCleanPostgresStore(t *testing.T, dsn string) store.Store {
+	t.Helper()
+
+	s, err := postgres.NewStore(context.Background(), postgres.Config{
+		DSN: isolatedSchemaDSN(t, dsn),
+	})
+	if err != nil {
+		t.Fatalf("postgres.NewStore() error = %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
 }
 
 // contractTime is a fixed base timestamp. Contract subtests that care

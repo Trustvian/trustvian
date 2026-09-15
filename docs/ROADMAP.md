@@ -1641,8 +1641,10 @@ No specific response mechanism is designed here.
 
 ## v0.8 — Production Runtime & Storage
 
-**Status: IN PROGRESS.** Task [034](tasks/034-production-store-contract-and-public-boundary.md)
-is done; 035–038 are named below and not yet task-filed.
+**Status: IN PROGRESS.** Tasks
+[034](tasks/034-production-store-contract-and-public-boundary.md) and
+[035](tasks/035-postgresql-store-implementation.md) are done; 036–038 are
+named below and not yet task-filed.
 
 **Objective.** OSS should be deployable as a real production system,
 not only a library and a CLI against a local file.
@@ -1656,8 +1658,8 @@ applied to itself:
 | Task | Title | Status |
 |---|---|---|
 | [034](tasks/034-production-store-contract-and-public-boundary.md) | Production Store Contract & Public Selection Boundary | **DONE** |
-| 035 | PostgreSQL Store implementation | Next — not task-filed |
-| 036 | Store durability / concurrency / migration hardening | Planned |
+| [035](tasks/035-postgresql-store-implementation.md) | PostgreSQL Store implementation | **DONE** |
+| 036 | Store durability / concurrency / migration hardening | Next — not task-filed |
 | 037 | Reference Docker Compose deployment | Planned |
 | 038 | `v0.8` stabilization & release gate | Planned |
 
@@ -1713,39 +1715,61 @@ versioning to the domain model — [ADR
 what makes a correct transactional backend possible, years before one
 was written.
 
+**Task 035 — PostgreSQL Store implementation — is done.**
+`type: postgres` is functional: `internal/store/postgres` implements the
+`Store` port against PostgreSQL and passes all nine of
+`TestStoreContract`'s guarantees **unmodified** — the contract 034 wrote
+before the database existed needed no weakening to accommodate one, which
+is the outcome that validates having written it first.
+
+- **One new package, one new dependency.** `internal/store/postgres`
+  (not new files in `internal/store`) keeps `github.com/jackc/pgx/v5` out
+  of the build of every package that imports `internal/store`. Only
+  `config/compile.go` imports it; the core engine remains unaware it
+  exists.
+- **Two tables, no event history.** One row per `baseline.Key`, with
+  authoritative state in a single `jsonb` column using the *identical*
+  `encoding/json` representation `FileStore` already writes — which makes
+  the two backends structurally equivalent rather than equivalent by
+  hand-matching. The scalar columns beside it are derived and
+  inspection-only, recomputed in the same statement so they cannot drift.
+  Still no raw events, no `alerts`/`decisions`/`audit_log` tables:
+  Trustvian persists bounded behavioral state, never history.
+- **Lost-update correctness, proven rather than asserted.** `Observe`
+  runs `INSERT ... ON CONFLICT DO NOTHING` *before* `SELECT ... FOR
+  UPDATE`, because `FOR UPDATE` locks nothing when no row exists — so two
+  concurrent *first* observations for a new key would otherwise clobber
+  each other. Mutation testing confirms both protections are load-bearing:
+  removing the lock loses ~160 of 200 concurrent observations, and
+  removing the pre-insert fails the first-observation race test.
+- **Fail closed, with no downgrade path.** An unreachable, unauthenticated,
+  or schema-incompatible database returns an error and a nil Store from
+  `CompileStorage`. There is no code path from "PostgreSQL is unavailable"
+  to a working in-memory or file store, at any layer — asserted in the
+  `config` package, in the CLI, and from the external `examples` module.
+- **A faster durable backend, unexpectedly.** PostgreSQL is ~6–17×
+  *faster* than `FileStore` under concurrent writes, because it updates
+  one row where `FileStore` rewrites its entire contents on every
+  `Observe`. See [`PERFORMANCE.md`](PERFORMANCE.md).
+- **`FileStore` is not deprecated and `InMemory` is still the default.**
+  An operator who changes nothing sees byte-for-byte the previous
+  behavior.
+
+A test-infrastructure finding worth recording, because it produced a
+convincing false alarm: integration tests initially truncated a shared
+table to start clean, which is safe *within* a package but not across
+`go test ./...`'s concurrently-running package binaries — and two packages
+here use PostgreSQL. Each truncation wiped rows the other was mid-way
+through counting, reporting "lost updates" against a provably correct
+implementation. The fix was a private PostgreSQL schema per store, which
+removes the shared resource instead of trying to time-share it.
+
 **Acceptance criteria.** See
-[034-production-store-contract-and-public-boundary.md](tasks/034-production-store-contract-and-public-boundary.md).
+[034-production-store-contract-and-public-boundary.md](tasks/034-production-store-contract-and-public-boundary.md)
+and [035-postgresql-store-implementation.md](tasks/035-postgresql-store-implementation.md).
 
 ### Remaining scope (not yet task-filed)
 
-- **A production-grade persistent `Store` (task 035).** Today:
-  `store.InMemory`, `store.FileStore` (JSON, synchronous `fsync` — see
-  [ADR 0006](adr/0006-file-backed-persistent-store.md)), both now
-  selectable through public configuration since task 034:
-
-  ```text
-  Store interface (internal/store)
-   ├─ InMemory        (existing, selectable via config.StorageConfig)
-   ├─ FileStore       (existing, selectable via config.StorageConfig)
-   └─ PostgreSQLStore (task 035 — recognized in config today, fails
-                       closed with ErrStorageTypeNotImplemented)
-  ```
-
-  PostgreSQL remains the preferred candidate specifically for:
-  durability and transactional guarantees `FileStore`'s
-  single-file-plus-rename approach can't offer at higher write volume;
-  broad operational familiarity (most teams already run and back up
-  Postgres); real queryability (ad hoc inspection of learned baselines
-  without writing a custom tool against `FileStore`'s JSON blob); and
-  OSS-friendliness (no proprietary licensing, a mature Go driver
-  ecosystem). Task 034 confirmed that preference and recorded the
-  constraints 035 inherits — transaction scope, the row-lock strategy
-  the narrow port permits, schema-versioning direction, credential
-  handling, and fail-fast-on-unavailable — in [ADR
-  0018](adr/0018-production-store-boundary-and-postgresql-direction.md).
-  The actual schema and driver choice remain 035's own task file's job.
-  `FileStore` is **not** deprecated by any of this and stays a
-  first-class option for single-process and local use.
 - **A production-like deployment path (task 037)**: `Docker` + `Docker
   Compose` wiring together the OTel Collector, Trustvian (as a library
   inside a consuming service, or via the Collector processor), and the
