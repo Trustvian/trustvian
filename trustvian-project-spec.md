@@ -555,10 +555,10 @@ Anomaly
 
 ## 16. AI-Agent Roadmap
 
-**`v0.7` — AI Agent Behavioral Security is in progress; its foundation
-task is done:** [`docs/ROADMAP.md` §
+**`v0.7` — AI Agent Behavioral Security is shipped (`v0.7.0`):**
+[`docs/ROADMAP.md` §
 v0.7](docs/ROADMAP.md#v07--ai-agent-behavioral-security)
-([task 014](docs/tasks/014-ai-agent.md)) is the pre-`v1.0` OSS
+([task 014](docs/tasks/014-ai-agent.md) onward) was the pre-`v1.0` OSS
 milestone for this. **AI agents are behavioral actors analyzed by the
 same Trustvian engine** — not a second product, not a second security
 engine. Agent identity, tool calls, external
