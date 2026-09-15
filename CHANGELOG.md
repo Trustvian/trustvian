@@ -12,6 +12,20 @@ actually depend on.
 > expected to span multiple slices before it tags, so entries accumulate
 > here as each slice lands. This section is renamed to the milestone's
 > actual version heading only once a real tag exists — never before.
+>
+> **Status: this content is `v0.8.0` and is release-ready.** All five
+> slices (034–038) are done and the milestone's exit criteria are met (see
+> [`docs/ROADMAP.md` §
+> v0.8](docs/ROADMAP.md#v08--production-runtime--storage)). Renaming this
+> heading to `## v0.8.0 — Production Runtime & Storage` is the first step
+> of the post-release documentation transition, once the tag exists.
+
+Makes Trustvian deployable as a real production system rather than a
+library and a CLI against a local file: behavioral state can now be
+selected through public configuration, persisted to PostgreSQL with
+transaction-safe concurrent learning, and run from a documented reference
+deployment. Five vertical slices, all additive — `InMemory` remains the
+default and every `v0.5`–`v0.7` behavior is preserved.
 
 ### Added
 
@@ -232,6 +246,55 @@ actually depend on.
   other packages' tests mid-transaction, failing them with SQLSTATE 57P01.
   It now targets only its own store's connections, identified by
   `application_name`. Test-only; no product behavior involved.
+
+### Removed
+
+- `config.ErrStorageTypeNotImplemented`, added earlier in this same
+  unreleased milestone for the state "a backend Trustvian recognizes but
+  cannot construct." PostgreSQL was the only value ever in that state and is
+  now implemented, leaving an exported sentinel no code path could return —
+  something callers could write permanently dead `errors.Is` checks against.
+  Removed during release stabilization rather than frozen by the release:
+  it never appeared in a published version, so removing it now affects
+  nobody, whereas removing it after `v0.8.0` would be a breaking change.
+  Re-adding an error is backward-compatible if a future backend needs that
+  distinction again.
+
+### Security
+
+Each item below is enforced by a test, not by convention:
+
+- **Explicit storage selection fails closed.** A configured but unreachable,
+  unauthenticated, or schema-incompatible PostgreSQL database is an error
+  with a nil Store — there is no code path from "the database is
+  unavailable" to a working in-memory or file store, at any layer (SDK, CLI,
+  Collector processor, or external consumer). Silent persistence downgrade
+  would mean every subsequent decision was made against state the operator
+  believed was durable and shared.
+- **Schema downgrade protection.** A database recorded at a schema version
+  newer than the running binary aborts startup rather than being mutated.
+  Ambiguous metadata — baseline data present with no recorded version, or
+  multiple version rows — also fails closed instead of being guessed at.
+- **Credential secrecy.** The DSN is never logged, never wrapped into an
+  error, and never written to persisted state. `pgxpool.ParseConfig`'s error
+  is deliberately not wrapped, because pgx echoes an *unparseable* DSN
+  verbatim while redacting parseable ones.
+- **SQL parameterization.** Every value reaches the database as a bound
+  parameter. The only Go-assembled parts of any statement are two
+  compile-time table-name constants.
+- **Lost-update protection.** Concurrent `Observe` for the same key cannot
+  lose an update, including the first observation for a key that does not
+  exist yet.
+- **Bounded state, no event warehouse.** Persistence stores current learned
+  `Baseline` state only — one row per key, with every existing cardinality
+  bound intact. No raw events, prompts, tool arguments, HTTP bodies, or SQL
+  payloads are stored.
+- **Anti-poisoning holds across backends.** The learning-eligibility gate
+  lives above the Store, so durable shared persistence cannot be used to
+  normalize blocked behavior.
+- **Corruption is never silently reset.** An unreadable stored baseline
+  produces an explicit error and the row is left intact, rather than being
+  overwritten with a blank one.
 
 ## v0.7.0 — AI Agent Behavioral Security
 
