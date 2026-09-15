@@ -862,6 +862,62 @@ single process. Once durability matters at all under load, PostgreSQL is
 both the faster and the shareable choice. See
 [storage-guide.md](storage-guide.md).
 
+### v0.8 task 036 (Store Durability, Concurrency & Migration Hardening)
+
+**No hot-path change and no new benchmark.** Task 036's single production
+change is in `Migrate`, which runs once at `Engine` construction and never
+on `Analyze`'s or `Observe`'s path. Every microbenchmark above stands
+unchanged, including task 035's own PostgreSQL figures.
+
+What this slice adds is a third measurement category, which should not be
+confused with the other two:
+
+| Category | What it measures | Where |
+|---|---|---|
+| **Microbenchmark** | one function, in-process, no I/O | `Benchmark*` across the pipeline packages |
+| **PostgreSQL integration measurement** | one store operation including network round-trips | `internal/store/postgres/postgres_bench_test.go` (task 035) |
+| **Stress measurement** | aggregate throughput under deliberate contention | `internal/store/postgres/stress_test.go` (task 036) |
+
+Stress figures come from *correctness* tests. Each asserts an exact
+observation count and never a duration, because a lost update is a defect
+no measured speed excuses. The rates below are logged output, not
+thresholds — putting a network-dependent latency bound in a test would
+manufacture flakes rather than catch regressions.
+
+Measured against PostgreSQL 17 in Docker over loopback, Apple M3 Pro:
+
+| Scenario | Throughput | Correctness |
+|---|---|---|
+| 32 writers × 100 observations, **one key**, 3 rounds | ~2,300 obs/s | 3200/3200 each round, 0 lost |
+| 32 keys × 100 observations, **distinct keys** | ~5,000 obs/s | 3200/3200, 0 lost |
+| 96 concurrent **first** writes, 5 rounds | — | 96/96 each round, exactly 1 row |
+| Mixed committing + cancelled writers | — | acknowledged == stored, exactly |
+
+**The one ratio worth watching: multi-key is ~2.1× same-key.** That gap is
+the row lock behaving correctly — concurrent observations of one actor
+serialize, concurrent observations of different actors do not. If the two
+figures ever converged, something would have introduced global
+serialization (a table lock, an advisory lock on the write path); if the
+gap grew sharply, something would be contending that should not be. The
+absolute rates are properties of the deployment and will differ on any
+other network.
+
+Two latency figures are recorded because they bound *failure* rather than
+throughput, and both come from tests where the deadline is the subject of
+the assertion rather than a guess:
+
+- A transaction waiting on a row lock, then cancelled, returned in
+  **5.4 ms**.
+- An operation against an exhausted pool with a 2 s deadline gave up at
+  **2.0001 s** — it waited for capacity rather than failing instantly, and
+  did not overrun.
+
+A note on pool sizing, since it is the only performance knob: contention
+does not scale with pool size. Concurrent observations of the same actor
+serialize on that row's lock regardless of how many connections exist;
+only concurrency across different actors benefits from a larger pool. See
+[storage-guide.md § Pool sizing](storage-guide.md#pool-sizing).
+
 ## Reading the numbers
 
 **Session-to-session `ns/op` moved broadly; allocation counts didn't —

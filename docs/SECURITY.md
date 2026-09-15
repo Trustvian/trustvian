@@ -667,10 +667,11 @@ mode is worse than the config-typo threats above: a misconfigured
 operator can observe, whereas a silently substituted store produces
 *data loss*, invisible until the restart that needed the data.
 
-**Status: implemented** ([task
+**Status: implemented and hardened** ([task
 034](tasks/034-production-store-contract-and-public-boundary.md), [task
-035](tasks/035-postgresql-store-implementation.md), [ADR
-0018](adr/0018-production-store-boundary-and-postgresql-direction.md)).
+035](tasks/035-postgresql-store-implementation.md), [task
+036](tasks/036-store-durability-concurrency-and-migration-hardening.md),
+[ADR 0018](adr/0018-production-store-boundary-and-postgresql-direction.md)).
 See [`storage-guide.md`](storage-guide.md) for the operator-facing
 version of everything below.
 
@@ -766,6 +767,40 @@ than left to discretion:
   table-creation rights on first run; [`storage-guide.md`](storage-guide.md)
   documents how to split migration from runtime privileges for deployments
   that care.
+
+### Storage hardening (task 036)
+
+Task 035 established these properties; task 036 established that they
+hold under the conditions a production deployment actually meets. Each row
+is a test, not an intention.
+
+| Threat | Mitigation, verified |
+|---|---|
+| **Lost updates under contention** | 32 writers × 100 observations at one key, three rounds: every observation present, none lost. 96 concurrent *first* writes at an absent row, five rounds: all present, exactly one row. Task 035's mutation testing already showed this fails loudly when the row lock or the pre-insert is removed. |
+| **State corruption via partial write** | A transaction failing immediately before commit (injected with a PostgreSQL trigger) leaves the previous baseline byte-identical. The store remains usable afterwards — a failed transaction does not poison the pool. |
+| **Silent behavioral-memory loss** | An unreadable stored baseline produces `ErrCorruptState` on `Observe` and is **never overwritten with a fresh one**. Resetting would erase an actor's learned history and destroy the evidence needed to diagnose it. `Get` reports absence — fail-safe upward, since the actor then reads as unfamiliar — and never writes. |
+| **Schema downgrade / unknown-layout mutation** | A recorded schema version newer than the binary fails startup closed. So does an older or unrecognized one. An older binary never mutates state whose layout it does not understand. |
+| **Ambiguous schema metadata** | Two silently-accepted gaps found and fixed by this task, both now `ErrAmbiguousSchemaState`: baseline data present with no recorded version (previously stamped with the current version, letting an old binary adopt newer state after a partial restore), and multiple version rows (previously resolved by an unordered `LIMIT 1`, observed accepting a database marked version 99). Recovery is an operator decision; guessing is what the check exists to prevent. |
+| **Migration leaving a half-built schema** | Migration runs as one transaction with transactional DDL. An aborted migration is verified to leave no table behind and to damage nothing pre-existing. Twelve simultaneous initializations produce exactly one logical initialization and one version row. |
+| **Connection exhaustion / denial of service** | With the pool exhausted, operations wait for capacity and then fail on the caller's deadline — bounded and reportable, never an unbounded hang. Measured: 2.0001 s against a 2 s deadline. A transaction waiting on a row lock is cancellable and returns promptly (5.4 ms). No connection is stranded on any success or failure path, verified against a single-connection pool where one leak would be immediately fatal. |
+| **Silent persistence downgrade** | Re-confirmed at three layers. There is no code path from "PostgreSQL is unavailable" to a working memory or file store — not at startup, not after a mid-operation connection loss. A lost connection yields an explicit error wrapping `ErrUnavailable`, and stored state is verified to equal exactly the set of acknowledged writes. |
+| **Credential leakage** | The existing redaction regression tests re-run unchanged, and schema-failure paths are additionally asserted not to echo the DSN. |
+| **Unbounded growth / event warehousing** | 200 actors × 10 observations yields exactly 200 rows and exactly 2 tables: row count tracks distinct keys, never observation volume. A baseline driven past every cardinality cap serializes to ~13 KB and round-trips without truncation. |
+| **Baseline poisoning through persistence** | The learning-eligibility gate lives in `Engine.Observe`, above the `Store`. Forty repetitions of a blocked action are verified to remain ineligible — and to leave `Anomaly.Confidence` at zero — on **all three backends**, so durable shared persistence cannot be used to normalize blocked behavior fleet-wide. |
+| **Storage-dependent security decisions** | InMemory, FileStore, and PostgreSQL are verified to produce identical learned state, identical `Anomaly`/`Trust` values, and identical `Decision`s for the same event stream. A backend that straddled a policy threshold differently would turn a BLOCK into an ALLOW; it cannot. |
+
+Two limits stated plainly, because this document should not overclaim:
+
+- **This is not a high-availability guarantee.** Trustvian fails fast when
+  its database is unavailable, by design. Availability of the database
+  itself — replication, failover, backup — belongs to the deployment, and
+  nothing here should be read as providing it.
+- **Automatic migration means the runtime role needs DDL rights on first
+  run.** Trustvian never needs superuser, and
+  [`storage-guide.md`](storage-guide.md) documents how to split migration
+  from runtime identity for deployments that want to. The trade-off is
+  deliberate: one connection string that works is the smallest safe OSS
+  experience.
 
 ### Malformed events / extreme input values
 
@@ -1031,7 +1066,7 @@ the AI-agent case specifically; a few are explicitly future work.
   unauthorized action appear delegated from a trusted agent, or to
   behaviorally "normalize" a forged delegator through repetition).
   **Status: `DelegatedFrom` now has a real consumer ([task
-  031](../tasks/031-delegation-behavioral-semantics.md), [ADR
+  031](tasks/031-delegation-behavioral-semantics.md), [ADR
   0016](adr/0016-delegation-as-behavioral-evidence-not-provenance.md))
   — behavioral novelty is detected, but provenance verification
   remains genuinely future work, honestly labeled, not something this
@@ -1056,7 +1091,7 @@ the AI-agent case specifically; a few are explicitly future work.
 - **Approval self-assertion** (an agent's own event claiming
   `ApprovalStatus = Approved` and having that trusted merely because
   the event says so). **Status: `ApprovalStatus` now has a real
-  consumer ([task 030](../tasks/030-approval-aware-policy-semantics.md),
+  consumer ([task 030](tasks/030-approval-aware-policy-semantics.md),
   [ADR 0015](adr/0015-approval-as-policy-evidence-not-behavioral-anomaly.md)) —
   the trust boundary below is enforced by construction, not merely
   documented, but provenance verification itself remains future
