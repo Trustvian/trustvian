@@ -1569,9 +1569,16 @@ Why each step exists, not merely what it contains:
   passing all nine of those contract guarantees unmodified: shared,
   transactional persistence with lost-update-free `Observe`, SQL-queryable
   learned state, and fail-closed behavior with no fallback to non-durable
-  storage when the database is unavailable. A reference Docker Compose
-  deployment remains **PLANNED**. `InMemory` is still the default and
-  `FileStore` is unchanged.
+  storage when the database is unavailable. That backend is now also
+  **HARDENED** (third slice): durability across a real database restart,
+  no lost updates under heavy contention, cancellable lock waits, bounded
+  behavior on an exhausted connection pool, atomic and
+  concurrent-startup-safe migration, fail-closed handling of unknown or
+  ambiguous schema metadata, and verified behavioral equivalence across
+  all three backends. A reference Docker Compose deployment remains
+  **PLANNED**, as does the `v0.8` release gate — the milestone is **not**
+  release-ready. `InMemory` is still the default and `FileStore` is
+  unchanged.
 - **`v1.0`** is the point all of the above adds up to: a release gate,
   not a new capability, and not a claim this document makes today —
   see [§ OSS v1.0 — Production-Ready Definition](#oss-v10--production-ready-definition)

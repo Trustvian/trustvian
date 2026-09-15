@@ -97,6 +97,64 @@ actually depend on.
   every test needing a server skips on an unset
   `TRUSTVIAN_TEST_POSTGRES_DSN`.
 
+- **Store durability, concurrency & migration hardening**
+  ([task 036](docs/tasks/036-store-durability-concurrency-and-migration-hardening.md),
+  third `v0.8` slice) — proves the PostgreSQL backend holds under
+  production failure and concurrency conditions, and fixes two
+  schema-metadata safety gaps found while doing so. No new backend, no new
+  configuration, no new dependency.
+
+  **Fixed — ambiguous schema metadata is now rejected instead of guessed
+  at**, via a new `postgres.ErrAmbiguousSchemaState` (distinct from
+  `ErrSchemaVersionMismatch`, so an operator can tell "wrong version" from
+  "unreadable metadata"):
+
+  - A database holding baseline rows but **no recorded schema version** was
+    silently treated as fresh and stamped with the current version. An
+    operator who restored a partial backup, or ran `DELETE FROM
+    trustvian_schema_version`, could therefore have an older binary adopt
+    state written by a newer one. "No recorded version" now means "new
+    database" only when there is also no data.
+  - **Multiple version rows** were resolved by an unordered `LIMIT 1`; a
+    database marked version 99 was observed being accepted because a
+    leftover version 1 row came back instead. Ambiguity now fails startup.
+
+  Both are fail-closed by design: recovery is an operator decision, since
+  guessing is precisely what a schema version check exists to prevent.
+
+  **Verified guarantees** (all newly tested; see
+  [`docs/storage-guide.md`](docs/storage-guide.md) for the operator-facing
+  summary): no lost updates under heavy same-key and first-write
+  contention; distinct keys do not serialize globally; a failed
+  transaction leaves the previous baseline byte-identical; committed state
+  survives a real **PostgreSQL restart** as well as a client restart;
+  connection loss yields an explicit error with stored state equal to the
+  acknowledged writes; cancellation and deadline expiry are reportable
+  through `errors.Is`; a transaction waiting on a row lock is cancellable;
+  an exhausted connection pool fails on the caller's deadline rather than
+  hanging; no connection leaks on any path; `Close` is idempotent;
+  migration is atomic and safe under simultaneous startup; a corrupt
+  stored baseline fails loudly and is **never silently reset**.
+
+  **Storage choice does not affect behavior.** InMemory, FileStore, and
+  PostgreSQL now have an explicit test asserting they produce identical
+  learned state, identical `Anomaly`/`Trust` values, and identical
+  `Decision`s — along with the learning-eligibility (anti-poisoning) gate
+  and the `v0.7` agent-security semantics holding on all three.
+
+  **Documented, now that it is verified**: `Observe` runs at READ
+  COMMITTED and relies on explicit row locking rather than isolation
+  level; PostgreSQL deadlock is structurally impossible because exactly
+  one row is locked per transaction; Trustvian performs **no** transaction
+  retries and needs none; pool-sizing guidance; and that automatic
+  migration means the runtime role needs table-creation rights on first
+  run (never superuser), with instructions for splitting migration from
+  runtime identity.
+
+  Integration tests gain a stress tier, selected with the standard
+  `-short` flag rather than a new mechanism. `go test ./...` still requires
+  no PostgreSQL.
+
 ### Changed
 
 - `newEngine` in `cmd/trustvian` now returns a cleanup function alongside
@@ -302,7 +360,7 @@ compatible with `v0.5.0` by default.
   `Score` output; `Engine.Analyze`'s allocation profile stays unchanged
   (`456 B/op, 17 allocs/op`), though its latency grows by a small,
   reported (not hidden) amount — see
-  [docs/PERFORMANCE.md § v0.6 task 027](docs/PERFORMANCE.md#v06-task-027-bounded-ngram-detection).
+  [docs/PERFORMANCE.md § v0.6 task 027](docs/PERFORMANCE.md#v06-task-027-bounded-n-gram-detection).
 - **Markov Transition Scoring**
   ([task 028](docs/tasks/028-markov-transition-scoring.md)) — a new,
   opt-in anomaly signal, `markov_surprisal`, computing first-order

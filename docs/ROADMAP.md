@@ -918,7 +918,7 @@ milestone currently scopes is done):
   `categorical_novelty` also firing (destination independently
   familiar via a different predecessor), and the actor's actual normal
   path (`read -> update`) carrying no such signal. See [Sequence
-  Analysis](../sequence-analysis.md) for the full design and [task
+  Analysis](sequence-analysis.md) for the full design and [task
   025](tasks/025-sequence-analysis-foundation.md) for benchmarks and
   the complete test list.
 - **026 Transition Rarity — done.** Evolves task 025's binary
@@ -946,7 +946,7 @@ milestone currently scopes is done):
   end-to-end through the real, gated `Analyze`+`Observe` loop:
   `TestAnalyzeTransitionRarityEndToEnd` (see
   [engine_test.go](../engine_test.go)). See [Sequence
-  Analysis § Transition rarity](../sequence-analysis.md#transition-rarity-v06-task-026)
+  Analysis § Transition rarity](sequence-analysis.md#transition-rarity-v06-task-026)
   and [task 026](tasks/026-transition-rarity.md) for benchmarks and the
   complete test list.
 - **027 Bounded n-gram Detection — done.** Extends order-awareness one
@@ -981,7 +981,7 @@ milestone currently scopes is done):
   (see `internal/anomaly/anomaly_test.go`): both individual pairwise
   hops familiar, complete 3-gram never observed,
   `ngram_deviation` still fires. See [Sequence Analysis § Bounded
-  3-gram detection](../sequence-analysis.md#bounded-3-gram-detection-v06-task-027)
+  3-gram detection](sequence-analysis.md#bounded-3-gram-detection-v06-task-027)
   and [task 027](tasks/027-bounded-ngram-detection.md) for benchmarks
   and the complete test list.
 - **028 Markov Transition Scoring — done.** Before writing any code,
@@ -1642,9 +1642,11 @@ No specific response mechanism is designed here.
 ## v0.8 — Production Runtime & Storage
 
 **Status: IN PROGRESS.** Tasks
-[034](tasks/034-production-store-contract-and-public-boundary.md) and
-[035](tasks/035-postgresql-store-implementation.md) are done; 036–038 are
-named below and not yet task-filed.
+[034](tasks/034-production-store-contract-and-public-boundary.md),
+[035](tasks/035-postgresql-store-implementation.md), and
+[036](tasks/036-store-durability-concurrency-and-migration-hardening.md)
+are done; 037–038 are named below and not yet task-filed. **`v0.8` is not
+release-ready** — 037 and 038 remain.
 
 **Objective.** OSS should be deployable as a real production system,
 not only a library and a CLI against a local file.
@@ -1659,8 +1661,8 @@ applied to itself:
 |---|---|---|
 | [034](tasks/034-production-store-contract-and-public-boundary.md) | Production Store Contract & Public Selection Boundary | **DONE** |
 | [035](tasks/035-postgresql-store-implementation.md) | PostgreSQL Store implementation | **DONE** |
-| 036 | Store durability / concurrency / migration hardening | Next — not task-filed |
-| 037 | Reference Docker Compose deployment | Planned |
+| [036](tasks/036-store-durability-concurrency-and-migration-hardening.md) | Store durability / concurrency / migration hardening | **DONE** |
+| 037 | Reference Docker Compose deployment | Next — not task-filed |
 | 038 | `v0.8` stabilization & release gate | Planned |
 
 **Task 034 — Production Store Contract & Public Selection Boundary — is
@@ -1764,9 +1766,74 @@ through counting, reporting "lost updates" against a provably correct
 implementation. The fix was a private PostgreSQL schema per store, which
 removes the shared resource instead of trying to time-share it.
 
+**Task 036 — Store Durability, Concurrency & Migration Hardening — is
+done.** It answered the question the milestone actually turns on: *can
+Trustvian safely use PostgreSQL as its production behavioral-state store
+under realistic concurrent and failure conditions?* It adds no backend, no
+feature, and no configuration surface — its single production change is in
+`Migrate`, and everything else is evidence. That ratio is the intended
+outcome: had hardening required reworking `Observe`, the concurrency
+design would have been wrong rather than merely untested.
+
+**It found two real defects**, both in the direction of silently accepting
+state that should have been refused, and both now failing closed with a
+new `ErrAmbiguousSchemaState`:
+
+- **Missing version metadata with data present was treated as a fresh
+  database.** `Migrate` saw no version row and stamped the current
+  `SchemaVersion` without checking whether baseline data existed — so an
+  operator who restored a partial backup, or ran `DELETE FROM
+  trustvian_schema_version`, could have an older binary adopt state
+  written by a newer one.
+- **Ambiguous version metadata was resolved arbitrarily.** The version
+  column is a primary key, so several versions can coexist; the read used
+  `LIMIT 1` with no `ORDER BY`, and a database marked version 99 was
+  observed being accepted because a leftover version 1 row came back
+  instead.
+
+What it now proves, each with a test rather than an argument:
+
+- **Contention.** 32 writers × 100 observations at one key across three
+  rounds lose nothing; 96 concurrent *first* writes at an absent row
+  produce exactly one row with every observation present. Multi-key
+  throughput is ~2.1× same-key, which is the evidence that nothing
+  serializes globally.
+- **Failure.** A transaction failing immediately before commit leaves the
+  previous baseline byte-identical. A lost connection produces an explicit
+  error, and stored state equals exactly the acknowledged writes. An
+  unreadable row fails loudly and is **never silently reset** — resetting
+  would erase an actor's learned history along with the evidence needed to
+  diagnose it.
+- **Cancellation and resources.** A transaction waiting on a row lock is
+  cancellable (5.4 ms) and leaks nothing; an exhausted pool waits for
+  capacity and then fails on the caller's deadline rather than hanging. No
+  connection is stranded on any path, verified against a single-connection
+  pool where one leak is immediately fatal.
+- **Durability across a real database restart**, not just a client
+  restart — and the test verifies the server actually restarted, via
+  `pg_postmaster_start_time()`, so a no-op restart command fails rather
+  than passing vacuously.
+- **Storage-independent behavior.** InMemory, FileStore, and PostgreSQL
+  produce identical learned state, identical `Anomaly`/`Trust` values, and
+  identical `Decision`s. This matters beyond tidiness: every behavioral
+  test in the repository runs against the in-memory store, so that entire
+  body of evidence transfers to the production backend only if the
+  backends are genuinely interchangeable. Until this slice, that was an
+  assumption. The learning-eligibility (anti-poisoning) gate and the v0.7
+  agent-security semantics are both confirmed on all three.
+
+Two properties are recorded as *structural*, needing no test: `Observe`
+locks exactly one row per transaction, so PostgreSQL deadlock is
+impossible and no lock-ordering discipline applies; and the two transient
+failure classes a retry loop would address — serialization failures under
+READ COMMITTED, deadlocks under single-row locking — are both unreachable
+by construction, so Trustvian performs no transaction retries and needs
+none.
+
 **Acceptance criteria.** See
-[034-production-store-contract-and-public-boundary.md](tasks/034-production-store-contract-and-public-boundary.md)
-and [035-postgresql-store-implementation.md](tasks/035-postgresql-store-implementation.md).
+[034-production-store-contract-and-public-boundary.md](tasks/034-production-store-contract-and-public-boundary.md),
+[035-postgresql-store-implementation.md](tasks/035-postgresql-store-implementation.md),
+and [036-store-durability-concurrency-and-migration-hardening.md](tasks/036-store-durability-concurrency-and-migration-hardening.md).
 
 ### Remaining scope (not yet task-filed)
 
