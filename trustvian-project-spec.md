@@ -1512,7 +1512,7 @@ v0.6  Behavioral Detection Depth        SHIPPED (v0.6.0)
         ↓
 v0.7  AI Agent Behavioral Security      SHIPPED (v0.7.0)
         ↓
-v0.8  Production Runtime & Storage      IN PROGRESS (task 034 done; 035-038 named)
+v0.8  Production Runtime & Storage      RELEASE READY (034-038 done; v0.8.0 not yet tagged)
         ↓
 v0.9  Operational Readiness             PLANNED
         ↓
