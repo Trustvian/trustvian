@@ -788,7 +788,9 @@ results](#measured-results)). No storage benchmark was added, because
 nothing about storage performance changed.
 
 **Measurement plan for task 035 (PostgreSQL), recorded now so it is not
-improvised later:**
+improvised later** — kept as written for the record; tasks 035 and 036
+carried it out and their real numbers are in the two sections below, and
+the Docker Compose environment it anticipates was delivered by task 037:
 
 - **Compare like with like.** `FileStore` and a database serve different
   roles; their raw ns/op are not meant to match, and presenting them as
