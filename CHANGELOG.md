@@ -87,7 +87,25 @@ actually depend on.
   `processor/go.mod`'s root requirement moved from `v0.5.0` to `v0.8.0`,
   the release that first contained the `config.StorageConfig` API it uses.
   This changes no resolution — the `replace` still supplies the code — but
-  the declared floor is now truthful.
+  the declared floor is now truthful, and it is verified rather than
+  assumed: with the replace removed, the processor builds against the
+  published `v0.8.0` from the module proxy.
+
+  The consistency check establishes that a declared version is real from
+  either a local git tag or the module proxy, rather than requiring a local
+  tag. Requiring one conflated *the version existing* with *the checkout
+  having fetched tags*, which made the check fail on shallow CI checkouts
+  while passing on developer machines. A checkout that can consult neither
+  source now reports that explicitly instead of passing or blaming the
+  version.
+
+### Changed
+
+- GitHub Actions workflows now use `actions/checkout@v7` and
+  `actions/setup-go@v7`, replacing the `@v4`/`@v5` majors that run on the
+  deprecated Node.js 20 runtime. Both new majors run on Node.js 24; the
+  only breaking change across the intervening majors was that runtime move.
+  Workflow permissions are unchanged.
 
 - **[`docs/release-guide.md`](docs/release-guide.md)** — maintainer-facing:
   the module model, how to prepare and verify a release, what the

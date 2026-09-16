@@ -22,6 +22,57 @@ ok()      { echo "  ok: $*"; }
 
 module_path() { awk '/^module /{print $2; exit}' "$1"; }
 
+# check_version_exists reports whether a declared root version is real.
+#
+# The invariant is "this version exists as something a consumer could
+# resolve" — NOT "this checkout happens to have the tag". Those are
+# different things, and conflating them is what made this check fail in CI
+# while passing locally: actions/checkout fetches no tags by default, so
+# `git rev-parse refs/tags/v0.8.0` found nothing in a workspace where
+# v0.8.0 very much exists. The message was worse than the failure, because
+# it asserted the version did not exist.
+#
+# Two independent sources of truth, in order of cost:
+#
+#   1. A local tag. Free, offline, and what a full clone has.
+#   2. The module proxy. Authoritative — it is literally what a consumer
+#      resolves against — at the cost of a network round trip.
+#
+# If neither can answer, that is an inconclusive *environment*, not a
+# passing or failing invariant, and it is reported as its own error so
+# nobody reads a silent skip as a green check.
+check_version_exists() {
+    local version="$1"
+
+    if git rev-parse -q --verify "refs/tags/$version" >/dev/null 2>&1; then
+        ok "requires root $version, which exists as a tag"
+        return
+    fi
+
+    if [ "${CHECK_MODULES_OFFLINE:-0}" = "1" ]; then
+        problem "requires root $version, and it cannot be verified: this checkout has no tags and
+        CHECK_MODULES_OFFLINE=1 forbids querying the module proxy.
+        Fetch tags (actions/checkout with fetch-tags: true) or allow proxy access."
+        return
+    fi
+
+    if GOWORK=off GOFLAGS=-mod=mod go list -m "$ROOT_PATH@$version" >/dev/null 2>&1; then
+        ok "requires root $version, which resolves from the module proxy"
+        return
+    fi
+
+    # The proxy was reachable enough to answer and said no, or the network
+    # is down. Distinguish them: a resolvable well-known version proves the
+    # proxy is reachable, so a failure after that is a real missing version.
+    if GOWORK=off GOFLAGS=-mod=mod go list -m "$ROOT_PATH@v0.1.0" >/dev/null 2>&1; then
+        problem "requires root $version, which does not exist as a tag or a published module version"
+    else
+        problem "requires root $version, and it cannot be verified: this checkout has no tags and the
+        module proxy is unreachable. Fetch tags (actions/checkout with fetch-tags: true),
+        or re-run with network access."
+    fi
+}
+
 echo "Module consistency"
 
 # ---------------------------------------------------------------------
@@ -104,10 +155,8 @@ for mod in $(find . -mindepth 2 -name go.mod -not -path "./dist/*" | sort); do
         ok "does not require the root module"
     elif [ "$required" = "v0.0.0-00010101000000-000000000000" ]; then
         ok "requires the root module at the zero placeholder (fully replaced)"
-    elif git rev-parse -q --verify "refs/tags/$required" >/dev/null; then
-        ok "requires root $required, which exists as a tag"
     else
-        problem "requires root $required, which is not an existing tag"
+        check_version_exists "$required"
     fi
 done
 

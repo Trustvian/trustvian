@@ -41,6 +41,27 @@ publishing:
   makes it a real proof that the public API is sufficient for an outside
   consumer.
 
+### Development state versus release state
+
+These are different, and the difference is why the `replace` exists:
+
+| | Root dependency resolves from | Why |
+|---|---|---|
+| **Development** | the repository (`replace => ../`) | Lets the processor build against root changes that are not released yet — exactly what `v0.8` needed when the processor required `config.StorageConfig` before `v0.8.0` existed |
+| **Release** | the module proxy | What any consumer would get |
+
+The processor's declared floor is `v0.8.0`, and that is verified rather
+than assumed: with the `replace` removed and `go mod tidy` run, the
+processor builds against the published `v0.8.0` from the proxy. The
+release contains every root API it uses, so the `replace` is about
+developing against unreleased changes, not about any gap in the release.
+
+`scripts/check-modules.sh` enforces the invariants that hold in *both*
+states, and there is deliberately no separate release mode: with one
+published module and two repository-internal ones, no invariant is
+stricter at release time. `release.yml` runs the same check. A mode split
+becomes worth adding when a nested module is actually promoted.
+
 ### Promoting the processor
 
 The processor is not consumable by anyone who has not cloned this
@@ -66,6 +87,26 @@ resolvable module path. Promoting it then means:
 `scripts/check-modules.sh` fails if the path becomes resolvable while the
 local replace is still present, so a half-finished promotion cannot merge
 quietly.
+
+Step 3 is already satisfied in substance: the processor is verified to
+build against the published `v0.8.0`. What remains is the path rename and
+the nested tagging, not an API gap.
+
+### Running the module check
+
+```bash
+make check-modules
+```
+
+It verifies a declared root version from a local git tag when the checkout
+has one, and from the module proxy otherwise. `CHECK_MODULES_OFFLINE=1`
+forbids the proxy fallback, which is how its own tests stay deterministic
+without network access.
+
+CI fetches tags (`fetch-tags: true`) so the offline path is the normal one.
+A shallow checkout without tags still works — it just consults the proxy —
+and a checkout that can do neither fails with a message naming the cause
+rather than blaming the version.
 
 ## Preparing a release
 

@@ -67,9 +67,17 @@ jobs:
           --health-retries 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          # Tags, without the cost of full history. scripts/check-modules.sh
+          # verifies that each module's declared root version is real, and a
+          # local tag answers that offline; without tags it falls back to
+          # querying the module proxy on every run. checkout fetches no tags
+          # by default, which is exactly why this check failed in CI while
+          # passing locally.
+          fetch-tags: true
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           # From go.mod, so the CI toolchain cannot drift from the version
           # the module itself declares.
@@ -126,9 +134,9 @@ jobs:
       GOWORK: "off"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: processor/go.mod
           cache: true
@@ -173,9 +181,9 @@ jobs:
       GOWORK: "off"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: examples/go.mod
           cache: true
@@ -228,9 +236,9 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -248,7 +256,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Validate Compose configuration
         working-directory: deployments/docker-compose

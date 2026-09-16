@@ -180,9 +180,15 @@ during a release:
    a replace to anywhere else (an absolute developer path, a fork) would
    break every other machine.
 4. Every nested module's `require` of the root **must name a version that
-   exists as a git tag**, so the declared floor is real. `processor`'s
-   pinned `v0.5.0` predates the `v0.8` APIs it now uses; this task corrects
-   it to `v0.8.0`.
+   really exists**, so the declared floor is truthful. `processor`'s pinned
+   `v0.5.0` predates the `v0.8` APIs it now uses; this task corrects it to
+   `v0.8.0`.
+
+   "Exists" is established from either of two independent sources: a local
+   git tag (free and offline) or the module proxy (authoritative — it is
+   what a consumer resolves against). The first implementation checked only
+   for a local tag, which conflated *the version existing* with *this
+   checkout having fetched tags*; see § Corrective pass below.
 5. Nested modules must not be silently promoted: a nested module whose path
    *is* resolvable (`github.com/...`) must not carry a `replace` to `../`,
    because that combination is exactly the broken-published-module case.
@@ -251,3 +257,53 @@ end-user docs), `docs/ROADMAP.md`, `CONTRIBUTING.md`, `CHANGELOG.md`.
 15. Root, processor (`GOWORK=off`), and examples gates pass; PostgreSQL
     and Compose regressions pass.
 16. Release documentation exists; `README.md` remains evergreen.
+
+
+## Corrective pass (PR #52)
+
+The first implementation of this task failed CI on the `Module
+consistency` step while passing on every developer machine. The cause was
+in the check, not the repository:
+
+```
+expected: v0.8.0 is a real version, so the processor's floor is truthful
+actual:   "FAIL: requires root v0.8.0, which is not an existing tag"
+```
+
+`actions/checkout` performs a shallow clone and **fetches no tags by
+default**. `git rev-parse --verify refs/tags/v0.8.0` therefore found
+nothing in the CI workspace, and the script concluded the version did not
+exist — about a version that is published, tagged, and resolvable. The
+error message was worse than the failure, because it asserted something
+false.
+
+Two fixes, because there were two problems:
+
+1. **The invariant was implemented as the wrong question.** It now asks
+   whether the version *exists*, answering from a local tag when one is
+   available and from the module proxy otherwise. When neither can answer —
+   a tagless checkout with no network — it reports an inconclusive
+   *environment* as its own distinct error rather than passing or blaming
+   the version. A check that silently skips is not a check.
+2. **CI was not giving the check what it needs.** The root job now sets
+   `fetch-tags: true`, so the offline path is the normal one and the proxy
+   fallback is a safety net rather than a per-run network dependency.
+
+`scripts/check_modules_test.go` pins all of this with local fixtures, so
+the regression cannot return: a valid development state passes offline, and
+an unverifiable version fails with a message that names the cause instead
+of the version.
+
+One fact was proven rather than assumed while investigating: with the
+`replace` removed and `go mod tidy` run, the processor **builds against the
+published `v0.8.0` from the proxy**. The release therefore contains every
+root API the processor uses, and the `replace` exists to develop against
+*unreleased* root changes — not because any published version is
+insufficient. That distinction is now documented in the release guide.
+
+**No release-mode variant was added.** This task's model has one published
+module, and nested modules that are not published, so there is no invariant
+that is stricter at release time than during development — `release.yml`
+runs the same check. A mode split would be complexity in advance of a
+lifecycle that does not exist yet; the trigger to add one is promoting a
+nested module to a published path.

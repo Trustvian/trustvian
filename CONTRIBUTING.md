@@ -124,6 +124,11 @@ upload:
 make release-dry-run
 ```
 
+`make check-modules` verifies a declared root version from a local git tag
+when the checkout has one, and from the module proxy otherwise, so it works
+in a shallow clone. Set `CHECK_MODULES_OFFLINE=1` to forbid the proxy
+fallback.
+
 ## Commits and releases
 
 Work lands on `develop` and reaches `main` by pull request; release tags
