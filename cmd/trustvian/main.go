@@ -23,6 +23,8 @@ func run(args []string) int {
 		err = runAnalyze(args[1:])
 	case "baseline":
 		err = runBaseline(args[1:])
+	case "version", "--version", "-v":
+		err = runVersion(os.Stdout, args[1:])
 	case "-h", "--help", "help":
 		usage(os.Stdout)
 		return 0
@@ -47,6 +49,8 @@ Usage:
       Score each event and print a report
   trustvian baseline build [--config <path>] [--anomaly-config <path>] [--storage-config <path>] <events.json>
       Learn a baseline from a corpus of events
+  trustvian version
+      Print version, commit revision, and build platform
 
 --config <path> loads a schema-v1 YAML policy config (see config.LoadFile)
 and uses it instead of the CLI's built-in default policy. Without it,

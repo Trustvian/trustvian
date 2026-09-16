@@ -87,6 +87,11 @@ jobs:
             exit 1
           fi
 
+      - name: Module consistency
+        # Catches module drift on the pull request that introduces it,
+        # rather than during a release. See scripts/check-modules.sh.
+        run: ./scripts/check-modules.sh
+
       - name: Vet
         run: go vet ./...
 
@@ -208,6 +213,30 @@ jobs:
             echo "::error::examples must not import internal/* — they model an external consumer"
             exit 1
           fi
+
+  # ---------------------------------------------------------------------
+  # Release tooling: prove the artifact matrix still cross-compiles on
+  # every change, so a broken target is found on the pull request that
+  # breaks it rather than when a tag is pushed.
+  #
+  # This builds and discards. Nothing is uploaded and no release is
+  # created — publishing happens only in release.yml, on a tag.
+  # ---------------------------------------------------------------------
+  release-dry-run:
+    name: Release build (dry run)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build the release matrix
+        run: ./scripts/release-build.sh
 
   # ---------------------------------------------------------------------
   # Reference deployment: validate that the Compose configuration parses.

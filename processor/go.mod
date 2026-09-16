@@ -2,23 +2,37 @@ module trustvian-processor
 
 go 1.27
 
-// Built against the repository's own source rather than a published
-// version, because this module needs config.StorageConfig /
-// CompileStorage (v0.8 tasks 034-035), and the newest released tag is
-// v0.7.0. The `require` line below is therefore a floor, not what is
-// actually compiled — the same arrangement examples/go.mod uses, and for
-// the same reason.
+// This module is built from the repository's own source, not fetched from
+// a proxy, and that is its intended distribution model rather than a
+// temporary state — see
+// docs/tasks/040-release-artifacts-and-module-consistency.md § Module
+// publication model.
 //
-// Writing `require github.com/Trustvian/trustvian v0.8.0` before that tag
-// exists would make this file assert something untrue. Task 038 owns the
-// release-time decision: bump-and-drop-the-replace once v0.8.0 is tagged,
-// or keep it and accept that this module is built from the repository.
-// See docs/tasks/037-reference-docker-compose-deployment.md
-// § Release-time dependency transition.
+// It cannot be published as written: `trustvian-processor` is not a
+// resolvable module path (`go get` rejects it — "missing dot in first path
+// element"), it has never been tagged, and README.md documents running it
+// with `go run ./cmd/trustvian-collector` from a clone. The replace below
+// is what makes that work, and the separate module exists so the heavy
+// OpenTelemetry Collector dependency tree stays out of the root module's
+// graph.
+//
+// The `require` line is therefore a truthful floor, not what gets
+// compiled: v0.8.0 is the first release containing the
+// config.StorageConfig / CompileStorage API this module uses (v0.8 tasks
+// 034-035). scripts/check-modules.sh enforces that the floor names a
+// version that actually exists, and that this module is not promoted to a
+// resolvable path while still carrying a local replace.
+//
+// Publishing it means renaming the path to
+// github.com/Trustvian/trustvian/processor, dropping this replace, and
+// adopting nested processor/vX.Y.Z tags. See docs/release-guide.md
+// § Promoting the processor for what that requires — the trigger is a real
+// external consumer building a Collector with ocb, which does not exist
+// today.
 replace github.com/Trustvian/trustvian => ../
 
 require (
-	github.com/Trustvian/trustvian v0.5.0
+	github.com/Trustvian/trustvian v0.8.0
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	go.opentelemetry.io/collector/component v1.66.0
 	go.opentelemetry.io/collector/component/componenttest v0.160.0
