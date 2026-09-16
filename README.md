@@ -16,7 +16,7 @@ signals that produced it, and every decision carries the rule that made
 it. There is no model to retrain and no opaque verdict.
 
 [![Go](https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white)](go.mod)
-[![CI](https://github.com/Trustvian/trustvian/actions/workflows/go.yml/badge.svg)](https://github.com/Trustvian/trustvian/actions/workflows/go.yml)
+[![CI](https://github.com/Trustvian/trustvian/actions/workflows/ci.yml/badge.svg)](https://github.com/Trustvian/trustvian/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Trustvian/trustvian?label=latest)](https://github.com/Trustvian/trustvian/tags)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
@@ -459,9 +459,10 @@ Trustvian is under active development.
 
 ## Contributing
 
-Issues and pull requests are welcome. Before opening a PR, run `make check`
-and make sure new behavior is covered by tests. The conventions this
-codebase follows are documented in [CLAUDE.md](CLAUDE.md) and
+Issues and pull requests are welcome. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the quality gates, the three-module
+layout, and how to run the PostgreSQL tests. The conventions this codebase
+follows are documented in [CLAUDE.md](CLAUDE.md) and
 [.claude/rules/](.claude/rules/).
 
 ## License

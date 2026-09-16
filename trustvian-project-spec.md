@@ -1512,7 +1512,7 @@ v0.6  Behavioral Detection Depth        SHIPPED (v0.6.0)
         ↓
 v0.7  AI Agent Behavioral Security      SHIPPED (v0.7.0)
         ↓
-v0.8  Production Runtime & Storage      RELEASE READY (034-038 done; v0.8.0 not yet tagged)
+v0.8  Production Runtime & Storage      SHIPPED (v0.8.0)
         ↓
 v0.9  Operational Readiness             PLANNED
         ↓
@@ -1581,11 +1581,17 @@ Why each step exists, not merely what it contains:
   proof and an automated smoke test — which also required giving the
   Collector processor its first ability to select a Store at all. The
   `v0.8` release gate is **PASSED** (fifth slice): the milestone's exit
-  criteria are all met and its public storage API and configuration schema
-  have been reviewed for support after release. **`v0.8` is release-ready;
-  `v0.8.0` is not yet shipped** — the tag and GitHub release are a separate,
-  human-controlled step. `InMemory` is still the default and `FileStore` is
-  unchanged.
+  criteria were all met and its public storage API and configuration schema
+  were reviewed for support after release. **`v0.8.0` is shipped.**
+  `InMemory` is still the default and `FileStore` is unchanged.
+- **`v0.9` — Operational Readiness is in progress.** It adds no behavioral
+  capability: it turns the `v0.8` runtime into a reproducible, verifiable,
+  operable distribution — automated quality gates, release artifacts and
+  module consistency, container supply-chain provenance, runtime
+  health/lifecycle, self-observability, and the operational documentation
+  (backup, restore, upgrade) a production deployment needs. See
+  [`docs/ROADMAP.md` §
+  v0.9](docs/ROADMAP.md#v09--operational-readiness).
 - **`v1.0`** is the point all of the above adds up to: a release gate,
   not a new capability, and not a claim this document makes today —
   see [§ OSS v1.0 — Production-Ready Definition](#oss-v10--production-ready-definition)
