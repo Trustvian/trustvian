@@ -1,0 +1,178 @@
+# Tag-triggered release: validate the tag, re-run the quality gates against
+# the tagged source, build the artifact matrix, and publish a GitHub
+# Release with the binaries and their checksums attached.
+#
+# This workflow has never run. It was written and structurally validated by
+# docs/tasks/040-release-artifacts-and-module-consistency.md, which
+# deliberately publishes nothing; the first real execution is whenever a
+# maintainer pushes the next version tag.
+#
+# Everything it builds can be built locally first — `make release-dry-run`
+# runs the same script — so a broken target is found before a tag exists
+# rather than after.
+#
+# Not here, on purpose: SBOM generation, vulnerability scanning, artifact
+# signing, and container publishing. Those belong to task 041, and keeping
+# them out is what keeps this workflow's permissions to a single scope.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# Read by default. Only the publishing job widens this, and only to
+# contents: write — the scope GitHub requires to create a release. No
+# packages: write and no id-token: write; nothing here pushes an image or
+# requests an OIDC token.
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+
+    services:
+      # The same PostgreSQL service ci.yml uses, so the release gates cover
+      # the persistence guarantees rather than skipping them.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: trustvian
+          POSTGRES_PASSWORD: trustvian
+          POSTGRES_DB: trustvian_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U trustvian -d trustvian_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # github.ref is the tag, so this checks out the tagged commit —
+          # never a branch head that may have moved since the tag was cut.
+          ref: ${{ github.ref }}
+          # Full history so `git describe` and tag verification work.
+          fetch-depth: 0
+
+      - name: Validate tag is SemVer
+        env:
+          # Through the environment, not string-interpolated into the
+          # script body: a tag name is attacker-influenceable in principle,
+          # and interpolation would make it executable shell.
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'; then
+            echo "::error::tag '$TAG' is not a valid SemVer release tag (want vMAJOR.MINOR.PATCH[-prerelease][+build])"
+            exit 1
+          fi
+          echo "Releasing $TAG"
+
+      - name: Verify checkout matches the tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Proving, not assuming, that the working tree is the tagged
+          # commit — the difference between releasing what was reviewed and
+          # releasing whatever main happened to hold.
+          tagged="$(git rev-list -n 1 "refs/tags/$TAG")"
+          head="$(git rev-parse HEAD)"
+          if [ "$tagged" != "$head" ]; then
+            echo "::error::HEAD ($head) is not the commit tagged $TAG ($tagged)"
+            exit 1
+          fi
+          echo "HEAD is the tagged commit: $head"
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # --- Quality gates, re-run against the exact tagged source ---------
+      #
+      # Not "some earlier workflow probably passed": that workflow ran on a
+      # different commit, and a tag can be placed on anything.
+
+      - name: Module consistency
+        run: ./scripts/check-modules.sh
+
+      - name: Format
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt needed on:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Race
+        run: go test -race ./...
+
+      - name: Test with PostgreSQL
+        env:
+          TRUSTVIAN_TEST_POSTGRES_DSN: postgres://trustvian:trustvian@localhost:5432/trustvian_test?sslmode=disable
+        run: go test -race -short ./...
+
+      - name: Processor module (GOWORK=off)
+        env:
+          GOWORK: "off"
+        working-directory: processor
+        run: |
+          go build ./...
+          go vet ./...
+          go test -race ./...
+
+      # --- Artifacts -----------------------------------------------------
+      #
+      # The same script a maintainer runs locally. Every target must build:
+      # the script exits non-zero on the first failure, so the publish step
+      # below never runs for a partial matrix.
+
+      - name: Build release artifacts
+        env:
+          TAG: ${{ github.ref_name }}
+        run: ./scripts/release-build.sh "$TAG"
+
+      - name: Verify checksums
+        working-directory: dist
+        run: sha256sum -c checksums.txt
+
+      # --- Publish -------------------------------------------------------
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # --verify-tag so the release cannot be created for a tag that
+          # does not exist. Notes come from CHANGELOG.md via --notes-file
+          # when a maintainer has prepared them; otherwise the release is
+          # created as a draft for them to finish, rather than publishing
+          # an auto-generated commit dump.
+          notes_args=(--generate-notes)
+          if [ -f "release-notes.md" ]; then
+            notes_args=(--notes-file release-notes.md)
+          fi
+
+          gh release create "$TAG" \
+            --title "Trustvian $TAG" \
+            --verify-tag \
+            --draft \
+            "${notes_args[@]}" \
+            dist/*.tar.gz dist/*.zip dist/checksums.txt
+
+          echo "::notice::Draft release created for $TAG. Review the notes against CHANGELOG.md, then publish it."

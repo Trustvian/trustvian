@@ -7,7 +7,8 @@ GO       := go
 .DEFAULT_GOAL := help
 
 .PHONY: help build run demo baseline-demo test test-race bench vet fmt fmt-check tidy coverage install clean check examples \
-	compose-up compose-down compose-smoke integration-postgres
+	compose-up compose-down compose-smoke integration-postgres \
+	check-modules release-dry-run
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -58,8 +59,8 @@ coverage: ## Run tests with coverage and write an HTML report
 install: ## Install the CLI to GOBIN (or GOPATH/bin)
 	$(GO) install $(CMD)
 
-clean: ## Remove build and coverage artifacts
-	rm -rf $(BIN_DIR) coverage.out coverage.html
+clean: ## Remove build, coverage, and release artifacts
+	rm -rf $(BIN_DIR) coverage.out coverage.html dist
 
 check: fmt-check vet build test-race ## Full local gate: fmt-check, vet, build, race tests
 
@@ -68,6 +69,12 @@ COMPOSE      := docker compose -f $(COMPOSE_DIR)/compose.yaml
 # Matches .env.example. Override on the command line to point the
 # integration suites at a different database.
 POSTGRES_DSN ?= postgres://trustvian:change-me@localhost:5433/trustvian?sslmode=disable
+
+check-modules: ## Verify module publication invariants (see docs/release-guide.md)
+	./scripts/check-modules.sh
+
+release-dry-run: ## Build the full release artifact matrix locally — no tag, no credentials, no upload
+	./scripts/release-build.sh
 
 compose-up: ## Start the reference Docker Compose deployment (see deployments/docker-compose/README.md)
 	$(COMPOSE) up -d --build

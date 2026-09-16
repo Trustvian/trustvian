@@ -47,6 +47,71 @@ actually depend on.
   gate set with nothing to leak. Release and container publishing are
   deliberately later slices.
 
+- **Release artifacts and module consistency**
+  ([task 040](docs/tasks/040-release-artifacts-and-module-consistency.md),
+  second `v0.9` slice) — releases through `v0.8.0` were produced entirely
+  by hand, and no release has ever carried a binary. Trustvian now has a
+  tag-triggered release pipeline and a documented module publication model.
+
+  **`trustvian version`** reports the module version, VCS revision, commit
+  time, and whether the build was made from a modified tree — read from
+  Go's own build information, so there is no `-ldflags` contract to honor
+  and no package-level version variable.
+
+  **Release binaries.** `scripts/release-build.sh` cross-compiles the CLI
+  for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, and
+  `windows/amd64`, archives each with `LICENSE` and `README.md`, and emits
+  a verified SHA-256 `checksums.txt`. Built with `CGO_ENABLED=0` and
+  `-trimpath`. `make release-dry-run` runs the whole matrix locally with no
+  tag, credentials, or upload, and CI runs it on every push — so a broken
+  target surfaces on the pull request rather than after a tag is public.
+
+  **`.github/workflows/release.yml`** triggers on a pushed `v*` tag,
+  rejects non-SemVer tags, verifies the checkout is the tagged commit,
+  re-runs the full quality gates against that source, builds the matrix,
+  and opens a **draft** GitHub Release with the artifacts attached for a
+  maintainer to review and publish. It takes `contents: write` and nothing
+  else; `ci.yml` and `nightly.yml` remain read-only.
+
+  **Module publication model, written down and enforced.** The root module
+  is the published one. The `processor` and `examples` modules declare
+  non-resolvable paths (`trustvian-processor`, `trustvian-examples`) and
+  have never been tagged — they are repository-internal by construction,
+  and their `replace ... => ../` directives are correct for that, not a
+  release blocker awaiting removal. `scripts/check-modules.sh` enforces the
+  invariants this depends on — the published module declares no `replace`,
+  every declared root version exists as a tag, and a module cannot be
+  promoted to a resolvable path while still carrying a local replace — and
+  runs in CI. See [`docs/release-guide.md`](docs/release-guide.md).
+
+  `processor/go.mod`'s root requirement moved from `v0.5.0` to `v0.8.0`,
+  the release that first contained the `config.StorageConfig` API it uses.
+  This changes no resolution — the `replace` still supplies the code — but
+  the declared floor is now truthful, and it is verified rather than
+  assumed: with the replace removed, the processor builds against the
+  published `v0.8.0` from the module proxy.
+
+  The consistency check establishes that a declared version is real from
+  either a local git tag or the module proxy, rather than requiring a local
+  tag. Requiring one conflated *the version existing* with *the checkout
+  having fetched tags*, which made the check fail on shallow CI checkouts
+  while passing on developer machines. A checkout that can consult neither
+  source now reports that explicitly instead of passing or blaming the
+  version.
+
+### Changed
+
+- GitHub Actions workflows now use `actions/checkout@v7` and
+  `actions/setup-go@v7`, replacing the `@v4`/`@v5` majors that run on the
+  deprecated Node.js 20 runtime. Both new majors run on Node.js 24; the
+  only breaking change across the intervening majors was that runtime move.
+  Workflow permissions are unchanged.
+
+- **[`docs/release-guide.md`](docs/release-guide.md)** — maintainer-facing:
+  the module model, how to prepare and verify a release, what the
+  automation does, and what promoting the processor to a published module
+  would require.
+
 - **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — how to run the gates locally,
   why the processor and examples modules must be verified with `GOWORK=off`,
   how to run the PostgreSQL tests, and what the test tiers mean.

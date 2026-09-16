@@ -67,9 +67,17 @@ jobs:
           --health-retries 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          # Tags, without the cost of full history. scripts/check-modules.sh
+          # verifies that each module's declared root version is real, and a
+          # local tag answers that offline; without tags it falls back to
+          # querying the module proxy on every run. checkout fetches no tags
+          # by default, which is exactly why this check failed in CI while
+          # passing locally.
+          fetch-tags: true
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           # From go.mod, so the CI toolchain cannot drift from the version
           # the module itself declares.
@@ -86,6 +94,11 @@ jobs:
             echo "$unformatted"
             exit 1
           fi
+
+      - name: Module consistency
+        # Catches module drift on the pull request that introduces it,
+        # rather than during a release. See scripts/check-modules.sh.
+        run: ./scripts/check-modules.sh
 
       - name: Vet
         run: go vet ./...
@@ -121,9 +134,9 @@ jobs:
       GOWORK: "off"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: processor/go.mod
           cache: true
@@ -168,9 +181,9 @@ jobs:
       GOWORK: "off"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: examples/go.mod
           cache: true
@@ -210,6 +223,30 @@ jobs:
           fi
 
   # ---------------------------------------------------------------------
+  # Release tooling: prove the artifact matrix still cross-compiles on
+  # every change, so a broken target is found on the pull request that
+  # breaks it rather than when a tag is pushed.
+  #
+  # This builds and discards. Nothing is uploaded and no release is
+  # created — publishing happens only in release.yml, on a tag.
+  # ---------------------------------------------------------------------
+  release-dry-run:
+    name: Release build (dry run)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build the release matrix
+        run: ./scripts/release-build.sh
+
+  # ---------------------------------------------------------------------
   # Reference deployment: validate that the Compose configuration parses.
   # The full smoke test builds images and is scheduled nightly instead.
   # ---------------------------------------------------------------------
@@ -219,7 +256,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Validate Compose configuration
         working-directory: deployments/docker-compose

@@ -1945,9 +1945,10 @@ Per-task acceptance criteria are fixed in each slice's own task file.
 
 ## v0.9 — Operational Readiness
 
-**Status: IN PROGRESS.** Task
-[039](tasks/039-ci-quality-gate-automation.md) is done; 040–045 are named
-below and not yet task-filed.
+**Status: IN PROGRESS.** Tasks
+[039](tasks/039-ci-quality-gate-automation.md) and
+[040](tasks/040-release-artifacts-and-module-consistency.md) are done;
+041–045 are named below and not yet task-filed.
 
 **Objective.** Production engineering hygiene, so `v1.0` is a real
 release, not just a version number bump.
@@ -1970,8 +1971,8 @@ nobody can review.
 | Task | Title | Status |
 |---|---|---|
 | [039](tasks/039-ci-quality-gate-automation.md) | CI & Quality Gate Automation | **DONE** |
-| 040 | Release Artifacts & Module Consistency | Next — not task-filed |
-| 041 | Container Supply Chain & Provenance | Planned |
+| [040](tasks/040-release-artifacts-and-module-consistency.md) | Release Artifacts & Module Consistency | **DONE** |
+| 041 | Container Supply Chain & Provenance | Next — not task-filed |
 | 042 | Runtime Health, Readiness & Graceful Shutdown | Planned |
 | 043 | Self-Observability & Resource Safety | Planned |
 | 044 | Operations: Backup, Restore & Upgrade | Planned |
@@ -1988,14 +1989,30 @@ no examples, no PostgreSQL, and triggered only on pull requests targeting
 `main` — which is to say, only at release time, while all development
 happens on `develop`.
 
-**040 — Release Artifacts & Module Consistency.** Tag-driven release
-automation producing reproducible multi-platform binaries, plus the
-root/processor/examples module-version alignment `v0.8` deliberately
-deferred: `processor/go.mod` still carries a development `replace` back to
-the repository root and a `require` line pinned to `v0.5.0`, which
-[038](tasks/038-v08-stabilization-release-gate.md) recorded as a
-post-tag transition. `v0.8.0` now exists and resolves, so that transition
-is actionable. Depends on 039 for the gates a release must pass.
+**040 — Release Artifacts & Module Consistency — is done.** Releases
+`v0.1.0`–`v0.8.0` were produced entirely by hand, with no binaries ever
+attached. There is now a tag-triggered workflow that validates the tag as
+SemVer, verifies it is packaging the tagged commit, re-runs the full gates
+against that source, builds five cross-compiled CLI targets with SHA-256
+checksums, and opens a **draft** release for a human to publish. The same
+build script runs locally as `make release-dry-run`, so a broken target is
+found before a tag exists. `trustvian version` reports the module version
+and VCS revision from Go's own build information — no `-ldflags` contract
+and no package-level version variable.
+
+The module question this slice inherited resolved differently than
+expected. `processor/go.mod`'s `replace ... => ../` was recorded by
+[038](tasks/038-v08-stabilization-release-gate.md) as a post-tag transition
+to undo, but the audit found the nested modules declare *non-resolvable*
+module paths (`trustvian-processor`, `trustvian-examples`) and have never
+been tagged: they cannot be published as written, and the replace is
+correct for modules built from this repository. The durable outcome is an
+explicit, documented publication model — root is the one published module;
+the other two are repository-internal for reasons unrelated to release —
+enforced by `scripts/check-modules.sh` in CI, including a guard against
+promoting a module to a resolvable path while it still carries a local
+replace. The processor's stale `v0.5.0` floor was corrected to the `v0.8.0`
+release that first contained the API it uses.
 
 **041 — Container Supply Chain & Provenance.** The official container
 image `v0.8` deliberately did not publish, together with the verification

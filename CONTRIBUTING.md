@@ -108,6 +108,27 @@ requests from forks run the full gate set with nothing to leak.
 If CI fails on formatting, run `make fmt` — CI reports violations but never
 rewrites your code.
 
+## Modules and releases
+
+This repository publishes exactly one Go module — the root,
+`github.com/Trustvian/trustvian`. The `processor` and `examples` modules
+are repository-internal: their module paths are not resolvable and they are
+built from a clone. `make check-modules` enforces the invariants that keeps
+true; [docs/release-guide.md](docs/release-guide.md) explains the model and
+what promoting a module would require.
+
+To build the release artifact matrix locally — no tag, credentials, or
+upload:
+
+```bash
+make release-dry-run
+```
+
+`make check-modules` verifies a declared root version from a local git tag
+when the checkout has one, and from the module proxy otherwise, so it works
+in a shallow clone. Set `CHECK_MODULES_OFFLINE=1` to forbid the proxy
+fallback.
+
 ## Commits and releases
 
 Work lands on `develop` and reaches `main` by pull request; release tags
