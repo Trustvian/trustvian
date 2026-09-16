@@ -1,0 +1,51 @@
+# Build-context hygiene: everything here is either unnecessary for the
+# build, or actively should not enter an image layer.
+#
+# The context is the repository root because processor/go.mod replaces the
+# core module with ../, so both modules' sources are required. That makes
+# excluding the rest deliberate work rather than a side effect.
+
+# Version control. Large, and its contents have no business in a layer.
+# Note this means `go build` cannot stamp VCS information inside the
+# container; the image's provenance attestation records the commit instead.
+.git
+.gitignore
+.github
+
+# Release artifacts built by scripts/release-build.sh — megabytes of
+# binaries that would be copied into the build context for nothing.
+dist/
+bin/
+
+# Local environment files. Never in an image.
+.env
+*.env
+
+# Test and coverage output.
+coverage.out
+coverage.html
+
+# Editor and OS metadata.
+.DS_Store
+.idea/
+.vscode/
+
+# Agent/tooling configuration with no runtime role.
+.claude/
+.codex/
+.agents/
+
+# The Go workspace. Excluded deliberately, not incidentally: a workspace
+# would make the container build resolve modules differently from how a
+# consumer does, and it lists ./examples, which this context excludes — Go
+# fails outright on a go.work naming a module that is not present. The
+# build is workspace-free, matching the GOWORK=off verification CI runs.
+go.work
+go.work.sum
+
+# Documentation is not needed to compile the Collector. Kept out of the
+# context rather than out of the final image, because the final image
+# copies only the binary anyway.
+docs/
+examples/
+deployments/

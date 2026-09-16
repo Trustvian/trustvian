@@ -107,6 +107,58 @@ actually depend on.
   only breaking change across the intervening majors was that runtime move.
   Workflow permissions are unchanged.
 
+- **Official container image, with supply-chain verification** — an
+  OpenTelemetry Collector running the Trustvian processor, published to
+  `ghcr.io/trustvian/trustvian-collector` on a version tag. **No image has
+  been published yet**; the pipeline runs on the next release.
+
+  Built from a root `Dockerfile` onto
+  `gcr.io/distroless/static-debian12:nonroot` for `linux/amd64` and
+  `linux/arm64`. ~43 MB, runs as uid 65532, no shell, no package manager,
+  no added capabilities, and containing nothing but the Collector binary and
+  the base image's CA certificates — which are there because PostgreSQL TLS
+  needs a trust store. A `.dockerignore` keeps `.git`, `dist/`, and local
+  env files out of the build context.
+
+  Releases carry an immutable `vX.Y.Z` image tag as the deployment
+  contract; `X.Y` and `latest` are convenience tags, and a prerelease moves
+  neither.
+
+  The existing Docker Compose reference deployment still builds from
+  source. Running the repository does not require a published image.
+
+### Security
+
+- **Supply-chain controls for released artifacts.** An SPDX SBOM and SLSA
+  provenance attestation are attached to each published image using
+  BuildKit's built-in mechanisms, and the image digest is signed with
+  keyless Cosign via GitHub OIDC — so no signing key exists in the
+  repository or in a secret. Signatures are made over digests rather than
+  tags, since a tag can be moved.
+
+- **Vulnerability gates.** `govulncheck` now runs in CI for both modules and
+  fails on any *reachable* vulnerability; Trivy scans the container image
+  and fails on `CRITICAL`/`HIGH` findings **with a fix available**. Unfixed
+  advisories are reported but do not block, because blocking on an
+  unfixable upstream issue would prevent shipping our own security fixes.
+  Policy and every live exception: [`docs/supply-chain.md`](docs/supply-chain.md).
+
+- **`golang.org/x/crypto` upgraded to `v0.56.0`** in the processor module,
+  clearing two advisories (`GO-2026-6355`, `GO-2026-6354`). A third
+  (`GO-2026-5932`) has no upstream fix and is not reachable from Trustvian
+  code; it is recorded as a documented exception with a review condition.
+
+- **Publishing permissions are scoped to the publishing job.**
+  `packages: write` and `id-token: write` exist only in the container job of
+  the release workflow; `ci.yml` and `nightly.yml` remain `contents: read`.
+  Registry authentication uses the workflow-scoped token, so there is no
+  long-lived credential to rotate. No workflow uses `pull_request_target`.
+
+- **[`docs/supply-chain.md`](docs/supply-chain.md)** — image identity,
+  tagging, architectures, the scan policy, signing, and how to verify a
+  published image. `docs/SECURITY.md` gains a supply-chain section kept
+  explicitly distinct from Trustvian's runtime behavioral security.
+
 - **[`docs/release-guide.md`](docs/release-guide.md)** — maintainer-facing:
   the module model, how to prepare and verify a release, what the
   automation does, and what promoting the processor to a published module

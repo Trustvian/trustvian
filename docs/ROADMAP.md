@@ -1946,9 +1946,10 @@ Per-task acceptance criteria are fixed in each slice's own task file.
 ## v0.9 — Operational Readiness
 
 **Status: IN PROGRESS.** Tasks
-[039](tasks/039-ci-quality-gate-automation.md) and
-[040](tasks/040-release-artifacts-and-module-consistency.md) are done;
-041–045 are named below and not yet task-filed.
+[039](tasks/039-ci-quality-gate-automation.md),
+[040](tasks/040-release-artifacts-and-module-consistency.md), and
+[041](tasks/041-container-supply-chain-security.md) are done; 042–045 are
+named below and not yet task-filed.
 
 **Objective.** Production engineering hygiene, so `v1.0` is a real
 release, not just a version number bump.
@@ -1972,8 +1973,8 @@ nobody can review.
 |---|---|---|
 | [039](tasks/039-ci-quality-gate-automation.md) | CI & Quality Gate Automation | **DONE** |
 | [040](tasks/040-release-artifacts-and-module-consistency.md) | Release Artifacts & Module Consistency | **DONE** |
-| 041 | Container Supply Chain & Provenance | Next — not task-filed |
-| 042 | Runtime Health, Readiness & Graceful Shutdown | Planned |
+| [041](tasks/041-container-supply-chain-security.md) | Container Supply Chain & Provenance | **DONE** |
+| 042 | Runtime Health, Readiness & Graceful Shutdown | Next — not task-filed |
 | 043 | Self-Observability & Resource Safety | Planned |
 | 044 | Operations: Backup, Restore & Upgrade | Planned |
 | 045 | `v0.9` Stabilization & Release Gate | Planned |
@@ -2014,12 +2015,36 @@ promoting a module to a resolvable path while it still carries a local
 replace. The processor's stale `v0.5.0` floor was corrected to the `v0.8.0`
 release that first contained the API it uses.
 
-**041 — Container Supply Chain & Provenance.** The official container
-image `v0.8` deliberately did not publish, together with the verification
-that makes an image trustworthy: SBOM, vulnerability scanning, and signing
-where practical. These share one lifecycle and one set of credentials, so
-they are one slice. Depends on 040 for the release trigger and artifact
-pipeline.
+**041 — Container Supply Chain & Provenance — is done.** `v0.8` built a
+container deliberately scoped to local use and said so; this slice adds the
+official one. `Dockerfile` at the repository root builds the Collector — the
+only long-lived service this repository produces — onto
+`distroless/static-debian12:nonroot` for two concrete reasons: it carries
+the CA certificates PostgreSQL TLS needs, and it has no shell to add attack
+surface. Verified 43 MB, non-root uid 65532, no shell, and containing
+nothing but the binary and the base's certificates.
+
+Both advertised architectures (`linux/amd64`, `linux/arm64`) build, with
+BuildKit's own SPDX SBOM and SLSA provenance attached as attestations —
+platform-standard rather than a bespoke format. Two scanners covering
+disjoint ground: `govulncheck` gates on *reachability* (which already earns
+its place here — the processor's dependency graph carries advisories its
+code cannot reach), and Trivy gates on fixable `CRITICAL`/`HIGH` in the
+image. Unfixed advisories are reported but do not block, because blocking on
+an unfixable upstream problem prevents shipping our own security fixes;
+the one live exception is recorded with its review condition. Two sibling
+advisories were cleared outright by upgrading `golang.org/x/crypto`.
+
+Publishing extends task 040's single release identity rather than forming a
+second one: the container job `needs` the release job, inheriting its
+verified tag and passing gates. Order is build → scan → gate → push →
+sign, so a known-bad image is never pushed; keyless Cosign signs the digest
+using GitHub OIDC, so no signing key exists anywhere. `packages: write` and
+`id-token: write` are confined to that job, and normal CI stays read-only.
+The reference deployment still builds from source — running the repository
+must never require a published image.
+
+Nothing was published: the pipeline runs on the next version tag.
 
 **042 — Runtime Health, Readiness & Graceful Shutdown.** Liveness and
 readiness as *distinct* signals — a process that is running is not

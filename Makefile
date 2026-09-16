@@ -8,7 +8,7 @@ GO       := go
 
 .PHONY: help build run demo baseline-demo test test-race bench vet fmt fmt-check tidy coverage install clean check examples \
 	compose-up compose-down compose-smoke integration-postgres \
-	check-modules release-dry-run
+	check-modules release-dry-run vulncheck container-build container-scan sbom
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -69,6 +69,30 @@ COMPOSE      := docker compose -f $(COMPOSE_DIR)/compose.yaml
 # Matches .env.example. Override on the command line to point the
 # integration suites at a different database.
 POSTGRES_DSN ?= postgres://trustvian:change-me@localhost:5433/trustvian?sslmode=disable
+
+IMAGE        ?= ghcr.io/trustvian/trustvian-collector
+IMAGE_TAG    ?= local
+
+vulncheck: ## Scan Go dependencies for reachable vulnerabilities (root + processor)
+	$(GO) run golang.org/x/vuln/cmd/govulncheck@latest ./...
+	cd processor && GOWORK=off $(GO) run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+container-build: ## Build the official container image locally — nothing is pushed
+	docker buildx build --platform linux/amd64 --load -t $(IMAGE):$(IMAGE_TAG) .
+
+container-scan: container-build ## Scan the local container image for fixable CRITICAL/HIGH
+	@mkdir -p dist
+	docker save $(IMAGE):$(IMAGE_TAG) -o dist/image.tar
+	docker run --rm -v $(PWD)/dist:/w aquasec/trivy:latest image \
+		--input /w/image.tar --severity CRITICAL,HIGH --ignore-unfixed \
+		--exit-code 1 --scanners vuln
+
+sbom: ## Build with an SPDX SBOM attestation and extract it to dist/
+	@mkdir -p dist
+	docker buildx build --platform linux/amd64 --sbom=true --provenance=mode=max \
+		--output type=oci,dest=dist/image-oci.tar -t $(IMAGE):$(IMAGE_TAG) .
+	./scripts/extract-sbom.sh dist/image-oci.tar dist/sbom.spdx.json
+	@echo "SBOM: dist/sbom.spdx.json"
 
 check-modules: ## Verify module publication invariants (see docs/release-guide.md)
 	./scripts/check-modules.sh
