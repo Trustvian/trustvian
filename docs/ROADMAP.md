@@ -10,9 +10,9 @@ technical requirements, tests, benchmarks, documentation, and
 acceptance criteria. Milestones without a fully-scoped task sequence
 yet (`v0.9` below) are deliberately not pre-scoped in detail —
 this roadmap's own "small vertical slices" principle, applied to
-itself. `v0.8` is release-ready but not yet shipped: all five of its slices
-(034–038) are done, and each has its own task file. Every earlier milestone
-through `v0.7` has each of its slices
+itself. `v0.8` is shipped: all five of its slices (034–038) are done, and
+each has its own task file. `v0.9` below is in progress. Every earlier
+milestone through `v0.7` has each of its slices
 either scoped and done, or explicitly named as the next slice, not
 left as a vague placeholder: `v0.5` has all five of its tasks scoped
 and done — [019](tasks/019-policy-config-model.md),
@@ -1645,17 +1645,13 @@ No specific response mechanism is designed here.
 
 ## v0.8 — Production Runtime & Storage
 
-**Status: RELEASE READY.** All five slices are done:
+**Status: SHIPPED (`v0.8.0`).** All five slices are done:
 [034](tasks/034-production-store-contract-and-public-boundary.md),
 [035](tasks/035-postgresql-store-implementation.md),
 [036](tasks/036-store-durability-concurrency-and-migration-hardening.md),
 [037](tasks/037-reference-docker-compose-deployment.md), and
 [038](tasks/038-v08-stabilization-release-gate.md). The milestone's exit
-criteria below are all met.
-
-**`v0.8.0` is NOT YET SHIPPED.** The implementation is release-ready; the
-tag and GitHub release are a separate, human-controlled step. This document
-says SHIPPED only once that tag exists.
+criteria below were all met before the tag was cut.
 
 **Objective.** OSS should be deployable as a real production system,
 not only a library and a CLI against a local file.
@@ -1949,48 +1945,132 @@ Per-task acceptance criteria are fixed in each slice's own task file.
 
 ## v0.9 — Operational Readiness
 
+**Status: IN PROGRESS.** Task
+[039](tasks/039-ci-quality-gate-automation.md) is done; 040–045 are named
+below and not yet task-filed.
+
 **Objective.** Production engineering hygiene, so `v1.0` is a real
 release, not just a version number bump.
 
-**Scope** (no task file yet; items are capabilities to have, not a
-prescription of specific tooling beyond what's already established in
-this repository):
+`v0.8` made Trustvian *capable* of running in production. This milestone
+makes it *operable*: every quality gate enforced automatically rather than
+by discipline, artifacts that are reproducible and verifiable, a runtime
+that reports its own health and shuts down cleanly, and the operational
+documentation a team needs before trusting it with real state. It adds no
+behavioral capability — see the strategic sections above for those.
 
-```text
-CI, build gates (go vet / gofmt / go test -race — already run manually
-  every task, this milestone automates them)
-Release automation
-Multi-arch binaries/images
-Docker image (packaging the reference deployment v0.8 designed)
-SBOM
-Dependency / vulnerability scanning
-Signed artifacts/images where practical
-SemVer discipline (already documented — see CHANGELOG.md § Public API
-  compatibility promise; this milestone is enforcing it in CI, not
-  inventing it)
-Module version consistency (root/processor/examples go.mod alignment —
-  see Version and Module Consistency Review notes below)
-Health checks, readiness checks
-Self-observability (Trustvian observing its own runtime health, not to
-  be confused with the OTel *input* adapter)
-Resource limits, graceful shutdown
-Backup/restore documentation (for the v0.8 persistent store)
-Upgrade/migration documentation
-Security disclosure process
-CONTRIBUTING.md, issue templates
-Production examples (beyond examples/'s current SDK-usage demos)
-```
+### Slice sequence
 
-**Non-goals.** No specific tool mandated here beyond what this
-repository already uses (`go vet`, `gofmt`, `go test -race`, the
-existing `Makefile` targets) unless a concrete need is identified when
-this milestone starts.
+Small vertical slices, in dependency order. Each slice is one operational
+*capability*, not one tool: bundling `gofmt`/`vet`/`test`/`race` into
+separate tasks would produce four tasks that cannot be independently
+valuable, while bundling CI with release publishing would produce one task
+nobody can review.
 
-**Dependencies.** `v0.8` (the Docker image packages that milestone's
-deployment path). Otherwise independent of `v0.5`–`v0.7`.
+| Task | Title | Status |
+|---|---|---|
+| [039](tasks/039-ci-quality-gate-automation.md) | CI & Quality Gate Automation | **DONE** |
+| 040 | Release Artifacts & Module Consistency | Next — not task-filed |
+| 041 | Container Supply Chain & Provenance | Planned |
+| 042 | Runtime Health, Readiness & Graceful Shutdown | Planned |
+| 043 | Self-Observability & Resource Safety | Planned |
+| 044 | Operations: Backup, Restore & Upgrade | Planned |
+| 045 | `v0.9` Stabilization & Release Gate | Planned |
 
-**Acceptance criteria.** Defined when this milestone's own task file is
-written — not before.
+**039 — CI & Quality Gate Automation — is done.** Every gate this project
+has run by hand on every task since `v0.1` now runs automatically, across
+all three modules and the reference deployment. This is first because
+everything after it is safer when a machine, not a habit, enforces
+correctness — and because the audit that opened this milestone found the
+existing workflow was the stock GitHub Go template: root module only,
+`go build` plus `go test`, no `gofmt`, no `vet`, no `-race`, no processor,
+no examples, no PostgreSQL, and triggered only on pull requests targeting
+`main` — which is to say, only at release time, while all development
+happens on `develop`.
+
+**040 — Release Artifacts & Module Consistency.** Tag-driven release
+automation producing reproducible multi-platform binaries, plus the
+root/processor/examples module-version alignment `v0.8` deliberately
+deferred: `processor/go.mod` still carries a development `replace` back to
+the repository root and a `require` line pinned to `v0.5.0`, which
+[038](tasks/038-v08-stabilization-release-gate.md) recorded as a
+post-tag transition. `v0.8.0` now exists and resolves, so that transition
+is actionable. Depends on 039 for the gates a release must pass.
+
+**041 — Container Supply Chain & Provenance.** The official container
+image `v0.8` deliberately did not publish, together with the verification
+that makes an image trustworthy: SBOM, vulnerability scanning, and signing
+where practical. These share one lifecycle and one set of credentials, so
+they are one slice. Depends on 040 for the release trigger and artifact
+pipeline.
+
+**042 — Runtime Health, Readiness & Graceful Shutdown.** Liveness and
+readiness as *distinct* signals — a process that is running is not
+necessarily able to do Trustvian's work — plus bounded, clean shutdown
+that closes the Store. Readiness must honor `v0.8`'s fail-closed rule:
+when PostgreSQL is configured and unusable, readiness reports not-ready
+rather than quietly degrading. Independent of 040/041; sequenced after
+them because a deployable artifact is what makes runtime health
+observable in the first place.
+
+**043 — Self-Observability & Resource Safety.** Trustvian reporting
+operational telemetry about *itself* — analysis and decision counts,
+error and latency signals, storage health — deliberately distinct from
+the OTel *input* adapter, and deliberately free of high-cardinality actor
+identifiers. Together with the bounded-resource review (pools, goroutines,
+timeouts) that makes those numbers meaningful. Depends on 042, whose
+health model defines what "unhealthy" means.
+
+**044 — Operations: Backup, Restore & Upgrade.** What an operator must do
+to keep learned behavioral state safe: what to back up, what consistency
+to expect, how to verify a restore, and how binary upgrades interact with
+`v0.8`'s schema-version compatibility rules. Documentation and verification
+of standard PostgreSQL mechanisms — not a custom backup engine. Depends on
+042/043 for the operational surface it documents.
+
+**045 — `v0.9` Stabilization & Release Gate.** The evidence-based gate,
+mirroring [038](tasks/038-v08-stabilization-release-gate.md): verify every
+slice from implementation, reconcile documentation, review any public
+surface added, and decide.
+
+### Capability coverage
+
+Every capability the original scope listed, mapped to the slice that owns
+it — so nothing is lost in the decomposition:
+
+| Capability | Slice |
+|---|---|
+| CI, build gates (`gofmt`/`vet`/`test`/`-race`) | 039 |
+| SemVer discipline enforcement | 039 (gates), 040 (release) |
+| Release automation, multi-arch binaries | 040 |
+| Module version consistency | 040 |
+| Official Docker image | 041 |
+| SBOM, vulnerability scanning, signing | 041 |
+| Health checks, readiness checks | 042 |
+| Graceful shutdown | 042 |
+| Self-observability | 043 |
+| Resource limits | 043 |
+| Backup/restore documentation | 044 |
+| Upgrade/migration documentation | 044 |
+| Security disclosure process | 044 |
+| CONTRIBUTING.md, issue templates | 039 (contributor-facing CI docs), 044 |
+| Production examples | 044 |
+
+**Non-goals.** No behavioral capability, no new detector, no new storage
+backend, and none of the strategic items above (agent tool/MCP security,
+runtime provenance, numeric baselines, inventory, investigation, Control)
+— those are separately planned and are not rescheduled by this milestone.
+No Kubernetes and no Helm: a reference deployment and a reproducible image
+are this milestone's deployment scope. No tool is mandated beyond what
+this repository already uses unless a slice identifies a concrete need.
+
+**Dependencies.** `v0.8` (shipped) — 041 packages that milestone's
+deployment path, and 044 documents its storage. Otherwise independent of
+`v0.5`–`v0.7`.
+
+**Acceptance criteria.** Fixed in each slice's own task file when the
+slice becomes active — 039's are in
+[its file](tasks/039-ci-quality-gate-automation.md).
 
 ## v1.0 — Production-Ready OSS
 

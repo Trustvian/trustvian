@@ -1,0 +1,90 @@
+# Expensive verification that is valuable as a trend but wasteful on every
+# commit: the full PostgreSQL stress tier and the reference deployment's
+# end-to-end smoke test.
+#
+# The split is deliberate. Correctness gates belong on pull requests, where
+# a failure means the change is wrong. These tiers take minutes and involve
+# contention timing and image builds, so running them per-commit would slow
+# every PR to catch regressions a nightly run catches just as well. See the
+# tier table in docs/tasks/039-ci-quality-gate-automation.md.
+#
+# Like ci.yml, this workflow publishes nothing and needs no secrets.
+
+name: Nightly
+
+on:
+  schedule:
+    # 04:00 UTC daily.
+    - cron: "0 4 * * *"
+  # Runnable on demand, so a maintainer can exercise these tiers before a
+  # release without waiting for the schedule.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------
+  # The full PostgreSQL tier: everything ci.yml runs with -short, plus the
+  # stress tests -short skips (high-contention same-key writes, concurrent
+  # first-writes, multi-key throughput, bounded row-count checks).
+  # ---------------------------------------------------------------------
+  stress:
+    name: PostgreSQL stress tier
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: trustvian
+          POSTGRES_PASSWORD: trustvian
+          POSTGRES_DB: trustvian_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U trustvian -d trustvian_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Full integration and stress tiers
+        # No -short: this is the tier ci.yml deliberately skips.
+        env:
+          TRUSTVIAN_TEST_POSTGRES_DSN: postgres://trustvian:trustvian@localhost:5432/trustvian_test?sslmode=disable
+        run: go test -race ./...
+
+  # ---------------------------------------------------------------------
+  # The reference deployment, end to end: builds images, starts the stack,
+  # sends telemetry, and proves the baseline survives a down/up cycle.
+  #
+  # The script owns the assertions — this job runs it rather than
+  # reimplementing its logic in YAML.
+  # ---------------------------------------------------------------------
+  deployment-smoke:
+    name: Reference deployment smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the deployment smoke test
+        working-directory: deployments/docker-compose
+        run: ./smoke-test.sh
+
+      - name: Tear down
+        # Runs even when the smoke test fails, so a failed run leaves no
+        # stack or volume behind.
+        if: always()
+        working-directory: deployments/docker-compose
+        run: docker compose down -v

@@ -8,17 +8,55 @@ actually depend on.
 
 ## Unreleased
 
-> Same convention every milestone since `v0.6` has followed: `v0.8` is
-> expected to span multiple slices before it tags, so entries accumulate
-> here as each slice lands. This section is renamed to the milestone's
-> actual version heading only once a real tag exists — never before.
->
-> **Status: this content is `v0.8.0` and is release-ready.** All five
-> slices (034–038) are done and the milestone's exit criteria are met (see
-> [`docs/ROADMAP.md` §
-> v0.8](docs/ROADMAP.md#v08--production-runtime--storage)). Renaming this
-> heading to `## v0.8.0 — Production Runtime & Storage` is the first step
-> of the post-release documentation transition, once the tag exists.
+> `v0.9` — Operational Readiness. Entries accumulate here as each slice
+> lands; this heading is renamed to the milestone's version only once a
+> real tag exists — never before.
+
+### Added
+
+- **CI & quality gate automation**
+  ([task 039](docs/tasks/039-ci-quality-gate-automation.md), first `v0.9`
+  slice) — the checks this project has run by hand since `v0.1` now run
+  automatically, across every module and boundary a release depends on.
+
+  The previous workflow was the stock GitHub Go template: root module
+  only, `go build` plus `go test`, and triggered solely on pull requests
+  targeting `main`. Since work lands on `develop` and reaches `main` by
+  release-time pull request, CI effectively first reported at the moment of
+  release — and never covered `gofmt`, `go vet`, `-race`, the processor
+  module, the examples module, PostgreSQL persistence, or the reference
+  deployment at all.
+
+  `.github/workflows/ci.yml` now runs on push and pull request for both
+  `main` and `develop`: format, vet, build, test, and race across the root
+  module; the processor and examples modules built and tested with
+  `GOWORK=off`, so a Go workspace cannot mask a broken module boundary; a
+  check that `examples/` imports no `internal/*`; PostgreSQL integration
+  against a service container using the existing
+  `TRUSTVIAN_TEST_POSTGRES_DSN` mechanism with no test modified; and
+  validation of the reference deployment's Compose configuration.
+
+  `.github/workflows/nightly.yml` carries the expensive tiers — the full
+  PostgreSQL stress suite and the deployment's end-to-end smoke test — on a
+  schedule and on demand. The split is by cost, not importance: correctness
+  gates belong on pull requests, while contention benchmarks are more
+  useful as a trend than as a tax on every push.
+
+  Both workflows are read-only (`permissions: contents: read`), require no
+  secrets, and publish nothing, so pull requests from forks run the full
+  gate set with nothing to leak. Release and container publishing are
+  deliberately later slices.
+
+- **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — how to run the gates locally,
+  why the processor and examples modules must be verified with `GOWORK=off`,
+  how to run the PostgreSQL tests, and what the test tiers mean.
+
+### Removed
+
+- `.github/workflows/go.yml`, the stock template superseded by `ci.yml`.
+  Keeping it would have run a strictly weaker duplicate of the same gates.
+
+## v0.8.0 — Production Runtime & Storage
 
 Makes Trustvian deployable as a real production system rather than a
 library and a CLI against a local file: behavioral state can now be
