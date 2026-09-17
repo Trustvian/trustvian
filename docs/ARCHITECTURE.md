@@ -410,6 +410,16 @@ reaches storage only through the public `config.StorageConfig` /
 deployment that inverted any of this would be a design regression, not a
 packaging detail.
 
+**Durable state has one writer and one schema owner, and backup is not part
+of the runtime.** Everything a PostgreSQL deployment persists is two tables,
+written only through the `Store` adapter and shaped only by its `Migrate`
+step at startup. Backup and restore act on that database from *outside*
+Trustvian with PostgreSQL's own tools; `scripts/backup-postgres.sh` and
+`scripts/restore-postgres.sh` are operator wrappers that no package imports,
+and they deliberately verify structure without re-implementing schema
+compatibility, so `Migrate` stays the single authority. Policy and
+configuration are never in the database. See [Operations](operations.md).
+
 ## Runtime lifecycle and health
 
 The Collector processor is the long-lived runtime, and its lifecycle is

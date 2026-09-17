@@ -193,6 +193,60 @@ actually depend on.
 
   Existing deployments need no configuration change.
 
+- **Backup, restore, and upgrade procedures for learned behavioral state**
+  ([task 044](docs/tasks/044-operations-backup-restore-upgrade.md)) —
+  documented, tested, and built on PostgreSQL's own `pg_dump`/`pg_restore`
+  rather than a Trustvian backup format.
+
+  **[`docs/operations.md`](docs/operations.md)** is the one runbook: what
+  Trustvian persists (and that policy and configuration never live in the
+  database), taking a backup, restoring it safely, verifying learned state,
+  upgrading, rolling back, a compatibility matrix, and a recovery drill. The
+  `memory` store is stated plainly as having no recovery story.
+
+  **`scripts/backup-postgres.sh`** takes an **online** backup — no downtime:
+  `pg_dump` reads one snapshot and every Trustvian write is a single-row
+  transaction, which a concurrent-writer test confirms. It produces a new
+  directory with a custom-format archive (schema and data), a `MANIFEST`
+  carrying no connection detail, and `SHA256SUMS`; artifacts are `0600`
+  inside a `0700` directory; an existing path is never overwritten; and
+  connection settings come only from the libpq environment, so no DSN ever
+  appears on a command line.
+
+  **`scripts/restore-postgres.sh`** restores only into an existing, empty
+  database with no other sessions, requires matching checksums with no
+  bypass, restores in a single transaction, and verifies the result's
+  structure. Schema compatibility stays with Trustvian's own startup check —
+  the script does not re-implement it. On failure the target is quarantined
+  (`ALLOW_CONNECTIONS false`), because an empty database left behind by a
+  failed restore would otherwise be adopted by Trustvian as a brand-new
+  deployment and silently learn from zero. Neither script creates, drops,
+  or renames a database, or moves traffic.
+
+  **Recovery is proven by behavior, not row counts.** State learned through
+  the real `Analyze`/`Observe` loop, backed up and restored, makes a new
+  engine produce identical baselines and identical anomaly, trust, and
+  decision results — which also differ from a cold start, so the comparison
+  cannot pass vacuously. Upgrading is tested from the **real `v0.8.0`
+  release**, built from its tag: the current release reads its database in
+  place with identical results, the old release still reads it afterwards,
+  a rollback restore reproduces pre-upgrade analysis, and both releases
+  refuse a newer schema version.
+
+  CI runs these on every pull request in a dedicated job with PostgreSQL 17
+  client tools. `deployments/docker-compose/recovery-drill.sh` (also
+  `make recovery-drill`, and nightly in CI) runs the whole chain on the real
+  runtime — online backup, guarded restore, cutover, `/livez` and `/readyz`,
+  learning continuing from the restored state, and readiness through a
+  database outage.
+
+  The reference deployment now enables the `health:` block (port 13133 on
+  loopback) and gains `TRUSTVIAN_RUNTIME_POSTGRES_DB`, so cutting over to a
+  restored database is one explicit variable. The drill found that setting
+  it on a single command is not enough — Compose recreates the collector on
+  the original database the next time a dependent service runs — so the
+  documentation says to record it in `.env`.
+
 ### Changed
 
 - GitHub Actions workflows now use `actions/checkout@v7` and
@@ -278,6 +332,17 @@ actually depend on.
 - **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — how to run the gates locally,
   why the processor and examples modules must be verified with `GOWORK=off`,
   how to run the PostgreSQL tests, and what the test tiers mean.
+
+- **Backup and restore safety.** Backups hold every actor's behavioral
+  profile and are created non-world-readable; no credential reaches a
+  backup, its manifest, script output, or a process listing; corrupt
+  backups are refused; a restore never overwrites a database in use; and a
+  failed restore is quarantined instead of being left for Trustvian to
+  initialize as empty. `docs/SECURITY.md` records each property with the
+  test that proves it, and the limits: a checksum detects corruption but
+  does not authenticate, and any future change to the persisted `Baseline`
+  shape must bump the schema version, or a binary-only downgrade would
+  silently drop the new fields.
 
 ### Removed
 

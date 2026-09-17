@@ -34,6 +34,13 @@ processors:
         # logged — the processor logs only the backend type.
         dsn: ${env:TRUSTVIAN_POSTGRES_DSN}
 
+    # Liveness and readiness (task 042). /readyz consults PostgreSQL, so it
+    # is the gate an operator waits on after a restart, a restore, or an
+    # upgrade — see docs/operations.md. compose.yaml publishes the port on
+    # 127.0.0.1 only.
+    health:
+      endpoint: 0.0.0.0:13133
+
     # A deliberately simple risk-graduated policy, so the demo produces
     # visibly different decisions rather than "allow" for everything. Same
     # schema as `trustvian analyze --config`; no new policy semantics.

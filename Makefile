@@ -7,7 +7,7 @@ GO       := go
 .DEFAULT_GOAL := help
 
 .PHONY: help build run demo baseline-demo test test-race bench vet fmt fmt-check tidy coverage install clean check examples \
-	compose-up compose-down compose-smoke integration-postgres \
+	compose-up compose-down compose-smoke recovery-drill integration-postgres \
 	check-modules release-dry-run vulncheck container-build container-scan sbom
 
 help: ## Show this help
@@ -116,6 +116,13 @@ compose-down: ## Stop the reference deployment, KEEPING the learned baseline vol
 
 compose-smoke: ## Run the reference deployment's end-to-end smoke test
 	./$(COMPOSE_DIR)/smoke-test.sh
+
+# Deliberately no `make backup` / `make restore`: restore needs an explicit
+# target database, and a Make target is the wrong place to hide which
+# database an operation touches. Run scripts/backup-postgres.sh and
+# scripts/restore-postgres.sh directly (docs/operations.md).
+recovery-drill: ## Run the backup -> restore -> cutover -> readiness drill on the reference deployment
+	./$(COMPOSE_DIR)/recovery-drill.sh
 
 integration-postgres: ## Run the PostgreSQL integration+stress suites against the Compose database
 	$(COMPOSE) up -d postgres

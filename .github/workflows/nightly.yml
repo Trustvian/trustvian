@@ -88,3 +88,24 @@ jobs:
         if: always()
         working-directory: deployments/docker-compose
         run: docker compose down -v
+
+  # ---------------------------------------------------------------------
+  # The recovery drill (task 044), on the real runtime: online backup ->
+  # guarded restore into a new database -> operator cutover -> /livez and
+  # /readyz -> learning continues from the restored state -> readiness tracks
+  # a database outage. Builds images, so it is scheduled rather than per-PR;
+  # the storage-level proof runs on every PR in ci.yml's backup-restore job.
+  # ---------------------------------------------------------------------
+  recovery-drill:
+    name: Reference deployment recovery drill
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run the recovery drill
+        # The script tears its own stack and backup directory down on exit,
+        # pass or fail.
+        working-directory: deployments/docker-compose
+        run: ./recovery-drill.sh

@@ -1949,9 +1949,10 @@ Per-task acceptance criteria are fixed in each slice's own task file.
 [039](tasks/039-ci-quality-gate-automation.md),
 [040](tasks/040-release-artifacts-and-module-consistency.md), and
 [041](tasks/041-container-supply-chain-security.md),
-[042](tasks/042-runtime-health-readiness-graceful-shutdown.md), and
-[043](tasks/043-self-observability-resource-safety.md) are done; 044–045
-are named below and not yet task-filed.
+[042](tasks/042-runtime-health-readiness-graceful-shutdown.md),
+[043](tasks/043-self-observability-resource-safety.md), and
+[044](tasks/044-operations-backup-restore-upgrade.md) are done; 045 is
+named below and not yet task-filed.
 
 **Objective.** Production engineering hygiene, so `v1.0` is a real
 release, not just a version number bump.
@@ -1978,8 +1979,8 @@ nobody can review.
 | [041](tasks/041-container-supply-chain-security.md) | Container Supply Chain & Provenance | **DONE** |
 | [042](tasks/042-runtime-health-readiness-graceful-shutdown.md) | Runtime Health, Readiness & Graceful Shutdown | **DONE** |
 | [043](tasks/043-self-observability-resource-safety.md) | Self-Observability & Resource Safety | **DONE** |
-| 044 | Operations: Backup, Restore & Upgrade | Next — not task-filed |
-| 045 | `v0.9` Stabilization & Release Gate | Planned |
+| [044](tasks/044-operations-backup-restore-upgrade.md) | Operations: Backup, Restore & Upgrade | **DONE** |
+| 045 | `v0.9` Stabilization & Release Gate | Next — not task-filed |
 
 **039 — CI & Quality Gate Automation — is done.** Every gate this project
 has run by hand on every task since `v0.1` now runs automatically, across
@@ -2109,12 +2110,47 @@ change to behavioral semantics wearing the costume of a memory
 optimization — and its growth characteristics are documented instead. See
 [observability.md](observability.md).
 
-**044 — Operations: Backup, Restore & Upgrade.** What an operator must do
-to keep learned behavioral state safe: what to back up, what consistency
-to expect, how to verify a restore, and how binary upgrades interact with
-`v0.8`'s schema-version compatibility rules. Documentation and verification
-of standard PostgreSQL mechanisms — not a custom backup engine. Depends on
-042/043 for the operational surface it documents.
+**044 — Operations: Backup, Restore & Upgrade — is done.** Learned
+behavioral state is the one thing a Trustvian deployment cannot rebuild, and
+losing it fails silently: every actor simply looks new. This slice gives
+operators one runbook ([operations.md](operations.md)) and makes each
+procedure in it tested rather than advised.
+
+It is built on PostgreSQL's own tools, not a Trustvian backup format. The
+audit that opened it established the facts the design rests on: the
+database holds exactly two tables and no policy; every write is a
+single-row transaction; `Migrate` is transactional and owns the schema; and
+nothing persisted changed between `v0.8.0` and now. So `pg_dump` is
+consistent **online** — proven under concurrent writers — and upgrading from
+`v0.8.0` is in place.
+
+Two thin scripts make the dangerous mistakes hard. Backup writes a new
+`0600`/`0700` directory with checksums and a manifest carrying no connection
+detail, never overwrites, and takes credentials only from the libpq
+environment. Restore accepts only an empty, unused target, requires matching
+checksums with no bypass, restores in one transaction, verifies structure,
+and leaves compatibility to Trustvian's own startup check rather than
+becoming a second schema authority.
+
+The most useful finding was a hazard nobody had named: a failed restore
+leaves an *empty* database, and an empty database is exactly what a new
+deployment looks like — Trustvian would adopt it and silently learn from
+zero. Failed targets are therefore quarantined so a runtime pointed at one
+fails to start. The recovery drill found a second, smaller one: in Compose, a
+cutover variable set on a single command is undone the next time a dependent
+service runs.
+
+Recovery is verified by behavior: restored state yields identical decisions
+to the source and different ones from a cold start. Upgrade and rollback are
+tested against the real `v0.8.0` release built from its tag, including that
+both releases refuse a newer schema — which is why binary-only downgrade is
+documented as safe only within one schema version, and the pre-upgrade backup
+as mandatory. No scheduler, no cloud integration, no automatic cutover.
+
+Three rows the capability table below originally gave this slice —
+*security disclosure process*, *CONTRIBUTING.md / issue templates*, and
+*production examples* — concern none of learned state, and were left out
+rather than bundled in; 045's gate decides where they land.
 
 **045 — `v0.9` Stabilization & Release Gate.** The evidence-based gate,
 mirroring [038](tasks/038-v08-stabilization-release-gate.md): verify every
@@ -2140,9 +2176,9 @@ it — so nothing is lost in the decomposition:
 | Resource limits | 043 |
 | Backup/restore documentation | 044 |
 | Upgrade/migration documentation | 044 |
-| Security disclosure process | 044 |
-| CONTRIBUTING.md, issue templates | 039 (contributor-facing CI docs), 044 |
-| Production examples | 044 |
+| Security disclosure process | Unassigned — 045 decides (out of 044's scope) |
+| CONTRIBUTING.md, issue templates | 039 (contributor-facing CI docs); issue templates unassigned — 045 decides |
+| Production examples | Unassigned — 045 decides (out of 044's scope) |
 
 **Non-goals.** No behavioral capability, no new detector, no new storage
 backend, and none of the strategic items above (agent tool/MCP security,

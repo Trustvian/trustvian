@@ -138,6 +138,81 @@ jobs:
         run: go test -race -short ./...
 
   # ---------------------------------------------------------------------
+  # Backup, restore, and upgrade (task 044): proves learned behavioral state
+  # survives pg_dump -> pg_restore into a fresh database by BEHAVIOR, that an
+  # online backup under concurrent writes is consistent, that every failure
+  # fails closed, and that upgrading from the real previous release preserves
+  # state. Seconds of test time; a separate job only because it needs
+  # PostgreSQL 17 client tools, which the runner image does not ship.
+  # ---------------------------------------------------------------------
+  backup-restore:
+    name: Backup, restore & upgrade
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: trustvian
+          # Ephemeral and job-scoped, like the root job's. Distinctive on
+          # purpose: the tests assert this string never appears in script
+          # output or backup metadata, which a password equal to the user
+          # name ("trustvian") would make impossible to check.
+          POSTGRES_PASSWORD: tv-ci-backup-restore-pw
+          POSTGRES_DB: trustvian_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U trustvian -d trustvian_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # The upgrade source. A real release, built from its tag below — never
+      # a fabricated fixture. Advance it when a newer release exists.
+      UPGRADE_FROM: v0.8.0
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history, so the previous release's tagged source — not just
+          # its tag ref — is present to build from.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install PostgreSQL 17 client tools
+        # From the PostgreSQL project's own apt repository, matching the
+        # server's major version: pg_dump refuses a newer server, and the
+        # scripts are meant to be exercised with the tools an operator uses.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -qq postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Build the previous release CLI from its tag
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/upgrade-from" "$UPGRADE_FROM"
+          (cd "$RUNNER_TEMP/upgrade-from" && GOWORK=off go build -o "$RUNNER_TEMP/trustvian-$UPGRADE_FROM" ./cmd/trustvian)
+
+      - name: Backup, restore, and upgrade tests
+        env:
+          TRUSTVIAN_TEST_BACKUP_RESTORE: "1"
+          TRUSTVIAN_TEST_POSTGRES_DSN: postgres://trustvian:tv-ci-backup-restore-pw@localhost:5432/trustvian_test?sslmode=disable
+        run: |
+          pg_dump --version
+          TRUSTVIAN_TEST_UPGRADE_FROM_BINARY="$RUNNER_TEMP/trustvian-$UPGRADE_FROM" \
+          TRUSTVIAN_TEST_UPGRADE_FROM_VERSION="$UPGRADE_FROM" \
+            go test -race -count=1 -v -run 'Backup|Restore|Upgrade' ./scripts/
+
+  # ---------------------------------------------------------------------
   # Processor module: a separate Go module that resolves the core module
   # through a replace directive. GOWORK=off is the point of this job — a
   # workspace would mask a broken module boundary, and this module's
