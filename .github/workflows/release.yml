@@ -182,14 +182,28 @@ jobs:
             notes_args=(--notes-file release-notes.md)
           fi
 
+          # A prerelease tag is marked as one, using the same test that
+          # decides whether floating image tags move. Without this, a
+          # published v0.9.0-rc.1 draft would have become GitHub's "Latest
+          # release" — a release candidate presented as the stable version
+          # to everyone landing on the repository.
+          release_args=()
+          if printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            kind="release"
+          else
+            release_args=(--prerelease)
+            kind="prerelease"
+          fi
+
           gh release create "$TAG" \
             --title "Trustvian $TAG" \
             --verify-tag \
             --draft \
+            "${release_args[@]}" \
             "${notes_args[@]}" \
             dist/*.tar.gz dist/*.zip dist/checksums.txt
 
-          echo "::notice::Draft release created for $TAG. Review the notes against CHANGELOG.md, then publish it."
+          echo "::notice::Draft $kind created for $TAG. Review the notes against CHANGELOG.md, then publish it."
 
   # ---------------------------------------------------------------------
   # Official container image: build, scan, publish, sign, attest.
@@ -297,7 +311,13 @@ jobs:
       # --- Sign ----------------------------------------------------------
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v4
+        # Pinned to an exact release: sigstore/cosign-installer publishes
+        # only full version tags and no floating major, so `@v4` is not a
+        # ref that exists — which is exactly how v0.9.0-rc.1 failed, at job
+        # setup, before any step ran. `scripts/check-action-refs.sh` now
+        # checks every `uses:` ref against the API so this class of error
+        # cannot reach a tag again.
+        uses: sigstore/cosign-installer@v4.1.2
 
       - name: Sign the image
         # Keyless: identity comes from this workflow's OIDC token, so there

@@ -232,6 +232,13 @@ OIDC identity. No private key exists in the repository or in a secret, so
 there is none to leak or rotate. Signatures are made over the image
 **digest**, not a tag, because a tag can later be moved.
 
+The release pipeline installs Cosign through `sigstore/cosign-installer`,
+pinned to an exact version (that project publishes no floating major tag —
+assuming one existed is what broke `v0.9.0-rc.1`). It currently installs
+**Cosign v3**, which stores signatures in the new Sigstore bundle format by
+default. **Verify with Cosign v3 or newer**; a v2 client does not read that
+format by default and will report no matching signatures.
+
 **Attestations:** BuildKit's built-in SBOM (SPDX 2.3) and SLSA v1
 provenance, attached to the image in the registry. Platform-standard
 mechanisms rather than a bespoke format, and no extra tool in the release

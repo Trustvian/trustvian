@@ -73,7 +73,7 @@ Not every test runs on every commit:
 
 | Tier | Runs | What it covers |
 |---|---|---|
-| **Pull request / push** | `main` and `develop` | Format, vet, build, tests, race, and `govulncheck` — all three modules. PostgreSQL integration with `-short`. Backup, restore, and upgrade from the previous release against PostgreSQL 17. Release-matrix dry run, container build (amd64), module consistency, Compose config validation. |
+| **Pull request / push** | `main` and `develop` | Format, vet, build, tests, race, and `govulncheck` — all three modules. PostgreSQL integration with `-short`. Backup, restore, and upgrade from the previous release against PostgreSQL 17. Release-matrix dry run, container build (amd64), module consistency, workflow action references, Compose config validation. |
 | **Nightly** | Scheduled, or on demand | The full PostgreSQL stress tier (high-contention writes, concurrent first-writes, bounded row counts), database-restart durability, the reference deployment's end-to-end smoke test, and its recovery drill. |
 
 The split is by cost, not by importance. Correctness gates belong on pull
@@ -87,6 +87,22 @@ Run the stress tier locally by omitting `-short`:
 TRUSTVIAN_TEST_POSTGRES_DSN='...' go test -race ./...          # everything
 TRUSTVIAN_TEST_POSTGRES_DSN='...' go test -race -short ./...   # integration only
 ```
+
+## Workflow action references
+
+`scripts/check-action-refs.sh` proves every `uses:` reference in
+`.github/workflows` resolves to a real tag, branch, or commit — the check
+that would have caught `sigstore/cosign-installer@v4` before it reached a
+release tag. It uses `git ls-remote`, so it needs no token:
+
+```bash
+./scripts/check-action-refs.sh          # every workflow reference
+./scripts/test-check-action-refs.sh     # the checker's own tests (no network)
+```
+
+A reference that cannot be looked up at all is reported as `UNVERIFIED`
+rather than as missing. Both fail the run; only one of them means the
+reference is wrong.
 
 ## Reference deployment
 
