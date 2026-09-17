@@ -100,6 +100,16 @@ release tag. It uses `git ls-remote`, so it needs no token:
 ./scripts/test-check-action-refs.sh     # the checker's own tests (no network)
 ```
 
+`scripts/image-name.sh` prints the canonical container repository and is the
+only place it is spelled — the release workflow, CI, and the Makefile all
+resolve it through there, so the image that gets scanned is the image that
+gets signed:
+
+```bash
+./scripts/image-name.sh        # -> ghcr.io/trustvian/trustvian-collector
+./scripts/test-image-name.sh   # its tests, including the uppercase-owner case
+```
+
 A reference that cannot be looked up at all is reported as `UNVERIFIED`
 rather than as missing. Both fail the run; only one of them means the
 reference is wrong.

@@ -70,7 +70,10 @@ COMPOSE      := docker compose -f $(COMPOSE_DIR)/compose.yaml
 # integration suites at a different database.
 POSTGRES_DSN ?= postgres://trustvian:change-me@localhost:5433/trustvian?sslmode=disable
 
-IMAGE        ?= ghcr.io/trustvian/trustvian-collector
+# One source for the image repository, shared with the release workflow.
+# Overridable, but never hand-spelled in two places — see
+# scripts/image-name.sh for why the owner is normalized.
+IMAGE        ?= $(shell ./scripts/image-name.sh)
 IMAGE_TAG    ?= local
 
 # GOWORK=off on every module, including the root.
