@@ -2,10 +2,14 @@ package trustvianprocessor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
@@ -15,6 +19,8 @@ import (
 
 	trustvian "github.com/Trustvian/trustvian"
 	"github.com/Trustvian/trustvian/config"
+
+	"trustvian-processor/internal/health"
 )
 
 // Stats is a snapshot of this processor's observable counters: how
@@ -46,6 +52,21 @@ type trustvianProcessor struct {
 	// happens once at construction, where config.CompileStorage's
 	// documented lifecycle pattern belongs, instead of on every shutdown.
 	closeStore func()
+
+	// closeOnce guarantees the Store is closed exactly once, however many
+	// times Shutdown is called. The Collector calls Shutdown once, but a
+	// deferred cleanup alongside an explicit stop is an ordinary shape and
+	// must not double-close a connection pool.
+	closeOnce sync.Once
+
+	// health is nil when no `health:` block was configured, which disables
+	// the endpoints entirely. When present it is the single source of
+	// lifecycle truth, consulted by the HTTP handler.
+	health *health.Health
+
+	// healthServer is the listener serving those endpoints, owned by this
+	// component's Start/Shutdown so the Collector's own lifecycle drives it.
+	healthServer *http.Server
 
 	processed     atomic.Uint64
 	invalid       atomic.Uint64
@@ -86,6 +107,14 @@ func newTrustvianProcessor(set component.TelemetrySettings, next consumer.Traces
 	}
 
 	closeStore := func() {}
+
+	// Held so readiness can probe it below. Typed `any` because the Store's
+	// concrete type lives in the core module's internal/ tree and cannot be
+	// named from this module; nil when no storage was configured, in which
+	// case the Engine uses its own in-memory default and there is nothing
+	// external to probe.
+	var configuredStore any
+
 	if cfg.Storage != nil {
 		sc, err := decodeStorage(cfg.Storage)
 		if err != nil {
@@ -103,6 +132,7 @@ func newTrustvianProcessor(set component.TelemetrySettings, next consumer.Traces
 		if err != nil {
 			return nil, fmt.Errorf("trustvianprocessor: storage: %w", err)
 		}
+		configuredStore = s
 		if c, ok := s.(io.Closer); ok {
 			closeStore = func() { _ = c.Close() }
 		}
@@ -115,13 +145,57 @@ func newTrustvianProcessor(set component.TelemetrySettings, next consumer.Traces
 			zap.String("type", string(sc.Type)))
 	}
 
-	return &trustvianProcessor{
+	p := &trustvianProcessor{
 		engine:     trustvian.NewEngine(opts...),
 		next:       next,
 		logger:     set.Logger,
 		closeStore: closeStore,
 		decisions:  make(map[string]uint64),
-	}, nil
+	}
+
+	if cfg.Health != nil {
+		hc := cfg.Health.withDefaults()
+		p.health = health.New(storeProbe(configuredStore), hc.ReadinessTimeout)
+		p.healthServer = &http.Server{
+			Addr:    hc.Endpoint,
+			Handler: health.Handler(p.health, set.Logger.Sugar().Warnf),
+			// Bounded header read, so a half-open probe connection cannot
+			// pin a goroutine indefinitely.
+			ReadHeaderTimeout: 5 * time.Second,
+		}
+	}
+
+	return p, nil
+}
+
+// pinger is the optional store capability readiness needs, declared here in
+// the consumer rather than imported.
+//
+// That is what makes this work at all: the Store arrives as an opaque value
+// whose concrete type lives in the core module's internal/store/postgres,
+// which this separate module cannot import. Go satisfies interfaces
+// structurally, so asserting against a locally declared interface reaches
+// the method with no shared type and no public API — the same shape the
+// io.Closer lifecycle assertion above already uses.
+type pinger interface {
+	Ping(context.Context) error
+}
+
+// storeProbe returns the readiness probe for s, or nil when s has no
+// external dependency to probe.
+//
+// nil is a correct answer, not a missing check: InMemory and FileStore have
+// nothing that can become unavailable, so a runtime configured with either
+// is ready as soon as it has started. Only a database-backed store can be
+// configured-but-unusable, which is precisely the state v0.8's fail-closed
+// contract requires readiness to report.
+// s is typed `any` because its concrete type is unnameable here: that is
+// the whole reason this indirection exists.
+func storeProbe(s any) health.ProbeFunc {
+	if p, ok := s.(pinger); ok {
+		return p.Ping
+	}
+	return nil
 }
 
 // Capabilities reports that this processor mutates its input in place
@@ -136,7 +210,41 @@ func (p *trustvianProcessor) Capabilities() consumer.Capabilities {
 // connections, background goroutines, or resources beyond the Engine
 // itself (which is fully synchronous — see docs/PERFORMANCE.md
 // § Concurrency considerations in the core repository).
-func (p *trustvianProcessor) Start(_ context.Context, _ component.Host) error { return nil }
+// Start brings up the health listener, if one is configured, and records
+// that initialization finished.
+//
+// A bind failure is returned rather than logged: a health surface that
+// silently failed to exist is worse than none, because the absence looks
+// identical to a healthy runtime that nobody is probing.
+func (p *trustvianProcessor) Start(_ context.Context, _ component.Host) error {
+	if p.healthServer == nil {
+		return nil
+	}
+
+	// Listen synchronously so a bind error fails Start, then serve in the
+	// background. ListenAndServe would report the same error only after
+	// Start had already succeeded.
+	listener, err := net.Listen("tcp", p.healthServer.Addr)
+	if err != nil {
+		return fmt.Errorf("trustvianprocessor: health endpoint %s: %w", p.healthServer.Addr, err)
+	}
+
+	go func() {
+		if err := p.healthServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			p.logger.Error("trustvianprocessor: health server stopped", zap.Error(err))
+		}
+	}()
+
+	// Only now is the runtime ready to be probed as running: readiness from
+	// here on reflects the store rather than initialization.
+	p.health.MarkRunning()
+	p.logger.Info("trustvianprocessor: health endpoints listening",
+		zap.String("endpoint", p.healthServer.Addr),
+		zap.String("liveness", health.PathLive),
+		zap.String("readiness", health.PathReady),
+	)
+	return nil
+}
 
 // Shutdown releases the configured Store's resources — for the PostgreSQL
 // backend, its connection pool. Without this, stopping a Collector left
@@ -145,13 +253,49 @@ func (p *trustvianProcessor) Start(_ context.Context, _ component.Host) error { 
 //
 // It does not flush or finalize anything: Observe commits synchronously
 // inside its own transaction, so there is never pending learned state to
-// lose at shutdown. That property is what makes a one-line Shutdown
-// correct here rather than the beginning of a graceful-drain mechanism.
-func (p *trustvianProcessor) Shutdown(_ context.Context) error {
-	if p.closeStore != nil {
-		p.closeStore()
+// lose at shutdown. That property is what makes this a teardown rather than
+// a drain.
+//
+// The drain itself belongs to the Collector, which stops components in
+// topological order — receivers before processors — specifically "so that
+// each component has a chance to drain to its consumer before the consumer
+// is stopped" (service/internal/graph). New spans have therefore stopped
+// arriving and in-flight ones have already passed through by the time this
+// runs, so adding a drain mechanism here would duplicate the framework's
+// and create a second shutdown owner.
+//
+// Ordering within this method is deliberate; see the numbered steps.
+func (p *trustvianProcessor) Shutdown(ctx context.Context) error {
+	// 1. Readiness first, before anything is torn down, so an external
+	//    observer sees "not ready" rather than a refused connection. By the
+	//    time the Collector calls this, it has already stopped the receivers
+	//    and drained in-flight spans through this processor — see the
+	//    ordering note on this method's doc comment.
+	if p.health != nil {
+		p.health.MarkDraining()
 	}
-	return nil
+
+	var errs error
+
+	// 2. Then the health server, before the store: its readiness probe uses
+	//    the store, so stopping it in the other order would let a probe race
+	//    a closing connection pool.
+	if p.healthServer != nil {
+		if err := p.healthServer.Shutdown(ctx); err != nil {
+			errs = errors.Join(errs, fmt.Errorf("health server shutdown: %w", err))
+		}
+	}
+
+	// 3. Finally the store, exactly once.
+	p.closeOnce.Do(func() {
+		if p.closeStore != nil {
+			p.closeStore()
+		}
+	})
+
+	// Returned, not swallowed: a failure to release resources is
+	// operationally relevant, and the Collector aggregates it.
+	return errs
 }
 
 // ConsumeTraces scores every span in td and forwards td (now enriched

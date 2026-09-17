@@ -432,6 +432,45 @@ default and every `v0.5`–`v0.7` behavior is preserved.
   Re-adding an error is backward-compatible if a future backend needs that
   distinction again.
 
+- **Runtime liveness and readiness endpoints, and bounded graceful
+  shutdown** for the Collector runtime. Opt-in via a `health:` block on the
+  processor's configuration; omitting it leaves existing Collector configs
+  behaving exactly as before.
+
+  ```yaml
+  processors:
+    trustvian:
+      health:
+        endpoint: 0.0.0.0:13133      # default
+        readiness_timeout: 2s        # default
+  ```
+
+  `GET /livez` reports whether the runtime is functioning. It deliberately
+  does **not** consult the database: restarting a process because its
+  dependency is unreachable produces a restart storm that cannot fix
+  anything. `GET /readyz` reports whether this instance can safely process
+  work, and does consult the configured store — so PostgreSQL configured and
+  unusable returns 503 rather than silently falling back to non-durable
+  storage. A store with no external dependency (in-memory, file) is ready
+  once started.
+
+  Both return `200 {"status":"ok"}` or `503` with a status string and
+  nothing else: no DSN, hostname, database error, or behavioral state. The
+  reason a probe failed goes to the runtime's logs. Readiness probes are
+  bounded by `readiness_timeout` and cost one driver-level ping — no
+  migration, no query, no state load.
+
+  Shutdown transitions readiness to not-ready first, then stops the health
+  server, then closes the Store exactly once; repeated shutdown is safe.
+  Signal handling and in-flight draining remain the Collector framework's,
+  which already stops receivers before processors — this runtime adds no
+  second shutdown owner.
+
+  The official image documents port 13133 but adds **no Docker
+  `HEALTHCHECK`**: it has no shell by design, and adding one would discard a
+  deliberate security property. External HTTP probes are the intended
+  mechanism.
+
 ### Security
 
 Each item below is enforced by a test, not by convention:

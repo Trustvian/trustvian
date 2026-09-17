@@ -1370,3 +1370,124 @@ func assertBaselinesEquivalent(t *testing.T, want, got baseline.Baseline) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------
+// § Readiness probing (task 042)
+// ---------------------------------------------------------------------
+
+// TestPingReportsDatabaseUsability covers the readiness probe the runtime's
+// /readyz endpoint depends on. The three states a probe must distinguish are
+// exactly the three an operator cares about: usable, unreachable, and
+// closed.
+func TestPingReportsDatabaseUsability(t *testing.T) {
+	dsn := requireDSN(t)
+	ctx := context.Background()
+
+	t.Run("healthy database", func(t *testing.T) {
+		s, _ := newStore(t, dsn)
+		if err := s.Ping(ctx); err != nil {
+			t.Errorf("Ping() error = %v against a reachable database, want nil", err)
+		}
+	})
+
+	t.Run("after Close", func(t *testing.T) {
+		iso := isolatedSchemaDSN(t, dsn)
+		s, err := postgres.NewStore(ctx, postgres.Config{DSN: iso})
+		if err != nil {
+			t.Fatalf("NewStore() error = %v", err)
+		}
+		_ = s.Close()
+
+		// A closed store must report unusable rather than panic or block —
+		// Shutdown closes the store, and a probe can still arrive.
+		if err := s.Ping(ctx); err == nil {
+			t.Error("Ping() error = nil after Close(), want an error")
+		}
+	})
+
+	t.Run("connections terminated", func(t *testing.T) {
+		// The same application_name targeting task 036 uses, so this cannot
+		// disturb other packages' tests running in parallel.
+		appName := fmt.Sprintf("tv_ping_%d_%d", os.Getpid(), time.Now().UnixNano())
+		iso := withApplicationName(t, isolatedSchemaDSN(t, dsn), appName)
+
+		s, err := postgres.NewStore(ctx, postgres.Config{DSN: iso})
+		if err != nil {
+			t.Fatalf("NewStore() error = %v", err)
+		}
+		t.Cleanup(func() { _ = s.Close() })
+
+		if err := s.Ping(ctx); err != nil {
+			t.Fatalf("Ping() error = %v before termination, want nil", err)
+		}
+
+		killer, err := pgx.Connect(ctx, isolatedSchemaDSN(t, dsn))
+		if err != nil {
+			t.Fatalf("pgx.Connect() error = %v", err)
+		}
+		defer killer.Close(ctx)
+		if _, err := killer.Exec(ctx,
+			`SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+			  WHERE datname = current_database() AND application_name = $1 AND pid <> pg_backend_pid()`,
+			appName,
+		); err != nil {
+			t.Fatalf("terminate backends: %v", err)
+		}
+
+		// pgxpool replaces dead connections, so a Ping after termination may
+		// legitimately succeed on a fresh one. The guarantee is that it
+		// answers — promptly, and without panicking — not which answer it
+		// gives. Readiness recovering on its own is the *desired* behavior:
+		// it is what lets a database blip resolve without a restart.
+		pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		err = s.Ping(pingCtx)
+		t.Logf("Ping() after terminating this store's backends: %v", err)
+
+		// And it converges back to healthy without any restart, which is the
+		// §31 operational property.
+		deadline := time.Now().Add(15 * time.Second)
+		for time.Now().Before(deadline) {
+			if s.Ping(ctx) == nil {
+				return
+			}
+		}
+		t.Error("Ping() never recovered after connection termination — readiness would stay false without a restart")
+	})
+
+	t.Run("unreachable database", func(t *testing.T) {
+		// A store that was constructed successfully and whose database then
+		// became unreachable cannot be built directly, so this uses a pool
+		// pointed at a port nothing listens on: the probe must fail, not hang.
+		s, err := postgres.NewStore(ctx, postgres.Config{
+			DSN:            "postgres://trustvian:secret@127.0.0.1:1/trustvian?sslmode=disable",
+			ConnectTimeout: 2 * time.Second,
+		})
+		if err == nil {
+			_ = s.Close()
+			t.Skip("unexpectedly connected to port 1; cannot exercise the unreachable path")
+		}
+		// NewStore fails closed, which is v0.8 behavior and is the reason
+		// readiness never has to report a half-constructed store.
+		if !strings.Contains(err.Error(), "unavailable") {
+			t.Errorf("NewStore() err = %v, want it to report the database unavailable", err)
+		}
+		if strings.Contains(err.Error(), "secret") {
+			t.Errorf("NewStore() err leaked the DSN password: %v", err)
+		}
+	})
+}
+
+// TestPingIsBoundedByContext is the property /readyz relies on: a wedged
+// database must not hold the probe open past its deadline.
+func TestPingIsBoundedByContext(t *testing.T) {
+	dsn := requireDSN(t)
+	s, _ := newStore(t, dsn)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := s.Ping(ctx); err == nil {
+		t.Error("Ping() error = nil for a cancelled context, want an error")
+	}
+}

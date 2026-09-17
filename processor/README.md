@@ -94,6 +94,23 @@ back — and `Shutdown` releases the connection pool.
 Omitting `storage` keeps the in-memory default, so a config written before
 the field existed behaves identically.
 
+`health` (added by core task 042) enables the runtime's operational
+endpoints:
+
+```yaml
+processors:
+  trustvian:
+    health:
+      endpoint: 0.0.0.0:13133      # default
+      readiness_timeout: 2s        # default
+```
+
+`GET /livez` reports whether the runtime is functioning and never consults
+the store; `GET /readyz` reports whether it can safely process work and does.
+When PostgreSQL is configured and unusable, readiness is 503 — never a
+silent fall back to non-durable storage. Both bodies carry a status string
+and nothing else. Omitting the block binds no listener.
+
 `WithAnomalyConfig`, `WithTrustConfig`, and `WithContextRisk` remain
 unconfigurable from here for the same reason they always were: those
 `Option`s take types from the core module's `internal/` packages that this

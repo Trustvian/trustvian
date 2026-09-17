@@ -1948,8 +1948,9 @@ Per-task acceptance criteria are fixed in each slice's own task file.
 **Status: IN PROGRESS.** Tasks
 [039](tasks/039-ci-quality-gate-automation.md),
 [040](tasks/040-release-artifacts-and-module-consistency.md), and
-[041](tasks/041-container-supply-chain-security.md) are done; 042–045 are
-named below and not yet task-filed.
+[041](tasks/041-container-supply-chain-security.md), and
+[042](tasks/042-runtime-health-readiness-graceful-shutdown.md) are done;
+043–045 are named below and not yet task-filed.
 
 **Objective.** Production engineering hygiene, so `v1.0` is a real
 release, not just a version number bump.
@@ -1974,8 +1975,8 @@ nobody can review.
 | [039](tasks/039-ci-quality-gate-automation.md) | CI & Quality Gate Automation | **DONE** |
 | [040](tasks/040-release-artifacts-and-module-consistency.md) | Release Artifacts & Module Consistency | **DONE** |
 | [041](tasks/041-container-supply-chain-security.md) | Container Supply Chain & Provenance | **DONE** |
-| 042 | Runtime Health, Readiness & Graceful Shutdown | Next — not task-filed |
-| 043 | Self-Observability & Resource Safety | Planned |
+| [042](tasks/042-runtime-health-readiness-graceful-shutdown.md) | Runtime Health, Readiness & Graceful Shutdown | **DONE** |
+| 043 | Self-Observability & Resource Safety | Next — not task-filed |
 | 044 | Operations: Backup, Restore & Upgrade | Planned |
 | 045 | `v0.9` Stabilization & Release Gate | Planned |
 
@@ -2046,14 +2047,33 @@ must never require a published image.
 
 Nothing was published: the pipeline runs on the next version tag.
 
-**042 — Runtime Health, Readiness & Graceful Shutdown.** Liveness and
-readiness as *distinct* signals — a process that is running is not
-necessarily able to do Trustvian's work — plus bounded, clean shutdown
-that closes the Store. Readiness must honor `v0.8`'s fail-closed rule:
-when PostgreSQL is configured and unusable, readiness reports not-ready
-rather than quietly degrading. Independent of 040/041; sequenced after
-them because a deployable artifact is what makes runtime health
-observable in the first place.
+**042 — Runtime Health, Readiness & Graceful Shutdown — is done.** The
+runtime now serves `/livez` and `/readyz` (port 13133, opt-in via a
+`health:` block), and liveness and readiness answer genuinely different
+questions. Liveness never consults the store: a supervisor that restarts a
+process because its database is unreachable produces a restart storm that
+cannot fix anything. Readiness does consult it, so PostgreSQL configured and
+unusable reports not-ready — never a silent fall back to non-durable
+storage, and bounded by a configurable timeout so a wedged database cannot
+hold the endpoint open.
+
+The audit's most useful finding was what *not* to build. The Collector
+framework already handles `SIGINT`/`SIGTERM` and already stops receivers
+before processors "so that each component has a chance to drain to its
+consumer" — both verified in its source. Adding signal handling or a drain
+mechanism would have created a second shutdown owner competing with the
+framework's, so this slice adds neither; `Shutdown` flips readiness first,
+then stops the health server, then closes the Store exactly once.
+
+Readiness reaches the store through an optional, type-asserted capability —
+the `store.Freezer`/`io.Closer` idiom — so nothing was added to the `Store`
+port and no public API changed. That is also what lets the processor's
+separate module use it without importing `internal/store`. Stores with no
+external dependency implement nothing and are ready by construction.
+
+No Docker `HEALTHCHECK` was added: the runtime image has no shell by
+design, and adding one to satisfy Docker would discard a deliberate `041`
+security property. External probes are the documented mechanism.
 
 **043 — Self-Observability & Resource Safety.** Trustvian reporting
 operational telemetry about *itself* — analysis and decision counts,

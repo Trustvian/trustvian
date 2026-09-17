@@ -197,6 +197,37 @@ func (s *Store) Close() error {
 	return nil
 }
 
+// Ping reports whether the database is usable right now: one bounded
+// round trip through the pool, and nothing more.
+//
+// Deliberately **not** added to store.Store. Only a database-backed store
+// has an external dependency that can be unavailable, so widening the port
+// would force InMemory and FileStore to answer a question that cannot
+// apply to them — the same reasoning that keeps store.Freezer and io.Closer
+// optional, type-asserted capabilities rather than port methods.
+//
+// A caller discovers it structurally, declaring the one-method interface
+// itself:
+//
+//	type pinger interface{ Ping(context.Context) error }
+//	if p, ok := s.(pinger); ok { err = p.Ping(ctx) }
+//
+// which is what lets the Collector processor — a separate module that
+// cannot import internal/store — use it with no public API involved.
+//
+// Cheap on purpose: a readiness probe may be called every few seconds, so
+// this must never run a migration, scan a table, or load behavioral state.
+// The caller supplies the deadline; this method adds none of its own.
+func (s *Store) Ping(ctx context.Context) error {
+	if s.pool == nil {
+		return fmt.Errorf("%w: store is closed", ErrUnavailable)
+	}
+	if err := s.pool.Ping(ctx); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnavailable, err)
+	}
+	return nil
+}
+
 // Get returns the current Baseline for key, matching the Store
 // contract exactly: a missing key yields an empty baseline.New(key) and
 // false, never an error. A single SELECT is already atomic, so no

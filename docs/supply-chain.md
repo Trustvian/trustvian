@@ -59,7 +59,7 @@ Built from `Dockerfile` at the repository root, on
 | Package manager | **none** |
 | Contents | the Collector binary, plus the base image's CA certificates |
 | Capabilities | none added |
-| Ports | 4317 (OTLP/gRPC), 4318 (OTLP/HTTP) — both unprivileged |
+| Ports | 4317 (OTLP/gRPC), 4318 (OTLP/HTTP), 13133 (health) — all unprivileged |
 
 The base is chosen for two concrete requirements, not for being small:
 
@@ -73,6 +73,30 @@ The base is chosen for two concrete requirements, not for being small:
 
 The image is verified to contain no Go toolchain, no repository source, and
 no `.git`; the build context excludes those via `.dockerignore`.
+
+### Health probes
+
+The runtime serves `/livez` and `/readyz` on port 13133 when a `health:`
+block is configured. There is deliberately **no Docker `HEALTHCHECK`** in
+the image.
+
+A `HEALTHCHECK` needs an executable inside the container, and this image has
+no shell, no `curl`, and no `wget`. Honoring one would mean either adding a
+shell — discarding a security property chosen on purpose — or adding a
+Trustvian subcommand that exists only to satisfy Docker. Neither is worth
+it for a capability every supervisor can provide from outside.
+
+Probe it externally instead:
+
+```bash
+curl -fsS http://localhost:13133/readyz    # 200 ready, 503 not ready
+curl -fsS http://localhost:13133/livez     # 200 alive, 503 stopping
+```
+
+The endpoints are unauthenticated and carry a status string and nothing
+else — no DSN, no hostname, no database error. Bind them to an internal
+address in deployments where that matters; network placement is the access
+control.
 
 ### Debugging the image
 
