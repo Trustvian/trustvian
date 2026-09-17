@@ -38,6 +38,7 @@ here, not moved or rewritten.
 | Anomaly configuration-input validation — weight/threshold ranges, negative-into-`uint64` rejection, backward-compatible zero-value default (`v0.7` task 033) | `TestValidateAnomalyConfigRejectsInvalidWeight`, `TestValidateAnomalyConfigRejectsInvalidPointerWeight`, `TestValidateAnomalyConfigRejectsInvalidZThreshold`, `TestValidateAnomalyConfigAcceptsZeroMinObservations`, `TestValidateAnomalyConfigRejectsInvalidSensitiveTargetFloor` in [`config/anomaly_test.go`](../config/anomaly_test.go); `TestCompileAnomalyZeroValueMatchesDefaultConfig`, `TestCompileAnomalyTranslatesEveryField` in [`config/anomaly_compile_test.go`](../config/anomaly_compile_test.go); `TestLoadAnomalyRejectsNegativeIntoUnsignedField`, `TestLoadAnomalyRejectsUnknownField`, `FuzzLoadAnomaly` in [`config/anomaly_load_test.go`](../config/anomaly_load_test.go) |
 | Storage configuration & persistence contract — fail-closed on unbuildable store, no implicit backend, no lost updates under concurrency, load-failure propagation (`v0.8` task 034) | `TestStoreContract` (incl. its same-key-concurrency guarantee), `TestStoreContractImplementationsAgreeOnLogicalState` in [`internal/store/contract_test.go`](../internal/store/contract_test.go); `TestCompileStoragePostgresFailsClosedNeverFallsBack`, `TestCompileStorageInvalidConfigReturnsNilStore`, `TestCompileStorageFilePropagatesLoadFailure`, `TestValidateStorageConfigRejectsMissingType`, `FuzzLoadStorage` in [`config/storage_test.go`](../config/storage_test.go); `TestRunAnalyzeUnimplementedStorageBackendFailsClosed`, `TestRunAnalyzeInvalidStorageConfigFailsClosed`, `TestBaselineBuildThenAnalyzePersistsAcrossCommands` in [`cmd/trustvian/main_test.go`](../cmd/trustvian/main_test.go) |
 | Alert configuration-input validation | `TestValidateAlertConfigRejectsUnsupportedVersion`, `TestValidateAlertConfigRejectsInvalidSeverity`, `TestValidateAlertConfigRejectsInvalidDecision`, `TestValidateAlertConfigRejectsInvalidRiskLevel`, `TestValidateAlertConfigRejectsInvalidActorType`, `TestValidateAlertConfigRejectsInvalidTargetCategory`, `TestValidateAlertConfigRejectsInvalidMinAnomalyScore`, `TestValidateAlertConfigRejectsInvalidMaxTrustScore`, `TestValidateAlertConfigRejectsDuplicateRuleName`, `TestValidateAlertConfigRejectsEmptyRuleName`, `TestValidateAlertConfigRejectsTooManyRules` in [`config/alert_test.go`](../config/alert_test.go); `TestLoadAlertsRejectsUnknownField`, `TestLoadAlertsRejectsDuplicateYAMLKeys`, `TestLoadAlertsFileRejectsOversizedFile`, `TestLoadAlertsRejectsEmptyInput`, `FuzzLoadAlerts` in [`config/alert_load_test.go`](../config/alert_load_test.go) |
+| Backup and restore — no credential exposure, corrupt-backup rejection, never overwriting a live database, failed restores quarantined, behavioral recovery, upgrade without state reinterpretation (`v0.9` task 044) | `TestBackupScriptRefusesUnsafeInvocations`, `TestRestoreScriptRefusesUnverifiableBackups`, `TestBackupRestorePreservesLearnedBehavior`, `TestBackupDuringConcurrentWritesIsConsistent`, `TestBackupRestoreFailClosed`, `TestUpgradeFromPreviousReleasePreservesLearnedState` in [`scripts/backup_restore_test.go`](../scripts/backup_restore_test.go) |
 | Sequence state (memory bounds, ordering, cross-actor isolation) | `TestBaselineObservePredecessorCountsIsBounded`, `TestBaselineObserveOutOfOrderEventDoesNotRecordOrCorruptTransition`, `TestBaselineObservePredecessorCountsIsImmutable` in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestInMemoryObserveConcurrentTransitionTracking` in [`internal/store/store_test.go`](../internal/store/store_test.go); `TestDefaultConfigTransitionWeightIsOptIn`, `TestScoreTransitionDeviation` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeTransitionDeviationEndToEnd` in [`engine_test.go`](../engine_test.go) |
 | Transition rarity — cold start, counter overflow, poisoning, actor isolation (`v0.6` task 026) | `TestBaselineObserveManyDistinctTransitionsStayBounded`, `TestBaselineObserveOutgoingTransitionTotalIsImmutable` in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestScoreTransitionRarityColdStart`, `TestScoreTransitionRarityNeverExceedsBounds`, `TestDefaultConfigTransitionRarityWeightIsOptIn` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeTransitionRarityCrossActorIsolation`, `TestAnalyzeTransitionRarityScoresBeforeLearning`, `TestObserveTransitionRarityLearnsOnlyFromEligibleDecisions` in [`engine_test.go`](../engine_test.go) |
 | Bounded 3-gram detection — independent cardinality bounds, counter overflow, poisoning, actor isolation (`v0.6` task 027) | `TestBaselineObserveTrigramCountsIsBounded`, `TestBaselineObserveTrigramContinuationTotalIsBounded`, `TestInMemoryObserveConcurrentTrigramTracking` (`internal/store/store_test.go`), `TestFileStoreSurvivesRestartWithTrigramState` (`internal/store/file_test.go`) in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestScoreNGramRarityColdStart`, `TestScoreNGramRarityNeverExceedsBounds`, `TestDefaultConfigNGramWeightIsOptIn` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeNGramCrossActorIsolation`, `TestAnalyzeNGramScoresBeforeLearning`, `TestObserveNGramLearnsOnlyFromEligibleDecisions` in [`engine_test.go`](../engine_test.go) |
@@ -1205,6 +1206,48 @@ that gap — every row in the table above, including the combined
 scenario, is demonstrable through public API alone. See
 [examples/ai-agent-security](../examples/ai-agent-security/)'s own
 README for the worked example.
+
+### Backup and restore
+
+**Threat:** learned behavioral state is lost, disclosed, or silently reset
+through the operational paths around it rather than through the engine —
+a backup leaks credentials or behavioral profiles, a corrupt backup is
+restored as if it were good, a restore overwrites the live database, or a
+failed restore leaves an empty database that Trustvian adopts as a new
+deployment and starts learning from zero. Every one of these ends in the
+same place as baseline poisoning's worst case: actors Trustvian had learned
+become unfamiliar, and nothing reports an error.
+
+**Status: implemented** ([task
+044](tasks/044-operations-backup-restore-upgrade.md)). The operator
+procedure is [`operations.md`](operations.md); this section records the
+security properties it depends on.
+
+| Property | Mechanism | Evidence |
+|---|---|---|
+| Backups are confidential by default | Artifacts created under `umask 077`: directory `0700`, files `0600` | `TestBackupRestorePreservesLearnedBehavior` asserts modes |
+| No credentials in backups or their output | Connection only via the libpq environment — no DSN flag, so nothing reaches a process listing; `MANIFEST` holds no host, user, database, DSN, or password; libpq errors never print passwords | Manifest values compared against every connection parameter; outputs checked for a distinctive password, including on an unreachable-server failure |
+| Corruption is detected before restore | SHA-256 over dump **and** manifest; a checksum file not covering exactly both is refused; no bypass flag | `TestRestoreScriptRefusesUnverifiableBackups` |
+| The live database is never overwritten | Restore requires an existing, **empty** target with no other sessions, never the `PGDATABASE` database; refusals write nothing | Non-empty and in-use targets refused and verified untouched |
+| A failed restore is never adopted | `--single-transaction` (nothing half-restored), then the target is quarantined with `ALLOW_CONNECTIONS false` so a runtime pointed at it fails to start instead of silently initializing an empty schema | Truncated-archive test asserts zero relations and a refused Trustvian startup; mutation removing `--single-transaction` or the quarantine fails it |
+| One schema authority | Restore verifies structure only; compatibility is decided by Trustvian's own `Migrate` at startup, fail-closed | Newer-schema restore refused with `ErrSchemaVersionMismatch` |
+| No automatic cutover | Scripts never create, drop, or rename databases, and never repoint a runtime | — |
+| Upgrades cannot silently reinterpret state | Schema-version mismatch fails startup in both directions; binary-only downgrade across a schema change is refused | Upgrade test from the real `v0.8.0` release |
+
+Two limits stated plainly:
+
+- **A checksum is integrity, not authenticity.** Whoever can modify a backup
+  can regenerate `SHA256SUMS`. Tamper evidence requires storing the checksum
+  file where the backup's writer cannot change it, or signing it.
+- **A backup is a copy of every actor's behavioral profile.** Encryption at
+  rest, access control, and separation from the primary database are the
+  operator's responsibility; Trustvian ships no storage for backups.
+
+A related contract for future releases: **any change to the persisted
+`Baseline` shape must bump the schema version.** Otherwise a binary-only
+downgrade would decode the newer rows while ignoring unknown fields and
+silently drop them on its next write — exactly the silent reinterpretation
+the version check exists to prevent.
 
 ## Software supply-chain security
 

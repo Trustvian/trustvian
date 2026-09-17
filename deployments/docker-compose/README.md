@@ -152,6 +152,94 @@ The distinction matters, so it is spelled out:
 (`trustvian-reference`) and nothing else — it cannot touch unrelated
 volumes or anything on your host filesystem.
 
+## Health endpoints
+
+The collector serves `/livez` and `/readyz` (task 042), published on
+loopback:
+
+```bash
+curl -s http://127.0.0.1:13133/livez     # {"status":"ok"}
+curl -s http://127.0.0.1:13133/readyz    # {"status":"ok"} — 503 while PostgreSQL is unusable
+```
+
+`/readyz` is the gate to wait on after any restart, restore, or upgrade.
+There is still no Compose `healthcheck` for the collector: its image has no
+shell or `curl` by design, so probes come from outside.
+
+## Backing up and restoring
+
+The learned baseline is security state. `docker volume` is not a backup.
+The repository's scripts take a consistent **online** backup and restore it
+into a **new** database; see [Operations](../../docs/operations.md) for the
+full procedure and the reasoning behind every refusal. From this directory,
+with the PostgreSQL 17 client tools run in a container so nothing needs
+installing:
+
+```bash
+# Outside the repository, so a backup can never be committed by accident.
+BACKUPS="$HOME/trustvian-backups" && mkdir -p -m 700 "$BACKUPS"
+tools() {
+  docker run --rm --network trustvian-reference_default --user "$(id -u):$(id -g)" \
+    -v "$PWD/../../scripts:/scripts:ro" -v "$BACKUPS:/backups" \
+    -e PGHOST=postgres -e PGUSER=trustvian -e PGPASSWORD postgres:17-bookworm "$@"
+}
+export PGPASSWORD=change-me        # the reference placeholder; never a real password on a shared host
+
+# Backup while the stack runs.
+tools -e PGDATABASE=trustvian bash /scripts/backup-postgres.sh --output /backups/trustvian-$(date -u +%Y%m%dT%H%MZ)
+```
+
+### Restoring a backup
+
+```bash
+# 1. A new, empty database. The restore script never creates or drops one.
+docker compose exec postgres createdb -U trustvian trustvian_restored
+
+# 2. Restore and verify. Refused if the checksum fails or the target is not empty.
+tools bash /scripts/restore-postgres.sh --backup /backups/<backup-dir> --target-db trustvian_restored
+
+# 3. Cut over — your decision, recorded in .env so it persists.
+echo 'TRUSTVIAN_RUNTIME_POSTGRES_DB=trustvian_restored' >> .env
+docker compose up -d otel-collector
+curl -s http://127.0.0.1:13133/readyz
+```
+
+**Record the cutover in `.env`, not just on one command.** Compose
+re-evaluates the collector whenever a service that depends on it runs.
+`TRUSTVIAN_RUNTIME_POSTGRES_DB=… docker compose up -d otel-collector`
+followed by a plain `docker compose run --rm demo-producer` silently
+recreates the collector on the *original* database — the recovery drill
+caught exactly this.
+
+The original `trustvian` database is left untouched throughout; drop it only
+once you are satisfied with the restored one.
+
+## Recovery drill
+
+```bash
+./recovery-drill.sh        # or: make recovery-drill
+```
+
+The whole recovery chain against the running stack, exiting non-zero on the
+first failure:
+
+```text
+=== 1/8 Stack starts and the runtime becomes ready
+=== 2/8 Learn 40 observations
+=== 3/8 Online backup while the runtime keeps running
+=== 4/8 Restore guards refuse unsafe targets and corrupt backups
+=== 5/8 Restore into a new database
+=== 6/8 Operator cutover to the restored database
+=== 7/8 Learning continues from the restored state
+=== 8/8 Readiness tracks a PostgreSQL outage and recovery (task 042)
+RECOVERY DRILL PASSED — all 8 checks held.
+```
+
+Step 7 is the decisive one, for the same reason as the smoke test's step 5:
+the restored database must reach 80 observations (continued from the
+backup's 40) while the original stays at 40. It removes its own volume and
+backup directory when it finishes. Needs Docker, `curl`, and bash.
+
 ## Automated smoke test
 
 ```bash
@@ -240,7 +328,8 @@ tests](../../docs/storage-guide.md#running-the-integration-tests).
 | `collector.yaml` | Collector pipeline + Trustvian storage/policy config |
 | `Dockerfile.collector` | Builds the Trustvian-enabled Collector from source |
 | `Dockerfile.demo` | Builds the demo OTLP producer |
-| `smoke-test.sh` | The automated proof |
+| `smoke-test.sh` | The automated persistence proof |
+| `recovery-drill.sh` | The automated backup → restore → cutover proof |
 
 ### Configuration
 
@@ -303,7 +392,7 @@ Before anything resembling production:
   `sslmode=verify-full` with a pinned root certificate. Trustvian passes
   the DSN to the driver unmodified and never weakens TLS settings
   programmatically.
-- **Restrict network access.** Both published ports bind to `127.0.0.1`
+- **Restrict network access.** Every published port binds to `127.0.0.1`
   here. The PostgreSQL port is published only for local `psql` inspection
   and integration tests; service-to-service traffic uses the Compose
   network and does not need it.
@@ -311,10 +400,11 @@ Before anything resembling production:
   environment variable. That is better than a config file and still not a
   secret-management system.
 - **Back up the database.** The learned baseline is real security state.
-  A `docker volume` is not a backup strategy.
+  A `docker volume` is not a backup strategy — see
+  [Backing up and restoring](#backing-up-and-restoring).
 - **Do not treat these images as release artifacts.** They are built
-  locally from source. There is no published Trustvian image yet, and
-  official packaging and container hardening are `v0.9`'s scope.
+  locally from source. The official image is described in
+  [supply-chain.md](../../docs/supply-chain.md).
 
 Compose itself provides none of the above. It provides a network and a
 volume.

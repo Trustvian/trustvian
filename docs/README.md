@@ -16,6 +16,7 @@ engineering conventions this codebase follows, see
 | [Policy Guide](policy-guide.md) | Writing `Rule`/`Condition` policies, fail-closed behavior, worked examples |
 | [Anomaly Configuration Guide](anomaly-config-guide.md) | Public `AnomalyConfig` field reference, defaults/ranges, Go/YAML/CLI configuration |
 | [Storage Guide](storage-guide.md) | The three Store backends (memory/file/PostgreSQL), when to use each, configuration, lifecycle, fail-closed behavior, concurrency, credentials, schema |
+| [Operations](operations.md) | Backup, restore, upgrade, and rollback of learned state: what to back up, restore safety and verification, the compatibility matrix, and a recovery drill |
 | [Reference Deployment](../deployments/docker-compose/README.md) | Runnable Docker Compose stack: OTel Collector + Trustvian + PostgreSQL, with a persistence proof and a smoke test |
 | [Sequence Analysis](sequence-analysis.md) | Order-aware detection (`transition_deviation`), the bounded state model, cold start, activation |
 | [OpenTelemetry Adapter](OPENTELEMETRY.md) | How `internal/otel` maps a span to an `Event`, the attribute mapping table, what's not yet implemented |

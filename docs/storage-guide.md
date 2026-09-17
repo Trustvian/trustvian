@@ -369,7 +369,9 @@ Multi-version evolution has no upgrade path yet because there has only
 ever been one schema version; what is exercised today is re-migration
 against a populated database, which is what every process restart does.
 Inventing a v1→v2 upgrade to demonstrate the machinery would test a
-fiction.
+fiction. What *is* tested is upgrading a database written by the real
+`v0.8.0` release in place, and that both releases refuse a newer recorded
+version — see [Operations § Upgrade](operations.md#upgrade).
 
 ### What is *not* stored
 
@@ -404,6 +406,20 @@ hand-edited row — the behavior is deliberately asymmetric:
   `Observe` to report on the next learning call.
 
 There is no code path that silently resets a corrupt baseline.
+
+## Backup, restore, and upgrade
+
+The learned baseline is security state that cannot be reconstructed, so
+back it up. PostgreSQL's own `pg_dump` is consistent while Trustvian runs —
+every write is a single-row transaction and a dump is one snapshot — and
+restores belong in a **new, empty** database, never over the live one.
+`scripts/backup-postgres.sh` and `scripts/restore-postgres.sh` wrap both
+with checksums, refusal of unsafe targets, and quarantine of failed
+restores.
+
+The procedures — backup, restore and its verification, upgrade, rollback,
+the compatibility matrix, and a recovery drill — live in one place:
+[Operations](operations.md).
 
 ## Running the integration tests
 

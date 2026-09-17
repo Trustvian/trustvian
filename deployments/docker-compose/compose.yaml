@@ -83,12 +83,22 @@ services:
       # so credentials live in exactly one place. Collector's own
       # ${ENV} expansion substitutes it into collector.yaml — no
       # Trustvian-side interpolation engine was added for this.
+      #
+      # TRUSTVIAN_RUNTIME_POSTGRES_DB selects which database the runtime
+      # uses, defaulting to the one postgres initializes. It exists for
+      # recovery: after restoring a backup into a new database, pointing
+      # the runtime at it is this one explicit variable — an operator's
+      # cutover decision, never something a script does on its own. See
+      # docs/operations.md § Restore.
       TRUSTVIAN_POSTGRES_DSN: >-
-        postgres://${TRUSTVIAN_POSTGRES_USER:-trustvian}:${TRUSTVIAN_POSTGRES_PASSWORD:-change-me}@postgres:5432/${TRUSTVIAN_POSTGRES_DB:-trustvian}?sslmode=disable
+        postgres://${TRUSTVIAN_POSTGRES_USER:-trustvian}:${TRUSTVIAN_POSTGRES_PASSWORD:-change-me}@postgres:5432/${TRUSTVIAN_RUNTIME_POSTGRES_DB:-${TRUSTVIAN_POSTGRES_DB:-trustvian}}?sslmode=disable
     volumes:
       - ./collector.yaml:/etc/trustvian/collector.yaml:ro
     ports:
       - "127.0.0.1:${TRUSTVIAN_OTLP_GRPC_PORT:-4317}:4317"
+      # /livez and /readyz, loopback only. Unauthenticated by design and
+      # nearly information-free (task 042), but still not for the network.
+      - "127.0.0.1:${TRUSTVIAN_HEALTH_PORT:-13133}:13133"
     depends_on:
       postgres:
         # Wait for the health check, not merely for the container to exist.

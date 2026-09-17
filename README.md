@@ -401,6 +401,7 @@ computes; Trustvian is not an authenticator. See
 | Architecture · Domain model | [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [DOMAIN.md](docs/DOMAIN.md) |
 | Go SDK · CLI | [sdk-guide.md](docs/sdk-guide.md) · [cli-guide.md](docs/cli-guide.md) |
 | Storage and persistence | [storage-guide.md](docs/storage-guide.md) |
+| Operations: backup, restore, upgrade | [operations.md](docs/operations.md) |
 | Policy · Behavioral signals | [policy-guide.md](docs/policy-guide.md) · [anomaly-config-guide.md](docs/anomaly-config-guide.md) |
 | Sequence analysis | [sequence-analysis.md](docs/sequence-analysis.md) |
 | OpenTelemetry · Collector processor | [OPENTELEMETRY.md](docs/OPENTELEMETRY.md) · [processor/README.md](processor/README.md) |
