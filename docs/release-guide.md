@@ -134,7 +134,10 @@ Then confirm, **on the exact commit you will tag**:
 
 - **CI is green** — every job in `ci.yml`, including *Backup, restore &
   upgrade*, which is the only automated proof of the upgrade path from the
-  previous release.
+  previous release, and *Workflow action references*, which proves every
+  action the release workflow uses actually exists. The release workflow
+  runs only on a tag, so an unresolvable action reference is otherwise
+  found only after the tag is public — that is how `v0.9.0-rc.1` failed.
 - **Nightly is green** — the PostgreSQL stress tier with database-restart
   durability, the reference deployment smoke test, and the recovery drill.
   The scheduled run covers `main`; if the release commit is newer than the
@@ -187,6 +190,7 @@ Pushing the tag triggers `.github/workflows/release.yml`.
 | Tag validation | Rejects non-SemVer tags before building anything. |
 | Source | Checks out `github.ref` — the tagged commit — and **verifies** `HEAD` equals the commit the tag points at. |
 | Gates | Re-runs module consistency, format, vet, tests, race, PostgreSQL integration (`-short`), the processor module with `GOWORK=off`, and `govulncheck` for the root and processor modules, against the tagged source. |
+| Prerelease | A tag with a prerelease suffix (`v0.9.0-rc.1`) is marked as a prerelease, so it never becomes GitHub's "Latest release", and the floating image tags are left alone. |
 | Artifacts | `scripts/release-build.sh` — the same script `make release-dry-run` runs. |
 | Checksums | SHA-256 manifest, generated and verified. |
 | Publish | Creates a **draft** GitHub Release with the archives and `checksums.txt` attached. |

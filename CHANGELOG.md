@@ -303,6 +303,21 @@ actually depend on.
 
 ### Fixed
 
+- **The release workflow could not run to completion.** It referenced
+  `sigstore/cosign-installer@v4`, a version that has never existed — that
+  project publishes exact tags and no floating major — so the container job
+  of the first release candidate failed at job setup, before building
+  anything. The installer is pinned to `v4.1.2`, and
+  `scripts/check-action-refs.sh` now verifies in CI that every action
+  reference in every workflow resolves, since valid YAML naming a
+  nonexistent action version passes both linting and review.
+
+- **Release candidates are marked as prereleases.** `gh release create` was
+  called without `--prerelease` for any tag, so publishing a
+  `v0.9.0-rc.N` draft would have made it GitHub's "Latest release". A tag
+  with a prerelease suffix now creates a prerelease, using the same test
+  that already keeps the `X.Y` and `latest` image tags from moving.
+
 - Documentation corrected against the code during the `v0.9` release gate:
   the getting-started SDK example claimed an `allow` decision where the
   default engine returns `observe_only`; the release guide still described

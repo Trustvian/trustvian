@@ -2172,6 +2172,15 @@ example whose printed decision was wrong and 31 broken links. Recommended
 first step: tag `v0.9.0-rc.1`, which exercises the whole pipeline without
 moving floating tags.
 
+That candidate was cut and **failed**: the release workflow, which had never
+run, referenced `sigstore/cosign-installer@v4` — a version that does not
+exist — and its container job died at setup. Binaries, checksums, and the
+draft release were correct; no image was published and no floating tag
+moved. The installer is now pinned to an existing release, every workflow
+action reference is checked in CI, and prerelease tags are marked as
+prereleases. `v0.9` remains release ready; the next candidate is
+`v0.9.0-rc.2`.
+
 ### Capability coverage
 
 Every capability the original scope listed, mapped to the slice that owns

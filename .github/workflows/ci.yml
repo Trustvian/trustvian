@@ -370,6 +370,29 @@ jobs:
         run: docker buildx build --platform linux/amd64 -t trustvian-collector:ci .
 
   # ---------------------------------------------------------------------
+  # Workflow action references: prove every `uses:` ref actually exists.
+  #
+  # Added after v0.9.0-rc.1 died at job setup on
+  # `sigstore/cosign-installer@v4`, a version that has never existed. The
+  # YAML was valid and actionlint was clean — only a network lookup can
+  # catch it, and the release workflow itself runs only on a tag, so this
+  # is the last place to catch it before one is created.
+  # ---------------------------------------------------------------------
+  workflow-refs:
+    name: Workflow action references
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify every action reference resolves
+        env:
+          # For the API lookups. Read-only, like the rest of this workflow.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ./scripts/check-action-refs.sh
+
+  # ---------------------------------------------------------------------
   # Reference deployment: validate that the Compose configuration parses.
   # The full smoke test builds images and is scheduled nightly instead.
   # ---------------------------------------------------------------------
