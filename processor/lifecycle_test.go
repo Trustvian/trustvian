@@ -169,8 +169,21 @@ func TestShutdownTransitionsReadinessBeforeClosingStore(t *testing.T) {
 		t.Fatalf("/readyz = %d before shutdown, want 200", code)
 	}
 
-	// Set immediately before Shutdown is called, so a prober can tell
-	// "ready before shutdown" (fine) from "ready after" (a defect).
+	// Set by the shutdown goroutine itself, immediately before it calls
+	// Shutdown, so a prober can tell "ready before shutdown" (fine) from
+	// "ready after" (a defect).
+	//
+	// Probers must sample this *before* issuing a request, not after: a
+	// probe issued while the runtime was still ready, whose response
+	// arrives after the flag flips, is a legitimate 200 and not a defect.
+	// Reading the flag after the round trip attributes such a response to
+	// the wrong side of the transition — observed once as a spurious
+	// failure under heavy machine load.
+	//
+	// A window remains between this flag being set and Shutdown reaching
+	// MarkDraining, a few instructions wide. The deterministic coverage of
+	// the draining response lives in internal/health's handler tests; this
+	// test's job is the end-to-end ordering.
 	var shutdownBegun atomic.Bool
 
 	// Several concurrent probers, started before shutdown and running
@@ -194,8 +207,9 @@ func TestShutdownTransitionsReadinessBeforeClosingStore(t *testing.T) {
 					return
 				default:
 				}
+				begun := shutdownBegun.Load()
 				code, status := probe(t, addr, "/readyz")
-				if code == http.StatusOK && shutdownBegun.Load() {
+				if code == http.StatusOK && begun {
 					sawReadyAfterShutdown.Store(true)
 					return
 				}
@@ -207,8 +221,10 @@ func TestShutdownTransitionsReadinessBeforeClosingStore(t *testing.T) {
 	}
 
 	shutdownDone := make(chan error, 1)
-	shutdownBegun.Store(true)
-	go func() { shutdownDone <- p.Shutdown(context.Background()) }()
+	go func() {
+		shutdownBegun.Store(true)
+		shutdownDone <- p.Shutdown(context.Background())
+	}()
 
 	select {
 	case err := <-shutdownDone:

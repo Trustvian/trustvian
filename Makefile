@@ -95,7 +95,7 @@ container-scan: container-build ## Scan the local container image for fixable CR
 		--input /w/image.tar --severity CRITICAL,HIGH --ignore-unfixed \
 		--exit-code 1 --scanners vuln
 
-sbom: ## Build with an SPDX SBOM attestation and extract it to dist/
+sbom: ## Build with an SPDX SBOM attestation and extract it to dist/ (needs a docker-container builder; see docs/supply-chain.md)
 	@mkdir -p dist
 	docker buildx build --platform linux/amd64 --sbom=true --provenance=mode=max \
 		--output type=oci,dest=dist/image-oci.tar -t $(IMAGE):$(IMAGE_TAG) .

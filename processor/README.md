@@ -243,11 +243,42 @@ version" (this task's own words) has no use for.
 
 ## Observability
 
-The processor tracks (in-process only, not yet exported as Collector
-metrics): total spans processed, spans that didn't map to a
-`Validate()`-passing `Event`, `Engine.Analyze` errors, and a count per
-`Decision` value. Exporting these as real Collector-convention metrics
-is future work, not required for this minimal version.
+The processor emits five OpenTelemetry metrics through the
+`MeterProvider` the Collector injects — no configuration, no vendor
+client, and nothing to turn on:
+
+| Metric | Type | Unit | Attributes |
+|---|---|---|---|
+| `trustvian.analyses` | Counter | `{analysis}` | `trustvian.outcome`: `analyzed`, `invalid_event`, `error` |
+| `trustvian.decisions` | Counter | `{decision}` | `trustvian.decision`: the six `policy.Decision` values, plus `other` |
+| `trustvian.analysis.duration` | Histogram | `s` | *(none)* |
+| `trustvian.observations` | Counter | `{observation}` | `trustvian.outcome`: `learned`, `not_eligible`, `error` |
+| `trustvian.observe.duration` | Histogram | `s` | *(none)* |
+
+Fifteen time series in total, fixed no matter how many actors or
+environments the deployment sees. Every attribute has a closed
+vocabulary whose measurement options are pre-built at construction, so
+an actor ID, trace ID, or raw error string cannot become a label even by
+mistake. Instrumentation is allocation-free on the span path.
+
+Both duration histograms carry explicit bucket boundaries spanning 1 ms
+to 10 s, because the SDK's defaults assume milliseconds while these
+instruments record seconds.
+
+**The bundled `cmd/trustvian-collector` supplies a no-op
+`MeterProvider`**, so it records these metrics and exports none of them —
+its minimal telemetry factory exists to keep the demo's dependency graph
+small, and `service.telemetry.metrics` is rejected there for the same
+reason. Build a distribution with `ocb` and `otelconftelemetry` to
+collect them for real.
+
+The in-process counters (`processed`, `invalid`, `analyzeErrors`, per
+`Decision`) remain, unexported, for tests and for the debug log line at
+shutdown.
+
+Full metric reference, the cardinality argument, what is deliberately
+*not* emitted, and the measured cost:
+[`docs/observability.md`](../docs/observability.md).
 
 ## Testing
 
@@ -262,16 +293,20 @@ since task 022 — the `policy:` configuration path: decoding a real
 policy failing `CreateTraces` outright, a configured Policy actually
 changing a real span's `trustvian.decision`, an omitted `policy:`
 preserving the pre-task default, and first-match-wins rule ordering
-surviving decode + compile.
+surviving decode + compile. Since task 043 it also covers the metrics:
+each instrument through an in-memory SDK reader, recorded attribute sets
+asserted to contain no forbidden value, the cardinality bound asserted
+exactly, a forced store error counted as a bounded category, and the
+whole span path driven concurrently under `-race`.
 
 ## Non-goals (this version)
 
 No distributed/multi-instance Trustvian server. No Kubernetes/Helm
 packaging. No new policy language, matchable condition, or dynamic
 policy reload (the configured Policy compiles once, at processor
-creation, and is fixed for the processor's lifetime). No exported
-Collector-convention metrics for the observability counters above. No
-Alert configuration (`alerts:`/`sinks:`/`webhook:` in Collector
+creation, and is fixed for the processor's lifetime). No dashboards,
+Grafana packaging, or vendor metrics client — the Collector's exporters
+already reach every backend. No Alert configuration (`alerts:`/`sinks:`/`webhook:` in Collector
 config) — a separate, future task. These match the scope boundaries in
 the core repository's
 [`docs/tasks/009-otel-collector.md`](../docs/tasks/009-otel-collector.md)

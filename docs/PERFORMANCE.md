@@ -1131,6 +1131,23 @@ sampled across a run) if it becomes a real question.
   goroutine (a timer-based flusher was considered and rejected for
   exactly that reason). Re-verified after adding it: still zero
   `go func`/goroutine spawns anywhere in non-test code.
+- The **Collector processor** is where the one exception lives, and it
+  is deliberate: the health listener added in
+  [task 042](tasks/042-runtime-health-readiness-graceful-shutdown.md)
+  runs one goroutine, serving until `Shutdown` stops it. That is the
+  entire goroutine inventory of the long-lived runtime — still zero
+  channels, zero tickers, and zero timers in non-test code across both
+  modules. `Analyze`/`Observe` remain synchronous, so the processor adds
+  no per-span goroutine either.
+- The processor's operational metrics
+  ([task 043](tasks/043-self-observability-resource-safety.md)) are
+  **allocation-free**: `BenchmarkConsumeTraces` reports the same 33
+  allocs/op and 1352 B/op as before they existed, because every
+  attribute set is pre-built at construction from a closed vocabulary
+  rather than assembled per call. With a real metrics SDK attached the
+  span path costs ~350 ns more — the SDK's own aggregation across five
+  measurements, paid only when a metrics pipeline is configured. Full
+  table in [Observability § what it costs](observability.md#what-it-costs).
 
 ## What's not benchmarked (yet)
 

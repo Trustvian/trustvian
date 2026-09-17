@@ -21,6 +21,7 @@ import (
 	"github.com/Trustvian/trustvian/config"
 
 	"trustvian-processor/internal/health"
+	"trustvian-processor/internal/metrics"
 )
 
 // Stats is a snapshot of this processor's observable counters: how
@@ -58,6 +59,12 @@ type trustvianProcessor struct {
 	// deferred cleanup alongside an explicit stop is an ordinary shape and
 	// must not double-close a connection pool.
 	closeOnce sync.Once
+
+	// metrics instruments what Trustvian uniquely knows. Built from the
+	// MeterProvider the Collector injects, so there is no global meter
+	// state and the provider's lifecycle stays with the Collector — this
+	// processor must never shut down a provider it did not create.
+	metrics *metrics.Metrics
 
 	// health is nil when no `health:` block was configured, which disables
 	// the endpoints entirely. When present it is the single source of
@@ -145,11 +152,29 @@ func newTrustvianProcessor(set component.TelemetrySettings, next consumer.Traces
 			zap.String("type", string(sc.Type)))
 	}
 
+	// The Collector always supplies a MeterProvider; a no-op one yields
+	// no-op instruments, so nothing here branches on whether metrics are
+	// "enabled". Instrumentation is a side effect, never a dependency.
+	//
+	// A construction failure is logged and the processor runs
+	// uninstrumented rather than failing to start. Instrument names here
+	// are constants, so a conformant SDK cannot reject them — but a
+	// non-conformant one must not be able to stop a security component
+	// from making decisions. metrics.Metrics's nil value records nothing
+	// and is safe to call, which is what makes degrading this cheap.
+	m, err := metrics.New(set.MeterProvider.Meter(metrics.ScopeName))
+	if err != nil {
+		m = nil
+		set.Logger.Error("trustvianprocessor: metrics unavailable; continuing uninstrumented",
+			zap.Error(err))
+	}
+
 	p := &trustvianProcessor{
 		engine:     trustvian.NewEngine(opts...),
 		next:       next,
 		logger:     set.Logger,
 		closeStore: closeStore,
+		metrics:    m,
 		decisions:  make(map[string]uint64),
 	}
 
@@ -322,28 +347,53 @@ func (p *trustvianProcessor) processSpan(ctx context.Context, resourceAttrs pcom
 	ev := EventFromSpan(resourceAttrs, span)
 	if err := ev.Validate(); err != nil {
 		p.invalid.Add(1)
+		p.metrics.RecordAnalysis(ctx, metrics.OutcomeInvalidEvent, 0)
 		p.logger.Debug("trustvianprocessor: span did not map to a valid Event",
 			zap.String("span", span.Name()), zap.Error(err))
 		return
 	}
 
+	// Measures Trustvian's own analysis only — the engine call and nothing
+	// around it. Starting the clock earlier would fold in span mapping and
+	// the Collector's own receive path, which the Collector already
+	// measures and which would make this number mean something different
+	// than its name says.
+	start := time.Now()
 	result, err := p.engine.Analyze(ctx, ev)
+	analysisDuration := time.Since(start)
+
 	if err != nil {
 		p.analyzeErrors.Add(1)
+		p.metrics.RecordAnalysis(ctx, metrics.OutcomeError, analysisDuration)
 		p.logger.Warn("trustvianprocessor: Analyze failed",
 			zap.String("span", span.Name()), zap.Error(err))
 		return
 	}
+	p.metrics.RecordAnalysis(ctx, metrics.OutcomeAnalyzed, analysisDuration)
 
 	SetAttributesFromResult(span.Attributes(), result)
 	p.recordDecision(string(result.Decision))
+	p.metrics.RecordDecision(ctx, string(result.Decision))
 
 	// Observe is always safe to call unconditionally — it is a no-op
 	// for any Decision that isn't learning-eligible (see the core
 	// repository's docs/SECURITY.md § baseline poisoning).
-	if _, err := p.engine.Observe(ctx, result); err != nil {
+	observeStart := time.Now()
+	learned, err := p.engine.Observe(ctx, result)
+	observeDuration := time.Since(observeStart)
+
+	switch {
+	case err != nil:
+		p.metrics.RecordObservation(ctx, metrics.OutcomeError, observeDuration)
 		p.logger.Warn("trustvianprocessor: Observe failed",
 			zap.String("span", span.Name()), zap.Error(err))
+	case learned:
+		p.metrics.RecordObservation(ctx, metrics.OutcomeLearned, observeDuration)
+	default:
+		// The decision was not learning-eligible. Expected and common —
+		// counted, never logged, because logging it would produce a line
+		// per blocked action.
+		p.metrics.RecordObservation(ctx, metrics.OutcomeNotEligible, observeDuration)
 	}
 }
 

@@ -1948,9 +1948,10 @@ Per-task acceptance criteria are fixed in each slice's own task file.
 **Status: IN PROGRESS.** Tasks
 [039](tasks/039-ci-quality-gate-automation.md),
 [040](tasks/040-release-artifacts-and-module-consistency.md), and
-[041](tasks/041-container-supply-chain-security.md), and
-[042](tasks/042-runtime-health-readiness-graceful-shutdown.md) are done;
-043–045 are named below and not yet task-filed.
+[041](tasks/041-container-supply-chain-security.md),
+[042](tasks/042-runtime-health-readiness-graceful-shutdown.md), and
+[043](tasks/043-self-observability-resource-safety.md) are done; 044–045
+are named below and not yet task-filed.
 
 **Objective.** Production engineering hygiene, so `v1.0` is a real
 release, not just a version number bump.
@@ -1976,8 +1977,8 @@ nobody can review.
 | [040](tasks/040-release-artifacts-and-module-consistency.md) | Release Artifacts & Module Consistency | **DONE** |
 | [041](tasks/041-container-supply-chain-security.md) | Container Supply Chain & Provenance | **DONE** |
 | [042](tasks/042-runtime-health-readiness-graceful-shutdown.md) | Runtime Health, Readiness & Graceful Shutdown | **DONE** |
-| 043 | Self-Observability & Resource Safety | Next — not task-filed |
-| 044 | Operations: Backup, Restore & Upgrade | Planned |
+| [043](tasks/043-self-observability-resource-safety.md) | Self-Observability & Resource Safety | **DONE** |
+| 044 | Operations: Backup, Restore & Upgrade | Next — not task-filed |
 | 045 | `v0.9` Stabilization & Release Gate | Planned |
 
 **039 — CI & Quality Gate Automation — is done.** Every gate this project
@@ -2075,13 +2076,38 @@ No Docker `HEALTHCHECK` was added: the runtime image has no shell by
 design, and adding one to satisfy Docker would discard a deliberate `041`
 security property. External probes are the documented mechanism.
 
-**043 — Self-Observability & Resource Safety.** Trustvian reporting
-operational telemetry about *itself* — analysis and decision counts,
-error and latency signals, storage health — deliberately distinct from
-the OTel *input* adapter, and deliberately free of high-cardinality actor
-identifiers. Together with the bounded-resource review (pools, goroutines,
-timeouts) that makes those numbers meaningful. Depends on 042, whose
-health model defines what "unhealthy" means.
+**043 — Self-Observability & Resource Safety — is done.** The Collector
+processor now emits five OpenTelemetry metrics through the `MeterProvider`
+the Collector already injects: analysis count by outcome, decision count,
+analysis latency, observation count by outcome, and observe latency. No
+configuration, no vendor client, and no second telemetry backend.
+
+Three properties define the shape of it. **Cardinality is a hard bound,
+enforced structurally** — 15 time series total, fixed regardless of actor
+count, because every attribute vocabulary is closed and its measurement
+options are pre-built at construction, so a value with no entry has no
+option to record with. **Only what Trustvian uniquely knows is
+instrumented** — the Collector already counts spans accepted, refused, and
+dropped, and a parallel Trustvian span counter would just be a second,
+subtly different number for the same thing. And **the two telemetry
+streams never meet**: operational metrics describe Trustvian, behavioral
+telemetry describes its subjects, and nothing routes the first into the
+second.
+
+Instrumentation lives in the processor, never the engine, so the core's
+zero-OTel dependency graph survives — and it is allocation-free, with the
+span path showing the same 33 allocs/op as before it existed.
+
+The bounded-resource audit that makes those numbers meaningful came with
+it, and its most useful result is how little there is: non-test code
+holds one goroutine (task 042's health listener), zero channels, zero
+tickers, and zero timers. The pgx pool is inherently bounded and gained
+no new configuration, since pgx already accepts those knobs in the DSN.
+The in-memory store stays deliberately unbounded in actor count — evicting
+a baseline would silently reset an actor to "never seen," which is a
+change to behavioral semantics wearing the costume of a memory
+optimization — and its growth characteristics are documented instead. See
+[observability.md](observability.md).
 
 **044 — Operations: Backup, Restore & Upgrade.** What an operator must do
 to keep learned behavioral state safe: what to back up, what consistency
