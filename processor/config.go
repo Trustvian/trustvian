@@ -2,6 +2,7 @@ package trustvianprocessor
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/go-viper/mapstructure/v2"
 
@@ -50,6 +51,59 @@ import (
 type Config struct {
 	Policy  map[string]any `mapstructure:"policy,omitempty"`
 	Storage map[string]any `mapstructure:"storage,omitempty"`
+	Health  *HealthConfig  `mapstructure:"health,omitempty"`
+}
+
+// HealthConfig enables the runtime's liveness and readiness endpoints.
+//
+// A pointer, so its absence is distinguishable from a zero value: omitting
+// the `health:` block disables the listener entirely and leaves every
+// pre-existing Collector config behaving exactly as before.
+//
+// Unlike Policy and Storage above, this decodes directly through
+// `mapstructure` tags rather than via a generic map. There is no canonical
+// Trustvian config type to reuse here — health is a property of *this*
+// runtime, not of the engine — so there is nothing to defer to, and the
+// indirection those two fields need would buy nothing.
+type HealthConfig struct {
+	// Endpoint is the address the health listener binds. Defaults to
+	// defaultHealthEndpoint.
+	//
+	// Bind to a loopback or internal address in deployments where probes
+	// come from the same host; the endpoints are unauthenticated by design
+	// (see internal/health), so network placement is the access control.
+	Endpoint string `mapstructure:"endpoint,omitempty"`
+
+	// ReadinessTimeout bounds each readiness probe of the configured store.
+	// Defaults to defaultReadinessTimeout.
+	//
+	// Exists because a wedged database must not hold /readyz open: without
+	// a bound, the endpoint an operator uses to detect the problem becomes
+	// the second thing the problem breaks.
+	ReadinessTimeout time.Duration `mapstructure:"readiness_timeout,omitempty"`
+}
+
+const (
+	// 13133 is the port the OpenTelemetry Collector ecosystem conventionally
+	// uses for health endpoints, so it is the least surprising choice for an
+	// operator already running Collectors.
+	defaultHealthEndpoint = "0.0.0.0:13133"
+
+	// Long enough to absorb a slow round trip to a healthy database, short
+	// enough that a probe answers well within a typical supervisor interval.
+	defaultReadinessTimeout = 2 * time.Second
+)
+
+// withDefaults returns the config with unset fields filled in. Returns a
+// value rather than mutating, so the decoded config stays untouched.
+func (h HealthConfig) withDefaults() HealthConfig {
+	if h.Endpoint == "" {
+		h.Endpoint = defaultHealthEndpoint
+	}
+	if h.ReadinessTimeout <= 0 {
+		h.ReadinessTimeout = defaultReadinessTimeout
+	}
+	return h
 }
 
 // decodePolicy converts the generic map Collector's decoder produced

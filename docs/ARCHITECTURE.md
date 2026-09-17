@@ -410,6 +410,49 @@ reaches storage only through the public `config.StorageConfig` /
 deployment that inverted any of this would be a design regression, not a
 packaging detail.
 
+## Runtime lifecycle and health
+
+The Collector processor is the long-lived runtime, and its lifecycle is
+owned by the Collector framework rather than by Trustvian. That division is
+deliberate and worth stating, because it determines what Trustvian must
+*not* build:
+
+| Concern | Owner |
+|---|---|
+| `SIGINT`/`SIGTERM` handling | Collector framework (`otelcol.Collector.Run`) |
+| Stop accepting new work | Collector framework — it shuts down receivers before processors |
+| Drain in-flight work | Collector framework — topological shutdown order exists so each component drains to its consumer |
+| Liveness / readiness semantics | Trustvian |
+| Releasing the Store | Trustvian (`Shutdown`) |
+
+Adding signal handling or a drain mechanism to Trustvian would create a
+second shutdown owner competing with the framework's, so it does not.
+
+**Liveness and readiness are separate questions**, modelled by a small
+transport-agnostic type that owns no HTTP:
+
+```text
+health.Health              starting → running → draining
+  ├─ Live()                false only while draining
+  └─ Ready(ctx)            consults the store, bounded by a timeout
+        ▲
+        └─ health.Handler  the only HTTP-aware piece
+```
+
+Liveness does **not** consult the store. A supervisor that restarts a
+process because its database is unreachable produces a restart storm that
+cannot help, since the database is not in the process. Readiness does
+consult it: when PostgreSQL is configured and unusable, readiness is false —
+never a silent fall back to non-durable storage.
+
+Readiness reaches the store through an **optional, type-asserted
+capability**, the same idiom as `store.Freezer` and `io.Closer`: the
+PostgreSQL implementation has a `Ping` method, and the consumer declares the
+one-method interface itself. Nothing is added to the `Store` port, and no
+public API is involved — which is what lets the processor's separate module
+use it despite being unable to import `internal/store`. A store with no
+external dependency implements nothing and is ready by construction.
+
 ## Relationship to Trustvian Control/Cloud
 
 Nothing in this repository implements Trustvian Control or Trustvian

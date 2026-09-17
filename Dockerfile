@@ -75,8 +75,16 @@ COPY --from=build /out/trustvian-collector /usr/local/bin/trustvian-collector
 # fewer step to get wrong.
 USER nonroot:nonroot
 
-# OTLP/gRPC and OTLP/HTTP. Documentation only; publishing ports is the
-# deployment's job. Both are above 1024, so no capability is needed.
-EXPOSE 4317 4318
+# OTLP/gRPC, OTLP/HTTP, and the operational health endpoints (/livez,
+# /readyz) when a `health:` block is configured. Documentation only;
+# publishing ports is the deployment's job. All are above 1024, so no
+# capability is needed.
+#
+# No HEALTHCHECK: this image has no shell and no curl by design, and a
+# Docker healthcheck needs an executable inside the container. Adding either
+# would discard a deliberate security property to satisfy a convenience.
+# External HTTP probes against /readyz are the intended mechanism — see
+# docs/supply-chain.md § Health probes.
+EXPOSE 4317 4318 13133
 
 ENTRYPOINT ["/usr/local/bin/trustvian-collector"]
