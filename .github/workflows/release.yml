@@ -231,15 +231,23 @@ jobs:
       packages: write
       id-token: write
 
-    env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/trustvian-collector
-
     steps:
       - uses: actions/checkout@v7
         with:
           # The tagged commit, exactly as the release job used. The image
           # and the binaries are built from the same source.
           ref: ${{ github.ref }}
+
+      - name: Resolve the image repository
+        # One source for every step below — build, scan, push, sign, retag —
+        # so it is not possible to scan one repository and sign another.
+        #
+        # Not `ghcr.io/${{ github.repository_owner }}/...`: that is the
+        # organization's display name, `Trustvian`, and an OCI repository
+        # must be lowercase. v0.9.0-rc.2 failed on exactly that, at the first
+        # container step. scripts/image-name.sh normalizes and validates it,
+        # and scripts/test-image-name.sh keeps it that way.
+        run: echo "IMAGE=$(./scripts/image-name.sh)" >> "$GITHUB_ENV"
 
       - uses: docker/setup-buildx-action@v4
 

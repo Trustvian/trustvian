@@ -316,6 +316,16 @@ actually depend on.
   — an earlier API-based version reported a valid action as nonexistent
   when the lookup itself failed. The checker has its own tests.
 
+- **Container image references are normalized to lowercase.** The release
+  workflow built its image name from the GitHub organization's display name
+  (`Trustvian`), and an OCI repository name must be lowercase, so every
+  container step failed on the first one that ran. `scripts/image-name.sh`
+  is now the one source for `ghcr.io/trustvian/trustvian-collector`, shared
+  by the release workflow, CI, and the Makefile, so the scanned, pushed,
+  signed, and attested repository cannot diverge. CI now builds the same
+  reference a release does, which is what makes the expression testable
+  before a tag exists.
+
 - **Release candidates are marked as prereleases.** `gh release create` was
   called without `--prerelease` for any tag, so publishing a
   `v0.9.0-rc.N` draft would have made it GitHub's "Latest release". A tag
