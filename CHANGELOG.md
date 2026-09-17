@@ -143,10 +143,27 @@ actually depend on.
   unfixable upstream issue would prevent shipping our own security fixes.
   Policy and every live exception: [`docs/supply-chain.md`](docs/supply-chain.md).
 
-- **`golang.org/x/crypto` upgraded to `v0.56.0`** in the processor module,
-  clearing two advisories (`GO-2026-6355`, `GO-2026-6354`). A third
-  (`GO-2026-5932`) has no upstream fix and is not reachable from Trustvian
-  code; it is recorded as a documented exception with a review condition.
+- **Affected dependencies updated to clear reachable vulnerability
+  findings** surfaced by the new supply-chain gate. `golang.org/x/text` moves
+  to `v0.41.0` in the root module, resolving `GO-2026-5970`, which was
+  reachable from `postgres.NewStore` through pgx's connection setup. The
+  latest `pgx/v5` requires the affected version, so raising the floor
+  directly was the only available fix. `golang.org/x/crypto` moves to
+  `v0.56.0` in the processor module, clearing two further advisories.
+  `golang.org/x/sync` follows to `v0.22.0` as a transitive requirement.
+
+  One finding remains as a documented exception: `GO-2026-5932` in
+  `golang.org/x/crypto` has no upstream fix and is not reachable from
+  Trustvian code. It is recorded with its scope and review condition in
+  [`docs/supply-chain.md`](docs/supply-chain.md); no gate was weakened and
+  no blanket ignore was added.
+
+- **Vulnerability scanning resolves dependencies the way a consumer does.**
+  Every scan runs with the Go workspace disabled, for all three modules. A
+  workspace raises each module's dependency versions to satisfy the others,
+  which can mask a vulnerability that a consumer of one module alone is
+  genuinely exposed to — as happened here. The examples module is now
+  scanned as well.
 
 - **Publishing permissions are scoped to the publishing job.**
   `packages: write` and `id-token: write` exist only in the container job of

@@ -73,9 +73,17 @@ POSTGRES_DSN ?= postgres://trustvian:change-me@localhost:5433/trustvian?sslmode=
 IMAGE        ?= ghcr.io/trustvian/trustvian-collector
 IMAGE_TAG    ?= local
 
-vulncheck: ## Scan Go dependencies for reachable vulnerabilities (root + processor)
-	$(GO) run golang.org/x/vuln/cmd/govulncheck@latest ./...
+# GOWORK=off on every module, including the root.
+#
+# This matters more than it looks. go.work is gitignored, so a developer has
+# one and CI does not. With the workspace active, MVS raises the root
+# module's dependency versions to satisfy every workspace member — which
+# silently masked a reachable vulnerability in the root module that CI then
+# reported. Scanning the way CI resolves is the only result worth trusting.
+vulncheck: ## Scan every module for reachable vulnerabilities, exactly as CI resolves them
+	GOWORK=off $(GO) run golang.org/x/vuln/cmd/govulncheck@latest ./...
 	cd processor && GOWORK=off $(GO) run golang.org/x/vuln/cmd/govulncheck@latest ./...
+	cd examples  && GOWORK=off $(GO) run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
 container-build: ## Build the official container image locally — nothing is pushed
 	docker buildx build --platform linux/amd64 --load -t $(IMAGE):$(IMAGE_TAG) .

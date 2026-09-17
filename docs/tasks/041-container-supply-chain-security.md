@@ -264,3 +264,55 @@ releases exist, without changing the default.
     `GOWORK=off`, examples, PostgreSQL, Compose.
 15. No image published, no tag created, no release created; documentation
     claims no artifact that does not yet exist.
+
+
+## Corrective pass (PR #53)
+
+CI failed the root module's `Go vulnerability scan` step while the same
+command passed locally:
+
+```
+GO-2026-5970  Infinite loop on invalid input in golang.org/x/text
+  Found in: golang.org/x/text@v0.29.0   Fixed in: v0.39.0
+  postgres.NewStore → pgxpool.NewWithConfig → norm.Form.{Properties,Span,Transform}
+```
+
+**Why local and CI disagreed.** `go.work` is git-ignored. With the
+workspace active, minimal version selection raises the root module's
+dependencies to satisfy every workspace member, so the root module
+inherited `x/text v0.41.0` from the processor and reported clean. Without
+the workspace — which is CI, and which is also every consumer of this
+module — the root resolves its own `v0.29.0`, where the vulnerability is
+both present and reachable.
+
+This slice's original verification was therefore wrong about the root
+module: it was run with a workspace that a consumer does not have.
+
+**Resolution, not suppression.** `pgx/v5 v5.11.0` is the latest release and
+requires `x/text v0.29.0`, so updating the owning direct dependency could
+not resolve this — the case where an explicit indirect requirement is the
+only option. The root module now requires `golang.org/x/text v0.41.0`,
+chosen over the minimum fix `v0.39.0` because the processor already used
+`v0.41.0`: one version across the repository means workspace and
+module-mode resolution agree, so this particular masking cannot recur.
+`golang.org/x/sync` moved `v0.17.0` → `v0.22.0` as a transitive
+requirement of the newer `x/text`. No other dependency changed, and no gate
+was weakened.
+
+**The class of error is fixed too.** Every `govulncheck` invocation, in CI
+and in `make vulncheck`, now runs with `GOWORK=off` for all three modules —
+so a local scan reports what a consumer is exposed to. The examples module
+was also never scanned; it is now, and tidying it after the root change was
+itself necessary, which is a second reason not to assume the root result
+represents nested modules.
+
+Also in this pass: `docker/setup-buildx-action` v3 → v4 and
+`docker/login-action` v3 → v4 (both now node24, clearing the deprecated
+Node 20 runtime warning), `sigstore/cosign-installer` v3 → v4, and
+`aquasecurity/trivy-action` 0.28.0 → v0.36.0. Each input this workflow
+passes was verified to still exist before bumping.
+
+Worth recording: the **container image was never affected**. It is built
+from the processor module, which already resolved `x/text v0.41.0`. The
+vulnerability was in the root module's build list — the exposure was to
+consumers of the Go library and the CLI, not to the published image.

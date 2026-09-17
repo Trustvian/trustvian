@@ -153,16 +153,43 @@ Why these thresholds:
   findings are still reported; they are just not a gate.
 - **`MEDIUM`/`LOW` are reported, not gated**, to keep the gate actionable.
 
+### Scanning resolves modules the way a consumer does
+
+Every `govulncheck` invocation — in CI and in `make vulncheck` — runs with
+`GOWORK=off`, for all three modules.
+
+This is not a detail. `go.work` is git-ignored, so it exists on developer
+machines and not in CI. With a workspace active, Go's minimal version
+selection raises each module's dependency versions to satisfy *every*
+workspace member, so the root module inherits versions the processor
+requires. That masked a real finding: the root module resolved
+`golang.org/x/text` at `v0.29.0` on its own — reachable, and vulnerable —
+while the workspace silently upgraded it to `v0.41.0` and reported clean.
+
+The module's own build list is what a consumer gets, so it is the only one
+worth scanning.
+
 ### Current exceptions
 
 | Finding | Scope | Reason | Review condition |
 |---|---|---|---|
 | `GO-2026-5932` | `golang.org/x/crypto`, indirect dependency of the `processor` module | No fixed version exists upstream, and the vulnerability is not reachable from Trustvian code (`govulncheck` reports 0 reachable) | Whenever a fixed `x/crypto` is released, or if the symbol becomes reachable |
 
-Two sibling advisories in the same module (`GO-2026-6355`,
-`GO-2026-6354`) were cleared by upgrading `golang.org/x/crypto` to
-`v0.56.0`. Exceptions are recorded per-finding with a review condition;
-there are no time-unbounded blanket ignores.
+Resolved rather than excepted:
+
+- `GO-2026-6355` and `GO-2026-6354` in `golang.org/x/crypto` — cleared by
+  upgrading to `v0.56.0`.
+- `GO-2026-5970` in `golang.org/x/text` (infinite loop on invalid input),
+  reachable in the **root** module through
+  `postgres.NewStore` → `pgxpool.NewWithConfig` → `norm.Form.*` — cleared by
+  raising the floor to `v0.41.0`. `pgx/v5 v5.11.0` is the latest release and
+  requires the vulnerable `v0.29.0`, so upgrading the owning direct
+  dependency could not fix this; an explicit indirect requirement was the
+  only available resolution.
+
+Exceptions are recorded per-finding with a review condition; there are no
+time-unbounded blanket ignores, and a finding is excepted only when no
+compatible fix exists.
 
 ## Signing and attestations
 
