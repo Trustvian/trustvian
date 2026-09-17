@@ -129,12 +129,15 @@ validated and whose gates already passed — it does not re-establish trust.
 tag push (v*)
   ├─ release job    validate SemVer → verify tagged commit → gates
   │                 → binaries + checksums → draft GitHub Release
-  └─ container job  build → scan → gate → push → sign + attest
+  └─ container job  build → scan → gate → push vX.Y.Z (+ SBOM, provenance)
+                    → sign digest → move X.Y and latest to that digest
 ```
 
 Scanning happens **before** publishing, so a known-bad image is never
 pushed. Signing follows publishing because a signature is made over a
-digest, which exists only once the image is in the registry.
+digest, which exists only once the image is in the registry. The floating
+tags move last, by digest and without a rebuild, so they only ever point at
+a signed image.
 
 ### What the scan covers
 
@@ -152,6 +155,13 @@ The GitHub Release is created as a **draft**. If the container job fails
 after the binary job succeeded, the release stays a draft, so an incomplete
 release is never presented as finished — publication is a human action
 taken after seeing every job's result.
+
+The registry is different: an image is public the moment it is pushed. The
+one window that matters is between pushing `vX.Y.Z` and signing it. If
+signing fails there, the immutable tag exists unsigned, but `X.Y` and
+`latest` have **not** moved, so no one following a floating tag receives an
+unsigned image. Recovery for this and every other partial state is in the
+[release guide](release-guide.md#the-release-is-not-atomic).
 
 ## Vulnerability policy
 

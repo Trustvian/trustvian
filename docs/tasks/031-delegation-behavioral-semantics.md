@@ -5,7 +5,7 @@
 independent of [030](030-approval-aware-policy-semantics.md) — proven,
 not just asserted, by
 `TestAnalyzeDelegationApprovalIndependence` · **Blocks:**
-[032](#roadmap-successors-illustrative) (Agent Security Scenario
+[032](../ROADMAP.md) (Agent Security Scenario
 Validation combines this task's signal with 030's policy mechanism).
 
 ## Objective

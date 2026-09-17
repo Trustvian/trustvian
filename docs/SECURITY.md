@@ -14,6 +14,9 @@ about securing the transport or storage layers around it (those are
 explicitly out of core scope — see
 [`docs/ARCHITECTURE.md`](ARCHITECTURE.md)).
 
+**Reporting a vulnerability:** privately, never in a public issue — see
+[`.github/SECURITY.md`](../.github/SECURITY.md).
+
 ## Test index
 
 Every threat below is backed by a specific, named test, not just a
@@ -38,6 +41,8 @@ here, not moved or rewritten.
 | Anomaly configuration-input validation — weight/threshold ranges, negative-into-`uint64` rejection, backward-compatible zero-value default (`v0.7` task 033) | `TestValidateAnomalyConfigRejectsInvalidWeight`, `TestValidateAnomalyConfigRejectsInvalidPointerWeight`, `TestValidateAnomalyConfigRejectsInvalidZThreshold`, `TestValidateAnomalyConfigAcceptsZeroMinObservations`, `TestValidateAnomalyConfigRejectsInvalidSensitiveTargetFloor` in [`config/anomaly_test.go`](../config/anomaly_test.go); `TestCompileAnomalyZeroValueMatchesDefaultConfig`, `TestCompileAnomalyTranslatesEveryField` in [`config/anomaly_compile_test.go`](../config/anomaly_compile_test.go); `TestLoadAnomalyRejectsNegativeIntoUnsignedField`, `TestLoadAnomalyRejectsUnknownField`, `FuzzLoadAnomaly` in [`config/anomaly_load_test.go`](../config/anomaly_load_test.go) |
 | Storage configuration & persistence contract — fail-closed on unbuildable store, no implicit backend, no lost updates under concurrency, load-failure propagation (`v0.8` task 034) | `TestStoreContract` (incl. its same-key-concurrency guarantee), `TestStoreContractImplementationsAgreeOnLogicalState` in [`internal/store/contract_test.go`](../internal/store/contract_test.go); `TestCompileStoragePostgresFailsClosedNeverFallsBack`, `TestCompileStorageInvalidConfigReturnsNilStore`, `TestCompileStorageFilePropagatesLoadFailure`, `TestValidateStorageConfigRejectsMissingType`, `FuzzLoadStorage` in [`config/storage_test.go`](../config/storage_test.go); `TestRunAnalyzeUnimplementedStorageBackendFailsClosed`, `TestRunAnalyzeInvalidStorageConfigFailsClosed`, `TestBaselineBuildThenAnalyzePersistsAcrossCommands` in [`cmd/trustvian/main_test.go`](../cmd/trustvian/main_test.go) |
 | Alert configuration-input validation | `TestValidateAlertConfigRejectsUnsupportedVersion`, `TestValidateAlertConfigRejectsInvalidSeverity`, `TestValidateAlertConfigRejectsInvalidDecision`, `TestValidateAlertConfigRejectsInvalidRiskLevel`, `TestValidateAlertConfigRejectsInvalidActorType`, `TestValidateAlertConfigRejectsInvalidTargetCategory`, `TestValidateAlertConfigRejectsInvalidMinAnomalyScore`, `TestValidateAlertConfigRejectsInvalidMaxTrustScore`, `TestValidateAlertConfigRejectsDuplicateRuleName`, `TestValidateAlertConfigRejectsEmptyRuleName`, `TestValidateAlertConfigRejectsTooManyRules` in [`config/alert_test.go`](../config/alert_test.go); `TestLoadAlertsRejectsUnknownField`, `TestLoadAlertsRejectsDuplicateYAMLKeys`, `TestLoadAlertsFileRejectsOversizedFile`, `TestLoadAlertsRejectsEmptyInput`, `FuzzLoadAlerts` in [`config/alert_load_test.go`](../config/alert_load_test.go) |
+| Runtime health endpoints — no information leak, liveness independent of the store, bounded probes, no fallback (`v0.9` task 042) | `TestHandlerLeaksNothing`, `TestFailingProbeDoesNotAffectLiveness`, `TestReadyIsBoundedByProbeTimeout`, `TestDrainingIsNeitherLiveNorReady` in [`processor/internal/health/`](../processor/internal/health/); `TestNoHealthConfigServesNothing`, `TestShutdownTransitionsReadinessBeforeClosingStore`, `TestDoubleShutdownIsSafe` in [`processor/lifecycle_test.go`](../processor/lifecycle_test.go); `TestPingReportsDatabaseUsability` in [`internal/store/postgres/hardening_test.go`](../internal/store/postgres/hardening_test.go) |
+| Operational metrics privacy and cardinality (`v0.9` task 043) | `TestNoForbiddenAttributes`, `TestUnknownDecisionIsFolded` in [`processor/internal/metrics/metrics_test.go`](../processor/internal/metrics/metrics_test.go); `TestObserveErrorRecordsBoundedCategory`, `TestMetricsUnderConcurrentSpans` in [`processor/metrics_test.go`](../processor/metrics_test.go) |
 | Backup and restore — no credential exposure, corrupt-backup rejection, never overwriting a live database, failed restores quarantined, behavioral recovery, upgrade without state reinterpretation (`v0.9` task 044) | `TestBackupScriptRefusesUnsafeInvocations`, `TestRestoreScriptRefusesUnverifiableBackups`, `TestBackupRestorePreservesLearnedBehavior`, `TestBackupDuringConcurrentWritesIsConsistent`, `TestBackupRestoreFailClosed`, `TestUpgradeFromPreviousReleasePreservesLearnedState` in [`scripts/backup_restore_test.go`](../scripts/backup_restore_test.go) |
 | Sequence state (memory bounds, ordering, cross-actor isolation) | `TestBaselineObservePredecessorCountsIsBounded`, `TestBaselineObserveOutOfOrderEventDoesNotRecordOrCorruptTransition`, `TestBaselineObservePredecessorCountsIsImmutable` in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestInMemoryObserveConcurrentTransitionTracking` in [`internal/store/store_test.go`](../internal/store/store_test.go); `TestDefaultConfigTransitionWeightIsOptIn`, `TestScoreTransitionDeviation` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeTransitionDeviationEndToEnd` in [`engine_test.go`](../engine_test.go) |
 | Transition rarity — cold start, counter overflow, poisoning, actor isolation (`v0.6` task 026) | `TestBaselineObserveManyDistinctTransitionsStayBounded`, `TestBaselineObserveOutgoingTransitionTotalIsImmutable` in [`internal/baseline/baseline_test.go`](../internal/baseline/baseline_test.go); `TestScoreTransitionRarityColdStart`, `TestScoreTransitionRarityNeverExceedsBounds`, `TestDefaultConfigTransitionRarityWeightIsOptIn` in [`internal/anomaly/anomaly_test.go`](../internal/anomaly/anomaly_test.go); `TestAnalyzeTransitionRarityCrossActorIsolation`, `TestAnalyzeTransitionRarityScoresBeforeLearning`, `TestObserveTransitionRarityLearnsOnlyFromEligibleDecisions` in [`engine_test.go`](../engine_test.go) |
@@ -1206,6 +1211,58 @@ that gap — every row in the table above, including the combined
 scenario, is demonstrable through public API alone. See
 [examples/ai-agent-security](../examples/ai-agent-security/)'s own
 README for the worked example.
+
+### Runtime health endpoints
+
+**Threat:** an operational endpoint becomes an information leak or a false
+signal — a probe response that reveals the DSN, database host, SQL errors,
+or behavioral data to anyone who can reach the port; or a liveness check
+that fails whenever PostgreSQL does, so a supervisor restarts healthy
+processes in a loop and the outage is masked as a crash.
+
+**Status: implemented** ([task
+042](tasks/042-runtime-health-readiness-graceful-shutdown.md)).
+
+- **Near-zero information content.** `/livez` and `/readyz` return a status
+  string and nothing else — no DSN, hostname, error text, configuration, or
+  actor data. The endpoints are unauthenticated by design, so network
+  placement is the access control: the listener is opt-in (no `health:`
+  block, no listener) and the reference deployment binds it to loopback.
+  Why a probe failed goes to the runtime's logs, not the response.
+  `TestHandlerLeaksNothing`, `TestNoHealthConfigServesNothing`.
+- **Liveness never consults the store.** A PostgreSQL outage makes the
+  runtime not ready, never not live. `TestFailingProbeDoesNotAffectLiveness`.
+- **Readiness never implies a fallback.** PostgreSQL configured and
+  unusable reports not ready; the store is never substituted.
+  `TestPingReportsDatabaseUsability` against a real server, and the recovery
+  drill's outage step on the running Collector.
+- **Bounded.** A wedged database cannot hold a probe open past its
+  timeout, and the listener has a header-read timeout.
+  `TestReadyIsBoundedByProbeTimeout`.
+
+### Operational metrics privacy
+
+**Threat:** self-observability exports what Trustvian was built to keep
+bounded — actor identities, trace IDs, raw error text (which can contain
+SQL or connection details), or behavioral payload as metric attributes —
+into a telemetry backend with different access controls; or an unbounded
+label set turns the metrics pipeline into a resource-exhaustion vector
+driven by attacker-chosen actor IDs.
+
+**Status: implemented** ([task
+043](tasks/043-self-observability-resource-safety.md)).
+
+- **Closed vocabularies only.** Two attribute keys exist
+  (`trustvian.outcome`, `trustvian.decision`), each with a fixed value set;
+  an unrecognized decision records as `other`. Total cardinality is 15 time
+  series regardless of traffic. `TestNoForbiddenAttributes`,
+  `TestUnknownDecisionIsFolded`, `TestObserveErrorRecordsBoundedCategory`.
+- **No subject data.** Actor IDs, trace IDs, raw errors, DSNs, and
+  behavioral payload cannot become attributes — asserted against recorded
+  telemetry, not documentation.
+- **One-way.** Operational metrics are recorded into the Collector's
+  `MeterProvider` and never read back into an `Engine`; exporter failure
+  cannot change a decision. See [observability.md](observability.md).
 
 ### Backup and restore
 

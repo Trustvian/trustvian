@@ -1,6 +1,6 @@
 # Expensive verification that is valuable as a trend but wasteful on every
-# commit: the full PostgreSQL stress tier and the reference deployment's
-# end-to-end smoke test.
+# commit: the full PostgreSQL stress tier with database-restart durability,
+# the reference deployment's end-to-end smoke test, and its recovery drill.
 #
 # The split is deliberate. Correctness gates belong on pull requests, where
 # a failure means the change is wrong. These tiers take minutes and involve
@@ -62,6 +62,19 @@ jobs:
         env:
           TRUSTVIAN_TEST_POSTGRES_DSN: postgres://trustvian:trustvian@localhost:5432/trustvian_test?sslmode=disable
         run: go test -race ./...
+
+      - name: Database restart durability
+        # Restarts the PostgreSQL server itself, so it runs alone and last:
+        # a restart would disturb every other test's connections (see
+        # docs/storage-guide.md § Database restart durability). The test
+        # verifies the restart really happened via pg_postmaster_start_time,
+        # so a restart command that silently does nothing fails it.
+        #
+        # Until task 045 this ran in no workflow at all — only by hand.
+        env:
+          TRUSTVIAN_TEST_POSTGRES_DSN: postgres://trustvian:trustvian@localhost:5432/trustvian_test?sslmode=disable
+          TRUSTVIAN_TEST_POSTGRES_RESTART_CMD: docker restart ${{ job.services.postgres.id }}
+        run: go test -count=1 -run TestDatabaseRestartPreservesCommittedBaseline ./internal/store/postgres/
 
   # ---------------------------------------------------------------------
   # The reference deployment, end to end: builds images, starts the stack,

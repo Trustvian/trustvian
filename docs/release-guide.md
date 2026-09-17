@@ -127,10 +127,26 @@ after a tag is public. CI also runs this on every push.
 make check                 # gofmt, vet, build, race
 make check-modules         # module publication invariants
 make integration-postgres  # PostgreSQL integration and stress tiers
+make vulncheck             # reachable vulnerabilities, all modules
 ```
 
-The release workflow re-runs all of these against the tagged commit, so
-this step is for fast feedback rather than trust.
+Then confirm, **on the exact commit you will tag**:
+
+- **CI is green** — every job in `ci.yml`, including *Backup, restore &
+  upgrade*, which is the only automated proof of the upgrade path from the
+  previous release.
+- **Nightly is green** — the PostgreSQL stress tier with database-restart
+  durability, the reference deployment smoke test, and the recovery drill.
+  The scheduled run covers `main`; if the release commit is newer than the
+  last run, start one from the Actions tab (*Nightly → Run workflow*).
+- **`make recovery-drill`** passes locally if Docker is available — it is
+  the end-to-end proof that a backup of this release restores and serves.
+
+The release workflow re-runs format, vet, tests, race, PostgreSQL
+integration, the processor module, module consistency, and the
+vulnerability scan against the tagged commit. It does **not** re-run the
+backup/restore/upgrade tier, the examples module, or the nightly tiers,
+which is why this step asks for green runs of those on the same commit.
 
 ### 3. Prepare the notes
 
@@ -170,23 +186,58 @@ Pushing the tag triggers `.github/workflows/release.yml`.
 | Trigger | Push of a tag matching `v*`. Never a branch push. |
 | Tag validation | Rejects non-SemVer tags before building anything. |
 | Source | Checks out `github.ref` — the tagged commit — and **verifies** `HEAD` equals the commit the tag points at. |
-| Gates | Re-runs module consistency, format, vet, tests, race, PostgreSQL integration, and the processor module with `GOWORK=off`, against the tagged source. |
+| Gates | Re-runs module consistency, format, vet, tests, race, PostgreSQL integration (`-short`), the processor module with `GOWORK=off`, and `govulncheck` for the root and processor modules, against the tagged source. |
 | Artifacts | `scripts/release-build.sh` — the same script `make release-dry-run` runs. |
 | Checksums | SHA-256 manifest, generated and verified. |
 | Publish | Creates a **draft** GitHub Release with the archives and `checksums.txt` attached. |
+| Container | After the release job succeeds: build → Trivy scan (gate) → push `vX.Y.Z` → keyless Cosign signature → move `X.Y` and `latest` to the signed digest. See [supply-chain.md](supply-chain.md). |
 
 The release is a draft on purpose: a human reviews the notes against the
 changelog and presses publish. That is the last cheap moment to catch a
 wrong version or an incomplete changelog.
 
 If any target fails to build, the script exits non-zero and the publish
-step never runs — there is no partial release.
+step never runs — no draft is created for a partial binary matrix.
 
 **Permissions.** `ci.yml` and `nightly.yml` are `contents: read`. The
 release job takes `contents: write`, which is what creating a release
-requires, and nothing more — no `packages: write`, no `id-token: write`.
-Container publishing and signing are a later milestone slice and will bring
-their own scopes when they arrive.
+requires, and nothing more. Only the container job takes `packages: write`
+(to push to GHCR, with the workflow-scoped token) and `id-token: write` (for
+keyless signing). No workflow uses `pull_request_target`.
+
+### The release is not atomic
+
+Two jobs publish to two places, so a failure can leave one half done. None
+of these states is presented to users as a finished release, because the
+GitHub Release stays a draft until a maintainer publishes it — but the
+registry is public as soon as an image is pushed.
+
+| Failure | What exists afterwards | Recovery |
+|---|---|---|
+| A gate or binary build fails | Nothing | Fix on a new commit; tag it as the next patch version |
+| Container scan fails | Draft release; **no image** | Fix (usually a base-image or dependency bump) and release the next patch version. Delete the draft. |
+| Push fails | Draft release; no complete image | *Re-run failed jobs* on the workflow run — the build is repeatable from the same tag |
+| **Signing fails after push** | Draft release; `vX.Y.Z` pushed **unsigned**; `X.Y` and `latest` **not moved** | *Re-run failed jobs*: it rebuilds, re-pushes `vX.Y.Z`, and signs. Do not publish the draft until `cosign verify` succeeds for the digest the summary reports |
+| Floating-tag promotion fails | Draft release; signed `vX.Y.Z`; floating tags still on the previous release | Re-run failed jobs, or retag by digest: `docker buildx imagetools create -t ghcr.io/trustvian/trustvian-collector:latest ghcr.io/trustvian/trustvian-collector@<digest>` |
+
+Floating tags move only after signing succeeds, so anyone pulling `latest`
+or `X.Y` always gets a signed image — the one ordering guarantee that
+matters for users who do not verify.
+
+Never move or re-push an existing release tag in git to "fix" a release.
+Released versions are immutable; ship the next patch instead.
+
+### Before publishing the draft
+
+1. Every job in the release run is green.
+2. The image verifies — `cosign verify` as in
+   [supply-chain.md § Verifying a published image](supply-chain.md#verifying-a-published-image).
+3. **The package is public.** GitHub creates a new container package as
+   private on its first push. Check
+   `https://github.com/orgs/Trustvian/packages/container/package/trustvian-collector`
+   and, the first time only, set its visibility to public — otherwise
+   `docker pull` fails for everyone else.
+4. The notes match `CHANGELOG.md`.
 
 ## Artifacts
 
@@ -232,8 +283,14 @@ cd "$(mktemp -d)" && go mod init probe
 go get github.com/Trustvian/trustvian@v0.9.0
 ```
 
-Signature verification is not available yet; artifact signing is a later
-slice of `v0.9`.
+The CLI archives are integrity-protected by `checksums.txt`, which is
+attached to the same release; they are **not** individually signed. The
+container image is signed and carries SBOM and provenance attestations —
+see [supply-chain.md § Verifying a published
+image](supply-chain.md#verifying-a-published-image).
+
+The `v0.9.0` commands above are examples for the first release that ships
+these artifacts; substitute a real released version.
 
 ## After the release
 

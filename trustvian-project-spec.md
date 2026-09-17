@@ -1486,7 +1486,7 @@ commitment.
 
 [`docs/ROADMAP.md`](docs/ROADMAP.md) is the authoritative, current
 roadmap — organized by shippable milestone
-(`v0.1`→`v0.2`→`v0.3`→`v0.4.0`, shipped; `v0.5`→`v0.9`, planned;
+(`v0.1`→`v0.8.0`, shipped; `v0.9`, release gate passed and awaiting its tag;
 `v1.0`, the production-readiness gate), reconciled against what's
 actually implemented today, with a detailed, independently-scoped task
 breakdown under [`docs/tasks/`](docs/tasks/). This section does not
@@ -1514,7 +1514,7 @@ v0.7  AI Agent Behavioral Security      SHIPPED (v0.7.0)
         ↓
 v0.8  Production Runtime & Storage      SHIPPED (v0.8.0)
         ↓
-v0.9  Operational Readiness             PLANNED
+v0.9  Operational Readiness             RELEASE READY (v0.9.0 not yet tagged)
         ↓
 v1.0  Production-Ready OSS              TARGET — release gate, not a version bump
 ```
@@ -1556,9 +1556,9 @@ Why each step exists, not merely what it contains:
   v0.7.
 - **`v0.8`–`v0.9`** exist because a complete OSS product is not just a
   correct algorithm — it is something an operator can actually run,
-  persist state for, upgrade, and trust operationally. `v0.8` is in
-  progress, and its first slice made a sharper point than "add a
-  database": persistence was **unreachable**, not merely limited. A
+  persist state for, upgrade, and trust operationally. `v0.8`'s first
+  slice made a sharper point than "add a database": persistence was
+  **unreachable**, not merely limited. A
   durable `FileStore` had shipped since `v0.1`, but `store.Store` lives
   under `internal/` with methods referencing internal types, so no
   external consumer could select it — nor could the CLI, which never
@@ -1584,12 +1584,15 @@ Why each step exists, not merely what it contains:
   criteria were all met and its public storage API and configuration schema
   were reviewed for support after release. **`v0.8.0` is shipped.**
   `InMemory` is still the default and `FileStore` is unchanged.
-- **`v0.9` — Operational Readiness is in progress.** It adds no behavioral
-  capability: it turns the `v0.8` runtime into a reproducible, verifiable,
-  operable distribution — automated quality gates, release artifacts and
-  module consistency, container supply-chain provenance, runtime
-  health/lifecycle, self-observability, and the operational documentation
-  (backup, restore, upgrade) a production deployment needs. See
+- **`v0.9` — Operational Readiness has passed its release gate**
+  ([task 045](docs/tasks/045-v0.9-stabilization-release-gate.md)); the
+  `v0.9.0` tag has not been created yet. It adds no behavioral capability:
+  it turns the `v0.8` runtime into a reproducible, verifiable, operable
+  distribution — CI quality gates across all three modules, cross-compiled
+  release binaries with checksums, a distroless multi-architecture Collector
+  image with SBOM, provenance, and keyless signing, `/livez` and `/readyz`
+  with bounded graceful shutdown, fixed-cardinality OpenTelemetry metrics,
+  and tested backup, restore, and upgrade procedures for learned state. See
   [`docs/ROADMAP.md` §
   v0.9](docs/ROADMAP.md#v09--operational-readiness).
 - **`v1.0`** is the point all of the above adds up to: a release gate,
@@ -1615,9 +1618,11 @@ today. As of this document's writing, `Observe` through `Alert` are
 real (`v0.1`–`v0.4.0`, shipped); `Integrate` is partially real (Go SDK,
 CLI, OTel adapter, Collector processor all ship today; MCP remains
 optional and does not gate this contract — see
-[§16](#16-ai-agent-roadmap)); `Operate` (production persistence,
-deployment packaging, self-observability, release engineering) is the
-`v0.8`/`v0.9` work still ahead. See
+[§16](#16-ai-agent-roadmap)); `Operate` is substantially real — production
+persistence shipped in `v0.8.0`, and deployment packaging,
+self-observability, release engineering, and backup/restore/upgrade are the
+`v0.9` release candidate — with the `v1.0` release gate still to judge it
+as a whole. See
 [`docs/ROADMAP.md` §
 v1.0](docs/ROADMAP.md#v10--production-ready-oss) for the actual
 release-gate themes (correctness, performance, security, operations,

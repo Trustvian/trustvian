@@ -202,7 +202,8 @@ modify, or sign it.
   architectures. Restoring into a **newer** PostgreSQL major version is the
   normal logical-upgrade path; restoring into an older one is not
   supported by PostgreSQL. Trustvian's storage layer is tested against
-  PostgreSQL 17.
+  PostgreSQL 17 and expected to work on 13+ — see
+  [storage guide § PostgreSQL versions](storage-guide.md#postgresql-versions).
 
 ## Restore
 

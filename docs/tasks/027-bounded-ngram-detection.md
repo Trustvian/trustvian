@@ -199,7 +199,7 @@ steady-state pipeline as `BenchmarkEngineAnalyze`, with both new
 weights enabled.
 
 Measured (Apple M3 Pro; see [PERFORMANCE.md § v0.6 task
-027](../PERFORMANCE.md#v06-task-027-bounded-ngram-detection) for the
+027](../PERFORMANCE.md#v06-task-027-bounded-n-gram-detection) for the
 full table, a same-machine A/B against task 026 in a disposable
 worktree, and full discussion):
 

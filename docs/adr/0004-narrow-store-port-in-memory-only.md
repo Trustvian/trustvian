@@ -51,7 +51,7 @@ module.
 
 - Trustvian's baseline does not survive a process restart today — a
   real, documented MVP limitation (see
-  [README.md § Limitations](../../README.md#limitations) and
+  [README.md](../../README.md) and
   [ROADMAP.md](../ROADMAP.md)), not a silent gap.
 - Adding a persistent `Store` implementation (file-backed, or an
   external store when actually justified) requires no change to any

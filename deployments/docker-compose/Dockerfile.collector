@@ -2,9 +2,9 @@
 # deployment, from repository source.
 #
 # This is a REFERENCE DEPLOYMENT BUILD IMAGE, not the official published
-# Trustvian image. No image is pushed anywhere by this task; official
-# artifact publishing (and the hardening that should accompany it) is
-# v0.9's scope. Build context is the repository root, because
+# Trustvian image — that is the hardened, distroless root Dockerfile (see
+# docs/supply-chain.md). Nothing here is pushed anywhere. Build context is
+# the repository root, because
 # processor/go.mod replaces github.com/Trustvian/trustvian with ../ and so
 # needs the core module's source present.
 

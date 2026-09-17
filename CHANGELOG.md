@@ -247,13 +247,19 @@ actually depend on.
   the original database the next time a dependent service runs — so the
   documentation says to record it in `.env`.
 
-### Changed
+- **[`docs/supply-chain.md`](docs/supply-chain.md)** — image identity,
+  tagging, architectures, the scan policy, signing, and how to verify a
+  published image. `docs/SECURITY.md` gains a supply-chain section kept
+  explicitly distinct from Trustvian's runtime behavioral security.
 
-- GitHub Actions workflows now use `actions/checkout@v7` and
-  `actions/setup-go@v7`, replacing the `@v4`/`@v5` majors that run on the
-  deprecated Node.js 20 runtime. Both new majors run on Node.js 24; the
-  only breaking change across the intervening majors was that runtime move.
-  Workflow permissions are unchanged.
+- **[`docs/release-guide.md`](docs/release-guide.md)** — maintainer-facing:
+  the module model, how to prepare and verify a release, what the
+  automation does, and what promoting the processor to a published module
+  would require.
+
+- **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — how to run the gates locally,
+  why the processor and examples modules must be verified with `GOWORK=off`,
+  how to run the PostgreSQL tests, and what the test tiers mean.
 
 - **Official container image, with supply-chain verification** — an
   OpenTelemetry Collector running the Trustvian processor, published to
@@ -274,6 +280,38 @@ actually depend on.
 
   The existing Docker Compose reference deployment still builds from
   source. Running the repository does not require a published image.
+
+- **Security policy and issue templates**
+  ([task 045](docs/tasks/045-v0.9-stabilization-release-gate.md), the
+  `v0.9` release gate). [`.github/SECURITY.md`](.github/SECURITY.md) gives
+  vulnerability reporters a private path — GitHub's private vulnerability
+  reporting — with what to include and what to expect; before it, the
+  repository had no stated reporting path, and GitHub surfaced the threat
+  model as the security policy. Minimal bug-report and feature-request
+  templates, with a link routing security reports away from public issues.
+
+### Changed
+
+- GitHub Actions workflows now use `actions/checkout@v7` and
+  `actions/setup-go@v7`, replacing the `@v4`/`@v5` majors that run on the
+  deprecated Node.js 20 runtime. Both new majors run on Node.js 24; the
+  only breaking change across the intervening majors was that runtime move.
+  Workflow permissions are unchanged.
+
+- The nightly workflow now runs the PostgreSQL database-restart durability
+  test, which previously ran in no workflow.
+
+### Fixed
+
+- Documentation corrected against the code during the `v0.9` release gate:
+  the getting-started SDK example claimed an `allow` decision where the
+  default engine returns `observe_only`; the release guide still described
+  image signing as future work; the contributor guide's test-tier table
+  predated the vulnerability, backup/restore/upgrade, and recovery-drill
+  gates; 31 broken internal documentation links; stale "planned for `v0.9`"
+  comments in the reference deployment. Operator documentation now states
+  PostgreSQL support explicitly — 17 tested, 13+ expected — which
+  previously lived only in a task file.
 
 ### Security
 
@@ -319,20 +357,6 @@ actually depend on.
   Registry authentication uses the workflow-scoped token, so there is no
   long-lived credential to rotate. No workflow uses `pull_request_target`.
 
-- **[`docs/supply-chain.md`](docs/supply-chain.md)** — image identity,
-  tagging, architectures, the scan policy, signing, and how to verify a
-  published image. `docs/SECURITY.md` gains a supply-chain section kept
-  explicitly distinct from Trustvian's runtime behavioral security.
-
-- **[`docs/release-guide.md`](docs/release-guide.md)** — maintainer-facing:
-  the module model, how to prepare and verify a release, what the
-  automation does, and what promoting the processor to a published module
-  would require.
-
-- **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — how to run the gates locally,
-  why the processor and examples modules must be verified with `GOWORK=off`,
-  how to run the PostgreSQL tests, and what the test tiers mean.
-
 - **Backup and restore safety.** Backups hold every actor's behavioral
   profile and are created non-world-readable; no credential reaches a
   backup, its manifest, script output, or a process listing; corrupt
@@ -343,6 +367,16 @@ actually depend on.
   does not authenticate, and any future change to the persisted `Baseline`
   shape must bump the schema version, or a binary-only downgrade would
   silently drop the new fields.
+
+- **Floating image tags move only after signing.** The release workflow
+  previously pushed `vX.Y.Z`, `X.Y`, and `latest` together and then signed:
+  a signing failure would have left `latest` pointing at an unsigned image.
+  It now pushes only the immutable tag, signs its digest, and then retags
+  `X.Y` and `latest` to that digest without a rebuild. The release job also
+  re-runs `govulncheck` against the tagged source, since the vulnerability
+  database changes independently of the commit. Partial-release states and
+  their recovery are documented in
+  [`docs/release-guide.md`](docs/release-guide.md#the-release-is-not-atomic).
 
 ### Removed
 

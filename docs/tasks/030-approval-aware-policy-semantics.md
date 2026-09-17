@@ -2,7 +2,7 @@
 
 **Milestone:** v0.7 · **Depends on:** [014](014-ai-agent.md) (adds
 `event.ApprovalStatus`, this task's first real consumer) ·
-**Blocks:** [031](#roadmap-successors-illustrative)–onward (delegation
+**Blocks:** [031](../ROADMAP.md)–onward (delegation
 behavioral semantics and agent security scenario validation both
 assume approval enforcement already works) · **Mirrors:** the
 `Unless`-based exception pattern `internal/policy` already
@@ -101,7 +101,7 @@ Decision → Alert  (unchanged — an approval BLOCK is a BLOCK like any other)
   evaluator.
 - **No delegation semantics.** `DelegatedFrom` (task 014) is
   unaffected by this task; delegation-aware detection is
-  [031](#roadmap-successors-illustrative)'s job, not this one's. This
+  [031](../ROADMAP.md)'s job, not this one's. This
   task's approval condition must not (and does not) treat
   `DelegatedFrom` as authenticated provenance.
 - **No new alert mechanism.** An approval-triggered `BLOCK` flows

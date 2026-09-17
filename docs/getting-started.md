@@ -1,5 +1,12 @@
 # Getting Started
 
+## Requirements
+
+- **Go 1.27 or newer** for the CLI and SDK. A Go 1.21+ toolchain with the
+  default `GOTOOLCHAIN=auto` downloads 1.27 automatically.
+- **Docker with Compose v2**, only for the
+  [reference deployment](../deployments/docker-compose/README.md).
+
 ## Install
 
 CLI:
@@ -108,7 +115,7 @@ func main() {
 	}
 
 	fmt.Println(result.Trust.Score, result.Trust.Risk, result.Decision)
-	// 0.95 low allow
+	// 0.95 low observe_only — NewEngine's default policy observes; see below
 
 	engine.Observe(context.Background(), result) // safe to call unconditionally
 }
@@ -179,6 +186,10 @@ valid range).
 ## Where to next
 
 - Writing custom rules (`BLOCK`/`ALERT`/`ALLOW` decisions): [Policy Guide](policy-guide.md)
+- Keeping what Trustvian learns across restarts, and PostgreSQL: [Storage Guide](storage-guide.md)
+- Running it as a service — Collector, PostgreSQL, health endpoints: [Reference Deployment](../deployments/docker-compose/README.md)
+- Operating it — metrics and resource bounds: [Observability](observability.md); backup, restore, upgrade: [Operations](operations.md)
+- Verifying a release you download: [Release Guide § Verifying a published release](release-guide.md#verifying-a-published-release)
 - Enabling anomaly signals: [Anomaly Configuration Guide](anomaly-config-guide.md)
 - Feeding in OpenTelemetry spans: [OpenTelemetry Adapter](OPENTELEMETRY.md)
 - Four worked real-world scenarios: [Use Cases](use-cases.md)

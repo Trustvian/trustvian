@@ -3,6 +3,9 @@
 Issues and pull requests are welcome. This document covers what CI
 enforces and how to run the same checks locally.
 
+**Found a security vulnerability?** Do not open an issue or pull request —
+report it privately as described in [.github/SECURITY.md](.github/SECURITY.md).
+
 For what the code should look like, see [CLAUDE.md](CLAUDE.md) and
 [.claude/rules/](.claude/rules/) — they document the conventions this
 codebase actually follows (package shape, error handling, test style,
@@ -70,8 +73,8 @@ Not every test runs on every commit:
 
 | Tier | Runs | What it covers |
 |---|---|---|
-| **Pull request / push** | `main` and `develop` | Format, vet, build, tests, race — all three modules. PostgreSQL integration with `-short`. Compose config validation. |
-| **Nightly** | Scheduled, or on demand | The full PostgreSQL stress tier (high-contention writes, concurrent first-writes, bounded row counts) and the reference deployment's end-to-end smoke test. |
+| **Pull request / push** | `main` and `develop` | Format, vet, build, tests, race, and `govulncheck` — all three modules. PostgreSQL integration with `-short`. Backup, restore, and upgrade from the previous release against PostgreSQL 17. Release-matrix dry run, container build (amd64), module consistency, Compose config validation. |
+| **Nightly** | Scheduled, or on demand | The full PostgreSQL stress tier (high-contention writes, concurrent first-writes, bounded row counts), database-restart durability, the reference deployment's end-to-end smoke test, and its recovery drill. |
 
 The split is by cost, not by importance. Correctness gates belong on pull
 requests, where a failure means the change is wrong. The stress tier takes
@@ -91,19 +94,36 @@ TRUSTVIAN_TEST_POSTGRES_DSN='...' go test -race -short ./...   # integration onl
 cd deployments/docker-compose
 docker compose config    # what CI validates on every push
 ./smoke-test.sh          # the full end-to-end proof, nightly in CI
+./recovery-drill.sh      # backup → restore → cutover → readiness, nightly in CI
 ```
 
-## CI
+## Backup, restore, and upgrade tests
 
-Two workflows, both read-only and neither requiring any secret:
+These drive the real `pg_dump`/`pg_restore` scripts, so they need
+PostgreSQL client tools matching the server's major version, and opt in
+separately from the other PostgreSQL tests:
+
+```bash
+TRUSTVIAN_TEST_BACKUP_RESTORE=1 TRUSTVIAN_TEST_POSTGRES_DSN='...' \
+  go test -race -run 'Backup|Restore|Upgrade' ./scripts/
+```
+
+The upgrade test additionally needs a CLI built from the previous release
+tag; [docs/operations.md § Recovery drill](docs/operations.md#recovery-drill)
+shows how.
+
+## CI
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
 | `.github/workflows/ci.yml` | push / PR on `main` and `develop` | Quality gates |
 | `.github/workflows/nightly.yml` | schedule, manual | Expensive tiers |
+| `.github/workflows/release.yml` | version tag only | Release artifacts, container image, signing |
 
-Neither publishes anything. Because they need no credentials, pull
-requests from forks run the full gate set with nothing to leak.
+`ci.yml` and `nightly.yml` are read-only, need no secrets, and publish
+nothing, so pull requests from forks run the full gate set with nothing to
+leak. Only `release.yml` publishes, and only on a tag — see
+[docs/release-guide.md](docs/release-guide.md).
 
 If CI fails on formatting, run `make fmt` — CI reports violations but never
 rewrites your code.

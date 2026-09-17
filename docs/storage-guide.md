@@ -554,6 +554,22 @@ Guidance, deliberately brief because there is little to tune:
 Start with the default. Raise it only in response to measured waiting, and
 never to make a test pass.
 
+## PostgreSQL versions
+
+**Tested:** PostgreSQL 17 — CI, the stress tier, the backup/restore/upgrade
+tests, and the reference deployment all run against it.
+
+**Expected to work:** PostgreSQL 13 and newer. Trustvian relies only on
+long-established features — `INSERT … ON CONFLICT` (9.5+), `jsonb` (9.4+),
+transactional DDL, `pg_advisory_xact_lock` (9.1+), and `SELECT … FOR
+UPDATE` — so nothing requires a recent server. That is an assumption from
+the features used, not a tested claim; there is no multi-version CI matrix.
+If you run an older major version, run the integration tests against it
+first.
+
+For backups, use client tools at least as new as the server — see
+[Operations § PostgreSQL tool versions](operations.md#postgresql-tool-versions).
+
 ## Database TLS
 
 Configure TLS through the DSN, the same way any PostgreSQL client does:

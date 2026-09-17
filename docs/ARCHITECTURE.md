@@ -236,8 +236,8 @@ downgrade to non-durable storage.
 
 `trust.Config` is the one config type this pattern has not yet reached
 — see [Go SDK Guide § the public/internal boundary
-today](sdk-guide.md#the-publicinternal-boundary-today) and
-[Limitations](../README.md#limitations) for the current state.
+today](sdk-guide.md#the-publicinternal-boundary-today) and the
+[Roadmap](ROADMAP.md) for the current state.
 
 **Why `internal/otel` is the only package that imports OpenTelemetry.**
 The core engine (`event` through `internal/policy`, and `Engine`
@@ -409,6 +409,16 @@ reaches storage only through the public `config.StorageConfig` /
 `CompileStorage` boundary, and holds no database code of its own. A
 deployment that inverted any of this would be a design regression, not a
 packaging detail.
+
+**Packaging is outside the code.** Two artifacts ship: the `trustvian` CLI
+as cross-compiled binaries, and the Collector — this same runtime shape — as
+a distroless, non-root, multi-architecture image
+(`ghcr.io/trustvian/trustvian-collector`, root `Dockerfile`). How they are
+built, scanned, signed, and published lives entirely in
+`scripts/release-build.sh` and `.github/workflows/release.yml`; no package
+knows whether it runs in a container, and the reference deployment still
+builds from source. See [Release Guide](release-guide.md) and
+[Supply Chain](supply-chain.md).
 
 **Durable state has one writer and one schema owner, and backup is not part
 of the runtime.** Everything a PostgreSQL deployment persists is two tables,

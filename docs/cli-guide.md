@@ -32,7 +32,7 @@ result instead of the built-in default policy for that invocation.
 trustvian analyze --config trustvian.yaml event.json
 ```
 
-See [Configuring a Policy](../README.md#configuring-a-policy) in the
+See [Configuration](../README.md#configuration) in the
 README for the YAML format and [Policy Guide § Loading a Policy from a
 YAML file](policy-guide.md#loading-a-policy-from-a-yaml-file) for the
 full field reference — the CLI doesn't add or change any config
@@ -184,7 +184,7 @@ build` is useful for proving out the learning mechanism on a fixture,
 not (yet) for pre-seeding a baseline a later CLI invocation can use. A
 real deployment builds its baseline once, inside the long-running
 process that then serves `Analyze` calls — i.e., via the Go SDK, not
-this CLI. See [Limitations](../README.md#limitations).
+this CLI. See the [Go SDK Guide](sdk-guide.md).
 
 ## Event JSON format
 
