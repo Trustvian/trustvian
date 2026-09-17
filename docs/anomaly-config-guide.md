@@ -76,8 +76,8 @@ assumed**: `CompileAnomaly(AnomalyConfig{Version: "v1"})` reproduces
 
 ```go
 import (
-	trustvian "github.com/Trustvian/trustvian"
-	"github.com/Trustvian/trustvian/config"
+	trustvian "github.com/trustvian/trustvian"
+	"github.com/trustvian/trustvian/config"
 )
 
 cfg := config.AnomalyConfig{

@@ -3,8 +3,8 @@ package fingerprint_test
 import (
 	"testing"
 
-	"github.com/Trustvian/trustvian/event"
-	"github.com/Trustvian/trustvian/internal/fingerprint"
+	"github.com/trustvian/trustvian/event"
+	"github.com/trustvian/trustvian/internal/fingerprint"
 )
 
 func BenchmarkCompute(b *testing.B) {

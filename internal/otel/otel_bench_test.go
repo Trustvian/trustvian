@@ -9,7 +9,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 	"go.opentelemetry.io/otel/trace"
 
-	trustvianotel "github.com/Trustvian/trustvian/internal/otel"
+	trustvianotel "github.com/trustvian/trustvian/internal/otel"
 )
 
 // BenchmarkEventFromSpan measures span-to-Event conversion for a

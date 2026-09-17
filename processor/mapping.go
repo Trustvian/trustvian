@@ -7,13 +7,13 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 
-	"github.com/Trustvian/trustvian/event"
+	"github.com/trustvian/trustvian/event"
 )
 
 // Trustvian-specific override attributes — the exact same names and
 // meanings as internal/otel's inbound overrides in the core module.
 // Necessarily reimplemented here: this is a separate Go module and
-// cannot import github.com/Trustvian/trustvian/internal/otel (see
+// cannot import github.com/trustvian/trustvian/internal/otel (see
 // README.md § why this duplicates internal/otel's mapping).
 const (
 	attrActorID            = "trustvian.actor.id"

@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	trustvian "github.com/Trustvian/trustvian"
-	"github.com/Trustvian/trustvian/alert"
-	"github.com/Trustvian/trustvian/event"
-	"github.com/Trustvian/trustvian/internal/anomaly"
-	"github.com/Trustvian/trustvian/internal/fingerprint"
-	"github.com/Trustvian/trustvian/internal/policy"
-	"github.com/Trustvian/trustvian/internal/trust"
+	trustvian "github.com/trustvian/trustvian"
+	"github.com/trustvian/trustvian/alert"
+	"github.com/trustvian/trustvian/event"
+	"github.com/trustvian/trustvian/internal/anomaly"
+	"github.com/trustvian/trustvian/internal/fingerprint"
+	"github.com/trustvian/trustvian/internal/policy"
+	"github.com/trustvian/trustvian/internal/trust"
 )
 
 func sampleResult() trustvian.Result {

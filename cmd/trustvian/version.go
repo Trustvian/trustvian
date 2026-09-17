@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/Trustvian/trustvian/internal/buildinfo"
+	"github.com/trustvian/trustvian/internal/buildinfo"
 )
 
 const versionUsage = "usage: trustvian version"

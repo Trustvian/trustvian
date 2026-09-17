@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"io"
 
-	trustvian "github.com/Trustvian/trustvian"
-	"github.com/Trustvian/trustvian/config"
-	"github.com/Trustvian/trustvian/internal/policy"
-	"github.com/Trustvian/trustvian/internal/trust"
+	trustvian "github.com/trustvian/trustvian"
+	"github.com/trustvian/trustvian/config"
+	"github.com/trustvian/trustvian/internal/policy"
+	"github.com/trustvian/trustvian/internal/trust"
 )
 
 // defaultPolicy is the CLI's starter policy: block on high or critical

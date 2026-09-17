@@ -849,7 +849,7 @@ has run:
    pushed.
 2. ~~Push the tag to `origin`.~~ **Done** —
    `git ls-remote --tags origin` lists `v0.5.0`, and
-   `go get github.com/Trustvian/trustvian@v0.5.0` (from outside this
+   `go get github.com/trustvian/trustvian@v0.5.0` (from outside this
    repository) succeeds.
 3. ~~Update `processor/go.mod`.~~ **Done**, in a small, separate
    follow-up commit after the tag was live (this genuinely could not
@@ -858,7 +858,7 @@ has run:
    compute them for an unpublished version).
 4. ~~Verify that follow-up cleanly.~~ **Done** —
    `GOWORK=off go mod download && GOWORK=off go list -m
-   github.com/Trustvian/trustvian` reports `v0.5.0`; `processor/`'s
+   github.com/trustvian/trustvian` reports `v0.5.0`; `processor/`'s
    full quality gate (`go build`/`go vet`/`go test -race ./...`) passes
    with no `go.work` involved.
 5. ~~Publish GitHub release notes from the `CHANGELOG.md § v0.5.0`
@@ -1878,7 +1878,7 @@ tasks 035/036's integration and stress suites, reusing the existing
 `make integration-postgres`.
 
 One honest note on versioning: `processor/go.mod` pinned
-`github.com/Trustvian/trustvian v0.5.0`, which predates
+`github.com/trustvian/trustvian v0.5.0`, which predates
 `config.StorageConfig` entirely, so the module could not name the type it
 needed. It now carries a `replace` directive to the repository root — the
 pattern `examples/go.mod` already uses — rather than a `require v0.8.0`

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Trustvian/trustvian/config"
+	"github.com/trustvian/trustvian/config"
 )
 
 func TestLoadAnomalyValidDocument(t *testing.T) {

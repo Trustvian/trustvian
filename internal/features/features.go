@@ -8,7 +8,7 @@ package features
 import (
 	"time"
 
-	"github.com/Trustvian/trustvian/event"
+	"github.com/trustvian/trustvian/event"
 )
 
 // Attribute keys Extract looks for on Event.Attributes to derive volatile

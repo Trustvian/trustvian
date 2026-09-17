@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/Trustvian/trustvian/internal/baseline"
-	"github.com/Trustvian/trustvian/internal/features"
-	"github.com/Trustvian/trustvian/internal/fingerprint"
-	"github.com/Trustvian/trustvian/internal/store"
+	"github.com/trustvian/trustvian/internal/baseline"
+	"github.com/trustvian/trustvian/internal/features"
+	"github.com/trustvian/trustvian/internal/fingerprint"
+	"github.com/trustvian/trustvian/internal/store"
 )
 
 // countingStore wraps an in-memory Store and counts calls, so tests can

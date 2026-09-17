@@ -14,7 +14,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-readonly ROOT_PATH="github.com/Trustvian/trustvian"
+readonly ROOT_PATH="github.com/trustvian/trustvian"
 
 fail=0
 problem() { echo "  FAIL: $*" >&2; fail=1; }

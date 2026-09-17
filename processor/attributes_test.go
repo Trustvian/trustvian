@@ -7,8 +7,8 @@ import (
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 
-	trustvian "github.com/Trustvian/trustvian"
-	"github.com/Trustvian/trustvian/event"
+	trustvian "github.com/trustvian/trustvian"
+	"github.com/trustvian/trustvian/event"
 	trustvianprocessor "trustvian-processor"
 )
 

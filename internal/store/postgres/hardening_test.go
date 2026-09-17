@@ -41,11 +41,11 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/Trustvian/trustvian/event"
-	"github.com/Trustvian/trustvian/internal/baseline"
-	"github.com/Trustvian/trustvian/internal/features"
-	"github.com/Trustvian/trustvian/internal/fingerprint"
-	"github.com/Trustvian/trustvian/internal/store/postgres"
+	"github.com/trustvian/trustvian/event"
+	"github.com/trustvian/trustvian/internal/baseline"
+	"github.com/trustvian/trustvian/internal/features"
+	"github.com/trustvian/trustvian/internal/fingerprint"
+	"github.com/trustvian/trustvian/internal/store/postgres"
 )
 
 // hardeningKey is a distinct actor per test, so tests sharing a database

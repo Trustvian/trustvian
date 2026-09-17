@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	trustvian "github.com/Trustvian/trustvian"
-	"github.com/Trustvian/trustvian/event"
-	trustvianotel "github.com/Trustvian/trustvian/internal/otel"
+	trustvian "github.com/trustvian/trustvian"
+	"github.com/trustvian/trustvian/event"
+	trustvianotel "github.com/trustvian/trustvian/internal/otel"
 )
 
 // BenchmarkAttributesFromResult measures Result-to-attributes

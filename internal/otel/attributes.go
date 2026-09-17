@@ -3,7 +3,7 @@ package otel
 import (
 	"go.opentelemetry.io/otel/attribute"
 
-	trustvian "github.com/Trustvian/trustvian"
+	trustvian "github.com/trustvian/trustvian"
 )
 
 // Trustvian output attributes: the outbound half of this adapter's

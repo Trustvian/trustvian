@@ -24,15 +24,15 @@ go 1.27
 // resolvable path while still carrying a local replace.
 //
 // Publishing it means renaming the path to
-// github.com/Trustvian/trustvian/processor, dropping this replace, and
+// github.com/trustvian/trustvian/processor, dropping this replace, and
 // adopting nested processor/vX.Y.Z tags. See docs/release-guide.md
 // § Promoting the processor for what that requires — the trigger is a real
 // external consumer building a Collector with ocb, which does not exist
 // today.
-replace github.com/Trustvian/trustvian => ../
+replace github.com/trustvian/trustvian => ../
 
 require (
-	github.com/Trustvian/trustvian v0.8.0
+	github.com/trustvian/trustvian v0.8.0
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	go.opentelemetry.io/collector/component v1.66.0
 	go.opentelemetry.io/collector/component/componenttest v0.160.0

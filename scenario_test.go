@@ -26,12 +26,12 @@ import (
 	"testing"
 	"time"
 
-	trustvian "github.com/Trustvian/trustvian"
-	"github.com/Trustvian/trustvian/alert"
-	"github.com/Trustvian/trustvian/event"
-	"github.com/Trustvian/trustvian/internal/anomaly"
-	"github.com/Trustvian/trustvian/internal/policy"
-	"github.com/Trustvian/trustvian/internal/store"
+	trustvian "github.com/trustvian/trustvian"
+	"github.com/trustvian/trustvian/alert"
+	"github.com/trustvian/trustvian/event"
+	"github.com/trustvian/trustvian/internal/anomaly"
+	"github.com/trustvian/trustvian/internal/policy"
+	"github.com/trustvian/trustvian/internal/store"
 )
 
 // destinationEvent builds a tool-call event with an explicit

@@ -403,7 +403,7 @@ IMAGE=ghcr.io/trustvian/trustvian-collector
 TAG=v0.9.0          # example — substitute a real, released version
 DIGEST=$(docker buildx imagetools inspect "$IMAGE:$TAG" --format '{{.Manifest.Digest}}')
 cosign verify "$IMAGE@$DIGEST" \
-  --certificate-identity-regexp '^https://github.com/Trustvian/trustvian/' \
+  --certificate-identity-regexp '^https://github.com/trustvian/trustvian/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 docker stop trustvian-collector                      # SIGTERM; bounded graceful shutdown

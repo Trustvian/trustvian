@@ -1,7 +1,7 @@
 # CLI Guide
 
 ```bash
-go install github.com/Trustvian/trustvian/cmd/trustvian@latest
+go install github.com/trustvian/trustvian/cmd/trustvian@latest
 # or: make build   (from a clone; produces bin/trustvian)
 ```
 

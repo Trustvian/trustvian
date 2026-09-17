@@ -11,7 +11,7 @@ Report them privately through GitHub's private vulnerability reporting:
 2. Choose **Report a vulnerability**.
 
 Or open the form directly:
-<https://github.com/Trustvian/trustvian/security/advisories/new>
+<https://github.com/trustvian/trustvian/security/advisories/new>
 
 Only the maintainers can see a private report. Please include what you can
 of:

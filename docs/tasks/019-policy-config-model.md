@@ -34,7 +34,7 @@ foundation first.
 ## Scope
 
 - A new public package, `config`
-  (`github.com/Trustvian/trustvian/config`), sibling to `event` and
+  (`github.com/trustvian/trustvian/config`), sibling to `event` and
   `alert` — required because `processor/` and any standalone
   deployment are genuinely separate Go modules, which cannot import an
   `internal/` package (see [ADR 0008](../adr/0008-policy-config-boundary.md)
@@ -80,7 +80,7 @@ foundation first.
 - **No OTel Collector processor integration.** `processor/` is not
   touched — it continues running the default `Policy` until its own,
   later task wires this package in, respecting the module boundary
-  (`processor/` importing `github.com/Trustvian/trustvian/config`, a
+  (`processor/` importing `github.com/trustvian/trustvian/config`, a
   normal external dependency, never a duplicate config struct of its
   own).
 - **No Alert configuration.** `alert.Rule`/`Condition` are not

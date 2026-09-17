@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/Trustvian/trustvian/alert"
-	"github.com/Trustvian/trustvian/internal/policy"
+	"github.com/trustvian/trustvian/alert"
+	"github.com/trustvian/trustvian/internal/policy"
 )
 
 // BenchmarkEvaluateNoMatch is the common case: a Result that matches no

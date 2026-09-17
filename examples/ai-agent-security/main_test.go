@@ -2,7 +2,7 @@
 // docs/tasks/033-v07-stabilization-release-gate.md): examples/ is a
 // genuinely separate Go module (examples/go.mod, with only a `replace`
 // directive back to this repository — no shared import path with
-// github.com/Trustvian/trustvian's own internal/ tree), so a passing
+// github.com/trustvian/trustvian's own internal/ tree), so a passing
 // `go test ./...` run from here demonstrates, empirically, that an
 // external OSS consumer can configure and exercise the v0.6/v0.7
 // behavioral signals through public API alone. This file imports only
@@ -17,9 +17,9 @@ import (
 	"testing"
 	"time"
 
-	trustvian "github.com/Trustvian/trustvian"
-	"github.com/Trustvian/trustvian/config"
-	"github.com/Trustvian/trustvian/event"
+	trustvian "github.com/trustvian/trustvian"
+	"github.com/trustvian/trustvian/config"
+	"github.com/trustvian/trustvian/event"
 )
 
 // TestPublicConfigConfiguresDelegationAndNGramSignals proves, from

@@ -1,4 +1,4 @@
-MODULE   := github.com/Trustvian/trustvian
+MODULE   := github.com/trustvian/trustvian
 BINARY   := trustvian
 BIN_DIR  := bin
 CMD      := ./cmd/trustvian

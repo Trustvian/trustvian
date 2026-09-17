@@ -12,7 +12,7 @@ Event → Features → Fingerprint → Baseline → Anomaly → Trust → Policy
 ## Event
 
 The atomic unit: one observed action. Package `event`
-(`github.com/Trustvian/trustvian/event`) — see
+(`github.com/trustvian/trustvian/event`) — see
 [Go SDK Guide § the Event type](sdk-guide.md#the-event-type) for the
 full field reference.
 

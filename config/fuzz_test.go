@@ -3,7 +3,7 @@ package config_test
 import (
 	"testing"
 
-	"github.com/Trustvian/trustvian/config"
+	"github.com/trustvian/trustvian/config"
 )
 
 // FuzzLoad's one required invariant: arbitrary bytes must never panic

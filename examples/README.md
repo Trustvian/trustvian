@@ -4,9 +4,9 @@ Nine small, runnable `package main` programs demonstrating the full
 `Event -> Features -> Fingerprint -> Baseline -> Anomaly -> Trust ->
 Policy -> Decision` pipeline — and, since v0.4, the downstream Alert &
 Notification Foundation — against the real
-`github.com/Trustvian/trustvian` Go SDK. Each is a genuinely external
+`github.com/trustvian/trustvian` Go SDK. Each is a genuinely external
 consumer of the module — `examples/go.mod` is a separate Go module with
-a `replace github.com/Trustvian/trustvian => ../` directive back to this
+a `replace github.com/trustvian/trustvian => ../` directive back to this
 repository root, so these programs only ever see what an outside caller
 actually sees (no `internal/` imports anywhere under this directory).
 

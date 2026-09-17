@@ -43,12 +43,12 @@ import (
 	"testing"
 	"time"
 
-	trustvian "github.com/Trustvian/trustvian"
-	"github.com/Trustvian/trustvian/config"
-	"github.com/Trustvian/trustvian/event"
-	"github.com/Trustvian/trustvian/internal/baseline"
-	"github.com/Trustvian/trustvian/internal/store"
-	"github.com/Trustvian/trustvian/internal/store/postgres"
+	trustvian "github.com/trustvian/trustvian"
+	"github.com/trustvian/trustvian/config"
+	"github.com/trustvian/trustvian/event"
+	"github.com/trustvian/trustvian/internal/baseline"
+	"github.com/trustvian/trustvian/internal/store"
+	"github.com/trustvian/trustvian/internal/store/postgres"
 )
 
 const (

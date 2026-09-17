@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Trustvian/trustvian/config"
-	"github.com/Trustvian/trustvian/internal/anomaly"
+	"github.com/trustvian/trustvian/config"
+	"github.com/trustvian/trustvian/internal/anomaly"
 )
 
 func TestCompileAnomalyRejectsInvalidConfig(t *testing.T) {

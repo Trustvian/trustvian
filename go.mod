@@ -1,4 +1,4 @@
-module github.com/Trustvian/trustvian
+module github.com/trustvian/trustvian
 
 go 1.27
 

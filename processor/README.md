@@ -1,7 +1,7 @@
 # trustvian-processor
 
 An OpenTelemetry Collector processor that scores every span passing
-through a Collector pipeline with [Trustvian](https://github.com/Trustvian/trustvian)
+through a Collector pipeline with [Trustvian](https://github.com/trustvian/trustvian)
 and enriches it with the outbound `trustvian.*` attributes, before
 forwarding it unchanged in shape to the next consumer in the pipeline.
 
@@ -11,7 +11,7 @@ the core repository. Building a real Collector component requires the
 `go.opentelemetry.io/collector/*` component APIs, a materially heavier
 dependency tree than the core engine's own lightweight OTel API/SDK
 usage; keeping it in its own module means that tree never touches
-`github.com/Trustvian/trustvian`'s own `go.mod`, even indirectly.
+`github.com/trustvian/trustvian`'s own `go.mod`, even indirectly.
 
 ## How it fits together
 
@@ -35,7 +35,7 @@ ptrace.Span + resource attributes
         │  mapping.go: EventFromSpan
         ▼
      event.Event
-        │  Engine.Analyze (github.com/Trustvian/trustvian, public API)
+        │  Engine.Analyze (github.com/trustvian/trustvian, public API)
         ▼
        Result
         │  attributes.go: SetAttributesFromResult
@@ -50,7 +50,7 @@ The core module's `internal/otel.EventFromSpan` and
 reused here, for two independent reasons:
 
 1. **They're under `internal/`.** Go's `internal/` visibility rule
-   blocks any package outside `github.com/Trustvian/trustvian` itself
+   blocks any package outside `github.com/trustvian/trustvian` itself
    from importing them — this module is a genuinely separate module,
    so it's on the wrong side of that boundary, the same as any other
    embedder (see

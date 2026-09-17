@@ -258,7 +258,7 @@ DIGEST=$(docker buildx imagetools inspect "$IMAGE:$TAG" --format '{{.Manifest.Di
 
 # Signature: keyless, so verification asserts *which workflow* signed it.
 cosign verify "$IMAGE@$DIGEST" \
-  --certificate-identity-regexp '^https://github.com/Trustvian/trustvian/' \
+  --certificate-identity-regexp '^https://github.com/trustvian/trustvian/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 # SBOM and provenance attestations.

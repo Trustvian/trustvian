@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/Trustvian/trustvian/alert"
-	"github.com/Trustvian/trustvian/internal/policy"
+	"github.com/trustvian/trustvian/alert"
+	"github.com/trustvian/trustvian/internal/policy"
 )
 
 // Sentinel errors, wrapped with fmt.Errorf and checked with errors.Is

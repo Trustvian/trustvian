@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	trustvian "github.com/Trustvian/trustvian"
+	trustvian "github.com/trustvian/trustvian"
 )
 
 const analyzeUsage = "usage: trustvian analyze [--config <path>] [--anomaly-config <path>] [--storage-config <path>] <events.json>"

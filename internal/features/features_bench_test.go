@@ -3,8 +3,8 @@ package features_test
 import (
 	"testing"
 
-	"github.com/Trustvian/trustvian/event"
-	"github.com/Trustvian/trustvian/internal/features"
+	"github.com/trustvian/trustvian/event"
+	"github.com/trustvian/trustvian/internal/features"
 )
 
 func BenchmarkExtract(b *testing.B) {

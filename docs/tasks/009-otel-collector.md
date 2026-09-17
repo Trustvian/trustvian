@@ -32,7 +32,7 @@ first time.
   also acceptable and arguably cleaner for versioning independence).
 - The processor: receives OTLP spans, converts each to an `Event` via
   `internal/otel.EventFromSpan` (this means the processor module
-  imports `github.com/Trustvian/trustvian` — the same relationship any
+  imports `github.com/trustvian/trustvian` — the same relationship any
   other embedder has, not a privileged one), calls
   `Engine.Analyze`+`Engine.Observe`, writes the resulting attributes
   back onto the span via [008](008-otel.md)'s

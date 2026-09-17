@@ -5,7 +5,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/Trustvian/trustvian/config"
+	"github.com/trustvian/trustvian/config"
 )
 
 func minimalValidAnomalyConfig() config.AnomalyConfig {

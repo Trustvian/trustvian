@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Trustvian/trustvian/event"
+	"github.com/trustvian/trustvian/event"
 )
 
 func validEvent() event.Event {
