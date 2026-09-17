@@ -1206,6 +1206,44 @@ scenario, is demonstrable through public API alone. See
 [examples/ai-agent-security](../examples/ai-agent-security/)'s own
 README for the worked example.
 
+## Software supply-chain security
+
+Distinct from everything above. The rest of this document is about
+Trustvian's **runtime** security — how it evaluates behavior and resists
+manipulation. This section is about the integrity of the **artifacts** you
+install: which commit produced them, what is inside them, and how you
+confirm both.
+
+It is also unrelated to the separately planned *Runtime Identity &
+Provenance* capability, which concerns the provenance of observed actors.
+Same word, different layer.
+
+| Property | Mechanism |
+|---|---|
+| Artifact matches the release source | The release workflow validates the tag as SemVer, verifies the checked-out commit equals the tagged commit, and builds binaries and the container image from that commit |
+| Release gates cannot be bypassed | Gates re-run against the tagged source rather than trusting an earlier workflow run on a different commit |
+| Binary integrity | SHA-256 checksum manifest published with every release |
+| Artifact traceability | `trustvian version` reports the module version, commit revision, and whether the build tree was modified, read from Go's own build information |
+| Container contents are known | SPDX SBOM attached to the image as an attestation |
+| Container origin is verifiable | SLSA provenance attestation, plus keyless Cosign signature over the image digest |
+| No key material to compromise | Signing uses GitHub OIDC (Sigstore keyless); no signing key exists in the repository or in a secret |
+| No long-lived registry credential | Publishing authenticates to GHCR with the workflow-scoped token |
+| Known vulnerabilities are gated | `govulncheck` fails on any *reachable* Go vulnerability; Trivy fails on fixable `CRITICAL`/`HIGH` in the image |
+| Least privilege | Normal CI and nightly workflows are `contents: read`. `packages: write` and `id-token: write` exist only in the container-publishing job. No `pull_request_target` anywhere |
+| Minimal runtime surface | The image runs non-root with no shell, no package manager, and no added capabilities |
+
+Two limits stated plainly:
+
+- **The container scan gates on a `linux/amd64` build** whose cache the
+  multi-arch push reuses. The arm64 layer is built from the same source and
+  the same base version but is not itself scanned before publishing.
+- **Byte-for-byte reproducibility is not claimed** for either binaries or
+  images. The builds avoid obvious nondeterminism, but this is untested, and
+  an untested reproducibility claim is worse than none.
+
+Full detail, including the vulnerability policy and its current exceptions:
+[`supply-chain.md`](supply-chain.md).
+
 ## Explainability as a security property
 
 Every `Anomaly` retains its `Contributors`; every `policy.Result`

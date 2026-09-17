@@ -11,9 +11,11 @@
 # runs the same script — so a broken target is found before a tag exists
 # rather than after.
 #
-# Not here, on purpose: SBOM generation, vulnerability scanning, artifact
-# signing, and container publishing. Those belong to task 041, and keeping
-# them out is what keeps this workflow's permissions to a single scope.
+# The container job below extends this same release identity rather than
+# forming a second one: it `needs` the release job, so the image is built
+# from source whose tag was already validated and whose gates already
+# passed. See docs/tasks/041-container-supply-chain-security.md
+# § Release integration.
 
 name: Release
 
@@ -176,3 +178,146 @@ jobs:
             dist/*.tar.gz dist/*.zip dist/checksums.txt
 
           echo "::notice::Draft release created for $TAG. Review the notes against CHANGELOG.md, then publish it."
+
+  # ---------------------------------------------------------------------
+  # Official container image: build, scan, publish, sign, attest.
+  #
+  # Depends on the release job, so it inherits that job's verified tag and
+  # passing gates instead of re-establishing trust in the source. One
+  # release identity, two artifact kinds.
+  #
+  # Ordering is build -> scan -> gate -> push -> sign, so a known-bad image
+  # is never published. Signing follows the push because Cosign signs a
+  # digest, which exists only once the image is in the registry.
+  # ---------------------------------------------------------------------
+  container:
+    name: Container image
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      # Read source; write packages to push to GHCR; id-token for keyless
+      # Cosign signing. contents: write is deliberately absent — this job
+      # does not touch GitHub Release state.
+      contents: read
+      packages: write
+      id-token: write
+
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/trustvian-collector
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The tagged commit, exactly as the release job used. The image
+          # and the binaries are built from the same source.
+          ref: ${{ github.ref }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # The workflow-scoped token, not a stored PAT: nothing long-lived
+          # to leak or rotate.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # --- Build and scan before publishing ------------------------------
+
+      - name: Build for scanning
+        # Single platform and --load, because a multi-platform result cannot
+        # be loaded into the local daemon for a scanner to read. The
+        # multi-arch push below reuses this build's cache, so the pushed
+        # amd64 layer is the artifact scanned here; see
+        # docs/supply-chain.md § What the scan covers.
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            --load \
+            -t "$IMAGE:scan" \
+            .
+
+      - name: Scan image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}:scan
+          format: table
+          severity: CRITICAL,HIGH
+          # Only findings with a fix can be acted on by rebuilding; an
+          # unfixed upstream advisory must not block shipping our own
+          # security fixes. Policy and exceptions: docs/supply-chain.md.
+          ignore-unfixed: true
+          exit-code: "1"
+          scanners: vuln
+
+      # --- Publish -------------------------------------------------------
+
+      - name: Tags for this release
+        id: tags
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          # The immutable vX.Y.Z tag is the deployment contract and is
+          # always published. The floating tags are convenience only, and a
+          # prerelease must never move them — someone tracking `latest`
+          # has not opted into release candidates.
+          tags="$IMAGE:$TAG"
+          if printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            minor="${TAG#v}"; minor="${minor%.*}"
+            tags="$tags,$IMAGE:$minor,$IMAGE:latest"
+          else
+            echo "::notice::prerelease $TAG — publishing only the immutable tag"
+          fi
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push multi-arch image
+        id: push
+        run: |
+          IFS=',' read -ra tag_list <<< "${{ steps.tags.outputs.tags }}"
+          tag_args=()
+          for tg in "${tag_list[@]}"; do tag_args+=(-t "$tg"); done
+
+          # BuildKit's own SBOM (SPDX) and SLSA provenance attestations,
+          # attached to the image in the registry. Platform-standard rather
+          # than a bespoke format, and no extra tool in the release path.
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --sbom=true \
+            --provenance=mode=max \
+            "${tag_args[@]}" \
+            --metadata-file /tmp/metadata.json \
+            --push \
+            .
+
+          digest="$(python3 -c "import json;print(json.load(open('/tmp/metadata.json'))['containerimage.digest'])")"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "::notice::pushed $IMAGE@$digest"
+
+      # --- Sign ----------------------------------------------------------
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4
+
+      - name: Sign the image
+        # Keyless: identity comes from this workflow's OIDC token, so there
+        # is no private key in the repository or in a secret. Signs the
+        # digest rather than a tag, because a tag can later move.
+        run: cosign sign --yes "$IMAGE@${{ steps.push.outputs.digest }}"
+
+      - name: Summarize
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          {
+            echo "### Container image"
+            echo
+            echo '```'
+            echo "$IMAGE:$TAG"
+            echo "$IMAGE@${{ steps.push.outputs.digest }}"
+            echo '```'
+            echo
+            echo "Signed keylessly; SBOM and SLSA provenance attached as attestations."
+            echo "Verification: docs/supply-chain.md"
+          } >> "$GITHUB_STEP_SUMMARY"

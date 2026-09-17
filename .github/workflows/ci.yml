@@ -112,6 +112,23 @@ jobs:
       - name: Race
         run: go test -race ./...
 
+      - name: Go vulnerability scan
+        # Symbol-level reachability, not just "a vulnerable module is in the
+        # graph": this repository's processor carries advisories its code
+        # cannot reach, which a graph-only scanner would report as findings
+        # to triage. Run via `go run` so no tool is added to the module's
+        # dependencies.
+        #
+        # GOWORK=off explicitly. go.work is gitignored, so it exists on
+        # developer machines and not here; with it active, MVS raises this
+        # module's dependency versions to satisfy the other workspace
+        # members, which can hide a vulnerability that a real consumer of
+        # this module alone would be exposed to. The module's own build list
+        # is the one that matters.
+        env:
+          GOWORK: "off"
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
       - name: Test with PostgreSQL
         # -short runs the integration tier but skips the expensive stress
         # tier, which is scheduled nightly instead (see nightly.yml and the
@@ -168,6 +185,10 @@ jobs:
         working-directory: processor
         run: go test -race ./...
 
+      - name: Go vulnerability scan
+        working-directory: processor
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
   # ---------------------------------------------------------------------
   # Examples module: also separate, and the repository's proof that the
   # public API is usable from outside. Run with GOWORK=off for the same
@@ -211,6 +232,10 @@ jobs:
         working-directory: examples
         run: go test ./...
 
+      - name: Go vulnerability scan
+        working-directory: examples
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
       - name: No internal imports
         # examples/ exists to prove the public API is sufficient. An
         # internal/* import here would compile inside this repository and
@@ -245,6 +270,29 @@ jobs:
 
       - name: Build the release matrix
         run: ./scripts/release-build.sh
+
+  # ---------------------------------------------------------------------
+  # Official container image: prove it still builds on every change.
+  #
+  # Builds and discards — nothing is pushed and no registry credential is
+  # used, which is why this job runs on fork pull requests like any other.
+  # Publishing happens only in release.yml, on a tag.
+  # ---------------------------------------------------------------------
+  container-build:
+    name: Container image (build only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build the official image
+        # Single platform here: this job answers "does it still build", and
+        # the multi-arch matrix is exercised by the release workflow. Keeping
+        # it to one platform keeps pull-request feedback fast.
+        run: docker buildx build --platform linux/amd64 -t trustvian-collector:ci .
 
   # ---------------------------------------------------------------------
   # Reference deployment: validate that the Compose configuration parses.
