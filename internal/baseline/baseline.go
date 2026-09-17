@@ -19,8 +19,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Trustvian/trustvian/internal/features"
-	"github.com/Trustvian/trustvian/internal/fingerprint"
+	"github.com/trustvian/trustvian/internal/features"
+	"github.com/trustvian/trustvian/internal/fingerprint"
 )
 
 // emaAlpha is the exponential-moving-average smoothing factor used for

@@ -292,6 +292,31 @@ actually depend on.
 
 ### Changed
 
+- **The Go module path is now `github.com/trustvian/trustvian`** (lowercase),
+  following the rename of the GitHub organization from `Trustvian` to
+  `trustvian`. Every import path, repository URL, badge, and clone/install
+  command moves with it.
+
+  **This changes the import path for consumers.** Go module paths are
+  case-sensitive, so the old and new paths are different modules to the
+  toolchain:
+
+  ```go
+  import trustvian "github.com/trustvian/trustvian"   // from the next release
+  ```
+
+  Releases up to and including `v0.8.0` were published as
+  `github.com/Trustvian/trustvian` and remain resolvable only under that
+  path — their `go.mod` declares it. The lowercase path is resolvable from
+  the first release tagged after the rename; until then,
+  `go get github.com/trustvian/trustvian@latest` cannot resolve, and
+  existing consumers should stay on the old path. Do not import both paths
+  in one build: the toolchain would treat them as two modules and duplicate
+  every type.
+
+  The product name is unchanged. Only the organization identifier, and the
+  technical paths derived from it, are lowercase.
+
 - GitHub Actions workflows now use `actions/checkout@v7` and
   `actions/setup-go@v7`, replacing the `@v4`/`@v5` majors that run on the
   deprecated Node.js 20 runtime. Both new majors run on Node.js 24; the
@@ -619,7 +644,7 @@ default and every `v0.5`–`v0.7` behavior is preserved.
 ### Changed
 
 - `processor/go.mod` now uses a `replace` directive against the repository
-  root instead of requiring `github.com/Trustvian/trustvian v0.5.0`, which
+  root instead of requiring `github.com/trustvian/trustvian v0.5.0`, which
   predates the storage configuration API the processor now needs. The
   release-time decision (bump to a released `v0.8.0` and drop the replace,
   or keep it) belongs to task 038.

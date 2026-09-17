@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Trustvian/trustvian/event"
-	"github.com/Trustvian/trustvian/internal/features"
-	"github.com/Trustvian/trustvian/internal/fingerprint"
+	"github.com/trustvian/trustvian/event"
+	"github.com/trustvian/trustvian/internal/features"
+	"github.com/trustvian/trustvian/internal/fingerprint"
 )
 
 func stableFeatures(actorType event.ActorType, category event.OperationCategory, name, target, env string) features.StableFeatures {

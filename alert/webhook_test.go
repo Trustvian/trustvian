@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Trustvian/trustvian/alert"
+	"github.com/trustvian/trustvian/alert"
 )
 
 func TestNewWebhookSinkRejectsEmptySecret(t *testing.T) {

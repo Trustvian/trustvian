@@ -13,7 +13,7 @@ import (
 	"io"
 	"strconv"
 
-	"github.com/Trustvian/trustvian/internal/features"
+	"github.com/trustvian/trustvian/internal/features"
 )
 
 // Fingerprint is the identity of a specific behavioral shape: a stable

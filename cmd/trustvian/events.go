@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Trustvian/trustvian/event"
+	"github.com/trustvian/trustvian/event"
 )
 
 // loadEvents reads a JSON array of events from path.

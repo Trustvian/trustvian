@@ -5,7 +5,7 @@
 # Trustvian image — that is the hardened, distroless root Dockerfile (see
 # docs/supply-chain.md). Nothing here is pushed anywhere. Build context is
 # the repository root, because
-# processor/go.mod replaces github.com/Trustvian/trustvian with ../ and so
+# processor/go.mod replaces github.com/trustvian/trustvian with ../ and so
 # needs the core module's source present.
 
 # Pinned to the toolchain the repository targets (go 1.27 in go.mod).

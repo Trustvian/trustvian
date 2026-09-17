@@ -67,7 +67,7 @@ not a hypothetical future one this gate has to wait for.
   this release onward.
 - Push the resolved tag; update `processor/go.mod` to depend on it in
   a small, dedicated follow-up commit; verify that follow-up with
-  `GOWORK=off go mod download && go list -m github.com/Trustvian/trustvian`
+  `GOWORK=off go mod download && go list -m github.com/trustvian/trustvian`
   reporting `v0.5.0` and a clean `processor/` build/test with no
   workspace involved.
 
@@ -138,7 +138,7 @@ v0.5.0 release gate
 [x] human creates/pushes v0.5.0 tag        — the stale local-only tag
     was moved to main's tip (containing 019-023) and pushed;
     `git ls-remote --tags origin` and a real `go get
-    github.com/Trustvian/trustvian@v0.5.0` both confirm it resolves
+    github.com/trustvian/trustvian@v0.5.0` both confirm it resolves
 [x] processor go.mod prepared for v0.5.0   — done in a separate,
     post-tag follow-up commit (go.sum entries are content hashes of
     the published module; nothing could compute them before the tag

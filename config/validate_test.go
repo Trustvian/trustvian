@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Trustvian/trustvian/config"
+	"github.com/trustvian/trustvian/config"
 )
 
 func minimalValidConfig() config.PolicyConfig {

@@ -26,7 +26,7 @@ finding that reframes the whole task:
 
 | Module | Declared path | Resolvable by `go get`? |
 |---|---|---|
-| root | `github.com/Trustvian/trustvian` | **Yes** — tagged `v0.1.0`–`v0.8.0` |
+| root | `github.com/trustvian/trustvian` | **Yes** — tagged `v0.1.0`–`v0.8.0` |
 | processor | `trustvian-processor` | **No** |
 | examples | `trustvian-examples` | **No** |
 
@@ -35,7 +35,7 @@ dot in first path element"*. A bare name is not a resolvable module path,
 so neither nested module is publishable in its current form, and no
 `processor/vX.Y.Z` tag has ever existed.
 
-That means the `replace github.com/Trustvian/trustvian => ../` in
+That means the `replace github.com/trustvian/trustvian => ../` in
 `processor/go.mod` is **not** a latent release blocker awaiting removal. It
 is the correct and consistent arrangement for a module that is built from
 this repository rather than fetched from a proxy — which is exactly how
@@ -48,7 +48,7 @@ This classification is the durable output of this task. It is recorded
 here and in the release guide so no future maintainer has to re-derive it
 mid-release.
 
-**`github.com/Trustvian/trustvian` (root) — PUBLIC VERSIONED MODULE.**
+**`github.com/trustvian/trustvian` (root) — PUBLIC VERSIONED MODULE.**
 The engine, public API (`event`, `config`, `alert`, root package), and the
 `trustvian` CLI. Tagged `vX.Y.Z` on the `main` merge commit. It contains no
 `replace` directive and must never contain one: a `replace` in a published
@@ -70,7 +70,7 @@ be a separate module, not a published one.
 ### Why not promote the processor now
 
 Making the processor consumable means renaming its path to
-`github.com/Trustvian/trustvian/processor`, dropping the `replace`, and
+`github.com/trustvian/trustvian/processor`, dropping the `replace`, and
 adopting nested `processor/vX.Y.Z` tags — with the ordering constraint that
 the root module must be tagged before the processor can require a real
 version of it.
@@ -175,7 +175,7 @@ during a release:
 
 1. The **root module declares no `replace`**. A published module with a
    replace does not build for consumers the way it builds here.
-2. The root module path is exactly `github.com/Trustvian/trustvian`.
+2. The root module path is exactly `github.com/trustvian/trustvian`.
 3. Every nested module that `replace`s the root **must point at `../`** —
    a replace to anywhere else (an absolute developer path, a fork) would
    break every other machine.

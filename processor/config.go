@@ -6,7 +6,7 @@ import (
 
 	"github.com/go-viper/mapstructure/v2"
 
-	"github.com/Trustvian/trustvian/config"
+	"github.com/trustvian/trustvian/config"
 )
 
 // Config is this processor's Collector configuration. Policy, when

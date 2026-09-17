@@ -71,7 +71,7 @@ distinct problems, both verified by reading the code rather than assumed:
    `WithPolicy` — never `WithStore`. Every Collector deployment therefore
    ran on the default in-memory store and lost every baseline on restart:
    the same class of gap task 034 found in the CLI.
-2. **`processor/go.mod` requires `github.com/Trustvian/trustvian v0.5.0`**,
+2. **`processor/go.mod` requires `github.com/trustvian/trustvian v0.5.0`**,
    which predates `config.StorageConfig` entirely. The package cannot even
    name the type it needs.
 
@@ -92,7 +92,7 @@ line for line.
 
 Closing (2) uses a `replace` directive back to the repository root, which
 is the pattern `examples/go.mod` already uses for the same reason.
-Writing `require github.com/Trustvian/trustvian v0.8.0` before that tag
+Writing `require github.com/trustvian/trustvian v0.8.0` before that tag
 exists would be a lie in a build file. **Task 038 owns the release-time
 transition** (see § Release-time dependency transition).
 
@@ -165,12 +165,12 @@ the one deliberate exception to § Least exposure below.
 
 ## Release-time dependency transition (for task 038)
 
-`processor/go.mod` carries `replace github.com/Trustvian/trustvian => ../`
+`processor/go.mod` carries `replace github.com/trustvian/trustvian => ../`
 so it builds against unreleased `v0.8` APIs. Task 038 must decide, and
 record, one of:
 
 - **Bump and drop the replace** — after `v0.8.0` is tagged, set
-  `require github.com/Trustvian/trustvian v0.8.0` and remove the replace,
+  `require github.com/trustvian/trustvian v0.8.0` and remove the replace,
   so the processor module is independently consumable at a released
   version; or
 - **Keep the replace** — accept that the processor is built from the

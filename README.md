@@ -16,8 +16,8 @@ signals that produced it, and every decision carries the rule that made
 it. There is no model to retrain and no opaque verdict.
 
 [![Go](https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white)](go.mod)
-[![CI](https://github.com/Trustvian/trustvian/actions/workflows/ci.yml/badge.svg)](https://github.com/Trustvian/trustvian/actions/workflows/ci.yml)
-[![Latest tag](https://img.shields.io/github/v/tag/Trustvian/trustvian?label=latest)](https://github.com/Trustvian/trustvian/tags)
+[![CI](https://github.com/trustvian/trustvian/actions/workflows/ci.yml/badge.svg)](https://github.com/trustvian/trustvian/actions/workflows/ci.yml)
+[![Latest tag](https://img.shields.io/github/v/tag/trustvian/trustvian?label=latest)](https://github.com/trustvian/trustvian/tags)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 ## Why Trustvian?
@@ -96,8 +96,8 @@ their own section below.
 ### Install
 
 ```bash
-go install github.com/Trustvian/trustvian/cmd/trustvian@latest   # CLI
-go get github.com/Trustvian/trustvian                            # library
+go install github.com/trustvian/trustvian/cmd/trustvian@latest   # CLI
+go get github.com/trustvian/trustvian                            # library
 ```
 
 ### CLI
@@ -106,7 +106,7 @@ The repository ships event fixtures, so the fastest first run is from a
 clone:
 
 ```bash
-git clone https://github.com/Trustvian/trustvian && cd trustvian
+git clone https://github.com/trustvian/trustvian && cd trustvian
 go run ./cmd/trustvian analyze cmd/trustvian/testdata/normal.json
 ```
 
@@ -150,8 +150,8 @@ import (
 	"log"
 	"time"
 
-	trustvian "github.com/Trustvian/trustvian"
-	"github.com/Trustvian/trustvian/event"
+	trustvian "github.com/trustvian/trustvian"
+	"github.com/trustvian/trustvian/event"
 )
 
 func main() {
@@ -463,7 +463,7 @@ Trustvian is under active development.
 
 - **Release history** — [CHANGELOG.md](CHANGELOG.md)
 - **Milestone status and planned work** — [docs/ROADMAP.md](docs/ROADMAP.md)
-- **Published releases** — [GitHub Releases](https://github.com/Trustvian/trustvian/releases)
+- **Published releases** — [GitHub Releases](https://github.com/trustvian/trustvian/releases)
 - **Product and technical vision** — [trustvian-project-spec.md](trustvian-project-spec.md)
 
 ## Contributing

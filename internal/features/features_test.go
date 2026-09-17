@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Trustvian/trustvian/event"
-	"github.com/Trustvian/trustvian/internal/features"
+	"github.com/trustvian/trustvian/event"
+	"github.com/trustvian/trustvian/internal/features"
 )
 
 func baseEvent(category event.OperationCategory, name string, attrs map[string]any) event.Event {

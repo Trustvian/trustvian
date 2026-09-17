@@ -1,12 +1,12 @@
 # Go SDK Guide
 
 ```bash
-go get github.com/Trustvian/trustvian
+go get github.com/trustvian/trustvian
 ```
 
 ## The `Event` type
 
-`event.Event` (package `github.com/Trustvian/trustvian/event`) is the
+`event.Event` (package `github.com/trustvian/trustvian/event`) is the
 one type every caller constructs. It's a generic shape that covers
 HTTP calls, service-to-service RPC, database operations, external
 destinations, and AI-agent tool calls uniformly — see
@@ -173,8 +173,8 @@ import (
 	"fmt"
 	"time"
 
-	trustvian "github.com/Trustvian/trustvian"
-	"github.com/Trustvian/trustvian/event"
+	trustvian "github.com/trustvian/trustvian"
+	"github.com/trustvian/trustvian/event"
 )
 
 func paymentEvent(id string) event.Event {

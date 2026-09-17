@@ -4,10 +4,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Trustvian/trustvian/alert"
-	"github.com/Trustvian/trustvian/event"
-	"github.com/Trustvian/trustvian/internal/policy"
-	"github.com/Trustvian/trustvian/internal/trust"
+	"github.com/trustvian/trustvian/alert"
+	"github.com/trustvian/trustvian/event"
+	"github.com/trustvian/trustvian/internal/policy"
+	"github.com/trustvian/trustvian/internal/trust"
 )
 
 func TestConditionZeroValueMatchesEverything(t *testing.T) {

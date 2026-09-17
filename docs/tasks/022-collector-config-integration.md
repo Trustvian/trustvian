@@ -116,7 +116,7 @@ the CLI.
 ## Release / Module Compatibility — the one open item
 
 **Discovered during this task, not assumed:** `processor/go.mod`
-requires `github.com/Trustvian/trustvian v0.3.0` — a version that
+requires `github.com/trustvian/trustvian v0.3.0` — a version that
 predates the `config` package entirely (`config` was added in a commit
 after `v0.4.0`). Checking which Trustvian tags are actually reachable
 from `processor/go.mod`'s perspective —
@@ -124,16 +124,16 @@ from `processor/go.mod`'s perspective —
 ```
 $ git ls-remote --tags origin
 ...v0.1.0, v0.2.0, v0.3.0, v0.4.0 only
-$ cd processor && go get github.com/Trustvian/trustvian@v0.5.0
-go: github.com/Trustvian/trustvian@v0.5.0: invalid version: unknown revision v0.5.0
+$ cd processor && go get github.com/trustvian/trustvian@v0.5.0
+go: github.com/trustvian/trustvian@v0.5.0: invalid version: unknown revision v0.5.0
 $ go mod tidy   # (with the new config import already in source)
-go: downloading github.com/Trustvian/trustvian v0.4.0
-go: trustvian-processor imports github.com/Trustvian/trustvian/config:
+go: downloading github.com/trustvian/trustvian v0.4.0
+go: trustvian-processor imports github.com/trustvian/trustvian/config:
     module found (v0.4.0), but does not contain package .../config
 ```
 
 — confirms a `v0.5.0` **git tag exists locally, but has never been
-pushed to `origin`** (`github.com/Trustvian/trustvian`, the real
+pushed to `origin`** (`github.com/trustvian/trustvian`, the real
 module path). It is not a real release: the Go module system (and
 therefore any external `go get`/`go mod tidy`) cannot resolve it. The
 latest version that genuinely exists on `origin` is `v0.4.0`, which
@@ -160,7 +160,7 @@ Trustvian core release to `origin` that contains the `config` package
 — either push the existing local `v0.5.0` tag once its content is
 confirmed final, or cut a fresh tag (e.g. `v0.5.1`) — then, as a small,
 separate follow-up change, update `processor/go.mod`'s `require
-github.com/Trustvian/trustvian` line to that real, resolvable version
+github.com/trustvian/trustvian` line to that real, resolvable version
 and run `go mod tidy`. Only after that follow-up lands does this
 task's code become genuinely buildable outside a local workspace.
 
@@ -279,7 +279,7 @@ All pre-existing processor tests pass unmodified. Full suite:
   exists anywhere in the module.
 - `processor/` does not import `internal/policy`.
 - `go.mod`/`go.sum` diff at the repository root: empty. `processor/go.mod`'s
-  `require github.com/Trustvian/trustvian` line: unchanged at `v0.3.0`
+  `require github.com/trustvian/trustvian` line: unchanged at `v0.3.0`
   (see § Release / Module Compatibility for why bumping it today would
   itself be the defect this criterion exists to prevent).
 - **Not yet closable within this task:** `processor/go.mod` actually

@@ -37,7 +37,7 @@ end-to-end"). That bar cannot be met by an internal type.
 
 `Alert`, `Severity`, `Condition`, `Rule`, `Evaluate`, `Sink`, and
 `WebhookSink` all live in a new top-level public package, `alert`
-(`github.com/Trustvian/trustvian/alert`) — a sibling to `event`, not a
+(`github.com/trustvian/trustvian/alert`) — a sibling to `event`, not a
 subpackage of `internal/`, and not folded into the root `trustvian`
 package.
 
@@ -121,7 +121,7 @@ this new, explicitly downstream package).
 
 - A third-party `Sink` implementation (a future Slack/Teams/PagerDuty
   relay, or any custom integration) can `import
-  "github.com/Trustvian/trustvian/alert"` and implement `alert.Sink`
+  "github.com/trustvian/trustvian/alert"` and implement `alert.Sink`
   today, from a genuinely separate module, with no code changes to this
   repository — the exact capability this decision exists to preserve.
 - `alert` is now the third package (after root `trustvian` and `event`)

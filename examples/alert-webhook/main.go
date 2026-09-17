@@ -43,9 +43,9 @@ import (
 	"strconv"
 	"time"
 
-	trustvian "github.com/Trustvian/trustvian"
-	"github.com/Trustvian/trustvian/alert"
-	"github.com/Trustvian/trustvian/event"
+	trustvian "github.com/trustvian/trustvian"
+	"github.com/trustvian/trustvian/alert"
+	"github.com/trustvian/trustvian/event"
 )
 
 const webhookSecret = "example-signing-secret"

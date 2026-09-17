@@ -1,11 +1,11 @@
 package trustvian
 
 import (
-	"github.com/Trustvian/trustvian/internal/anomaly"
-	"github.com/Trustvian/trustvian/internal/features"
-	"github.com/Trustvian/trustvian/internal/policy"
-	"github.com/Trustvian/trustvian/internal/store"
-	"github.com/Trustvian/trustvian/internal/trust"
+	"github.com/trustvian/trustvian/internal/anomaly"
+	"github.com/trustvian/trustvian/internal/features"
+	"github.com/trustvian/trustvian/internal/policy"
+	"github.com/trustvian/trustvian/internal/store"
+	"github.com/trustvian/trustvian/internal/trust"
 )
 
 // Option configures an Engine at construction time.

@@ -317,7 +317,7 @@ jobs:
         # break for every real external consumer.
         working-directory: examples
         run: |
-          if grep -rn "github.com/Trustvian/trustvian/internal" --include="*.go" .; then
+          if grep -rn "github.com/trustvian/trustvian/internal" --include="*.go" .; then
             echo "::error::examples must not import internal/* — they model an external consumer"
             exit 1
           fi

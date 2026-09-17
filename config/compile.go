@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Trustvian/trustvian/alert"
-	"github.com/Trustvian/trustvian/event"
-	"github.com/Trustvian/trustvian/internal/anomaly"
-	"github.com/Trustvian/trustvian/internal/policy"
-	"github.com/Trustvian/trustvian/internal/store"
-	"github.com/Trustvian/trustvian/internal/store/postgres"
-	"github.com/Trustvian/trustvian/internal/trust"
+	"github.com/trustvian/trustvian/alert"
+	"github.com/trustvian/trustvian/event"
+	"github.com/trustvian/trustvian/internal/anomaly"
+	"github.com/trustvian/trustvian/internal/policy"
+	"github.com/trustvian/trustvian/internal/store"
+	"github.com/trustvian/trustvian/internal/store/postgres"
+	"github.com/trustvian/trustvian/internal/trust"
 )
 
 // CompilePolicy validates cfg and translates it into a policy.Policy —

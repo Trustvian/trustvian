@@ -5,7 +5,7 @@ labels: bug
 ---
 
 <!-- Security vulnerabilities: do not file them here. Report privately:
-     https://github.com/Trustvian/trustvian/security/advisories/new -->
+     https://github.com/trustvian/trustvian/security/advisories/new -->
 
 **What happened**
 

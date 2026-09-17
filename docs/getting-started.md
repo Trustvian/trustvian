@@ -12,13 +12,13 @@
 CLI:
 
 ```bash
-go install github.com/Trustvian/trustvian/cmd/trustvian@latest
+go install github.com/trustvian/trustvian/cmd/trustvian@latest
 ```
 
 Or clone and use the Makefile:
 
 ```bash
-git clone https://github.com/Trustvian/trustvian.git
+git clone https://github.com/trustvian/trustvian.git
 cd trustvian
 make build      # -> bin/trustvian
 make demo       # analyze the bundled example fixture
@@ -28,7 +28,7 @@ make baseline-demo
 Go SDK, in your own module:
 
 ```bash
-go get github.com/Trustvian/trustvian
+go get github.com/trustvian/trustvian
 ```
 
 ## Your first analysis (CLI)
@@ -88,8 +88,8 @@ import (
 	"fmt"
 	"time"
 
-	trustvian "github.com/Trustvian/trustvian"
-	"github.com/Trustvian/trustvian/event"
+	trustvian "github.com/trustvian/trustvian"
+	"github.com/trustvian/trustvian/event"
 )
 
 func main() {

@@ -12,9 +12,9 @@ package policy
 import (
 	"fmt"
 
-	"github.com/Trustvian/trustvian/event"
-	"github.com/Trustvian/trustvian/internal/features"
-	"github.com/Trustvian/trustvian/internal/trust"
+	"github.com/trustvian/trustvian/event"
+	"github.com/trustvian/trustvian/internal/features"
+	"github.com/trustvian/trustvian/internal/trust"
 )
 
 // Decision is the final verdict a Policy produces.

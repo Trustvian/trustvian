@@ -3,8 +3,8 @@ package trust_test
 import (
 	"testing"
 
-	"github.com/Trustvian/trustvian/internal/anomaly"
-	"github.com/Trustvian/trustvian/internal/trust"
+	"github.com/trustvian/trustvian/internal/anomaly"
+	"github.com/trustvian/trustvian/internal/trust"
 )
 
 func BenchmarkCompute(b *testing.B) {

@@ -3,7 +3,7 @@ package trustvianprocessor
 import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 
-	trustvian "github.com/Trustvian/trustvian"
+	trustvian "github.com/trustvian/trustvian"
 )
 
 // Trustvian output attributes — the same five names and meanings as

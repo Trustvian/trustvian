@@ -25,10 +25,10 @@ import (
 	"log"
 	"time"
 
-	trustvian "github.com/Trustvian/trustvian"
-	"github.com/Trustvian/trustvian/alert"
-	"github.com/Trustvian/trustvian/config"
-	"github.com/Trustvian/trustvian/event"
+	trustvian "github.com/trustvian/trustvian"
+	"github.com/trustvian/trustvian/alert"
+	"github.com/trustvian/trustvian/config"
+	"github.com/trustvian/trustvian/event"
 )
 
 func agentEvent(id, tool, delegatedFrom string, approval event.ApprovalStatus, ts time.Time) event.Event {

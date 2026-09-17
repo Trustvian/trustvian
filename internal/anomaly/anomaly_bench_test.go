@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Trustvian/trustvian/internal/anomaly"
-	"github.com/Trustvian/trustvian/internal/baseline"
-	"github.com/Trustvian/trustvian/internal/features"
-	"github.com/Trustvian/trustvian/internal/fingerprint"
+	"github.com/trustvian/trustvian/internal/anomaly"
+	"github.com/trustvian/trustvian/internal/baseline"
+	"github.com/trustvian/trustvian/internal/features"
+	"github.com/trustvian/trustvian/internal/fingerprint"
 )
 
 // BenchmarkScoreKnownFamiliar is the common case: a mature fingerprint

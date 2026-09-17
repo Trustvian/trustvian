@@ -12,7 +12,7 @@ here and enforced by `scripts/check-modules.sh`.
 
 | Module | Path | Published | Distribution |
 |---|---|---|---|
-| root | `github.com/Trustvian/trustvian` | **Yes** | Go module + release binaries |
+| root | `github.com/trustvian/trustvian` | **Yes** | Go module + release binaries |
 | processor | `trustvian-processor` | No | Built from a clone |
 | examples | `trustvian-examples` | No | Read and run in place |
 
@@ -28,7 +28,7 @@ merely "not published yet". Their module paths — `trustvian-processor`,
 `trustvian-examples` — are not resolvable: `go get trustvian-processor`
 fails with *"malformed module path: missing dot in first path element"*.
 Neither has ever been tagged. Both carry `replace
-github.com/Trustvian/trustvian => ../`, which is exactly right for a
+github.com/trustvian/trustvian => ../`, which is exactly right for a
 module built from this repository rather than fetched from a proxy.
 
 Each exists as a separate module for a reason that has nothing to do with
@@ -72,9 +72,9 @@ The trigger to revisit is concrete: someone wanting to build a Collector
 containing this processor with `ocb` / `otelcol-builder`, which requires a
 resolvable module path. Promoting it then means:
 
-1. Rename the module path to `github.com/Trustvian/trustvian/processor`.
-2. Remove `replace github.com/Trustvian/trustvian => ../`.
-3. `require github.com/Trustvian/trustvian vX.Y.Z` at a **released**
+1. Rename the module path to `github.com/trustvian/trustvian/processor`.
+2. Remove `replace github.com/trustvian/trustvian => ../`.
+3. `require github.com/trustvian/trustvian vX.Y.Z` at a **released**
    version — so the root module must be tagged first. This ordering is not
    optional: a nested module cannot require an unreleased parent.
 4. Tag the nested module as `processor/vX.Y.Z`. Go derives a nested
@@ -107,6 +107,29 @@ CI fetches tags (`fetch-tags: true`) so the offline path is the normal one.
 A shallow checkout without tags still works — it just consults the proxy —
 and a checkout that can do neither fails with a message naming the cause
 rather than blaming the version.
+
+## The module path changed with the organization rename
+
+The GitHub organization was renamed from `Trustvian` to `trustvian`, and the
+module path followed it to `github.com/trustvian/trustvian`. Two consequences
+are load-bearing at release time:
+
+- **`v0.8.0` and earlier are only resolvable at the old path.** Their
+  `go.mod` declares `github.com/Trustvian/trustvian`, and the proxy checks
+  that declaration against the requested path. GitHub redirects the *web and
+  VCS* URLs after a rename, but that does not make an old tag resolve under
+  the new module path.
+- **The first tag created after the rename is the first version of the new
+  module path.** Until it exists, `go get github.com/trustvian/trustvian`
+  has nothing to resolve. Publishing it is what makes every install command
+  in the README and the guides work.
+
+`processor/go.mod` still records `require github.com/trustvian/trustvian
+v0.8.0` as its API floor. That version exists as a tag in this repository —
+which is how `check-modules.sh` verifies it — but not as a published version
+of the *new* module path. The `replace` directive means nothing ever fetches
+it. Raise the floor to the first release published under the new path when
+one exists.
 
 ## Preparing a release
 
@@ -238,7 +261,7 @@ Released versions are immutable; ship the next patch instead.
    [supply-chain.md § Verifying a published image](supply-chain.md#verifying-a-published-image).
 3. **The package is public.** GitHub creates a new container package as
    private on its first push. Check
-   `https://github.com/orgs/Trustvian/packages/container/package/trustvian-collector`
+   `https://github.com/orgs/trustvian/packages/container/package/trustvian-collector`
    and, the first time only, set its visibility to public — otherwise
    `docker pull` fails for everyone else.
 4. The notes match `CHANGELOG.md`.
@@ -274,8 +297,8 @@ untested reproducibility claim is worse than none.
 
 ```bash
 # Checksums
-curl -sLO https://github.com/Trustvian/trustvian/releases/download/v0.9.0/checksums.txt
-curl -sLO https://github.com/Trustvian/trustvian/releases/download/v0.9.0/trustvian_v0.9.0_linux_amd64.tar.gz
+curl -sLO https://github.com/trustvian/trustvian/releases/download/v0.9.0/checksums.txt
+curl -sLO https://github.com/trustvian/trustvian/releases/download/v0.9.0/trustvian_v0.9.0_linux_amd64.tar.gz
 sha256sum -c checksums.txt --ignore-missing
 
 # The binary identifies the commit it was built from
@@ -284,7 +307,7 @@ tar -xzf trustvian_v0.9.0_linux_amd64.tar.gz
 
 # The Go module resolves at the tag
 cd "$(mktemp -d)" && go mod init probe
-go get github.com/Trustvian/trustvian@v0.9.0
+go get github.com/trustvian/trustvian@v0.9.0
 ```
 
 The CLI archives are integrity-protected by `checksums.txt`, which is

@@ -157,7 +157,7 @@ intentionally **not** part of this module:
 - It depends on the `go.opentelemetry.io/collector/*` component APIs, a
   materially heavier dependency tree than the lightweight OTel API/SDK
   packages `internal/otel` uses.
-- It imports this module's public API (`github.com/Trustvian/trustvian`,
+- It imports this module's public API (`github.com/trustvian/trustvian`,
   for `Engine`/`Result`) via a `replace` directive during development,
   the same relationship any other embedder has — not a privileged
   internal dependency. `go list -deps ./...` in *this* module's root

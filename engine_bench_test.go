@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	trustvian "github.com/Trustvian/trustvian"
-	"github.com/Trustvian/trustvian/internal/anomaly"
+	trustvian "github.com/trustvian/trustvian"
+	"github.com/trustvian/trustvian/internal/anomaly"
 )
 
 // warmUpEngine builds a mature, familiar baseline via 30 Analyze+Observe

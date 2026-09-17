@@ -147,7 +147,7 @@ canonical loading path — the CLI does not re-implement parsing or
 validation, mirroring exactly how it already delegates
 `--config`/`PolicyConfig` to the same `config` package. The OTel
 Collector processor does not yet gain parity: `processor/go.mod` still
-pins `github.com/Trustvian/trustvian v0.5.0` (predating even task
+pins `github.com/trustvian/trustvian v0.5.0` (predating even task
 014's `ApprovalStatus`/`DelegatedFrom` fields), so this new public
 surface — like every other `v0.6`/`v0.7` capability — is not yet
 reachable from the processor at all. This is not a gap this task

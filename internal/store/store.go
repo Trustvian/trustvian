@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Trustvian/trustvian/internal/baseline"
-	"github.com/Trustvian/trustvian/internal/features"
-	"github.com/Trustvian/trustvian/internal/fingerprint"
+	"github.com/trustvian/trustvian/internal/baseline"
+	"github.com/trustvian/trustvian/internal/features"
+	"github.com/trustvian/trustvian/internal/fingerprint"
 )
 
 // Store is the port the Engine reads and updates Baseline data through.

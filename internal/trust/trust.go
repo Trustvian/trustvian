@@ -10,7 +10,7 @@ package trust
 import (
 	"fmt"
 
-	"github.com/Trustvian/trustvian/internal/anomaly"
+	"github.com/trustvian/trustvian/internal/anomaly"
 )
 
 // Config holds the RiskLevel bucket thresholds, so they stay documented

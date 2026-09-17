@@ -2,9 +2,9 @@ module trustvian-examples
 
 go 1.27.0
 
-replace github.com/Trustvian/trustvian => ../
+replace github.com/trustvian/trustvian => ../
 
-require github.com/Trustvian/trustvian v0.0.0-00010101000000-000000000000
+require github.com/trustvian/trustvian v0.0.0-00010101000000-000000000000
 
 require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect

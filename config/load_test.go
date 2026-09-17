@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	trustvian "github.com/Trustvian/trustvian"
-	"github.com/Trustvian/trustvian/config"
-	"github.com/Trustvian/trustvian/event"
+	trustvian "github.com/trustvian/trustvian"
+	"github.com/trustvian/trustvian/config"
+	"github.com/trustvian/trustvian/event"
 )
 
 const minimalYAML = `

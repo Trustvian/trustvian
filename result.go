@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Trustvian/trustvian/event"
-	"github.com/Trustvian/trustvian/internal/anomaly"
-	"github.com/Trustvian/trustvian/internal/baseline"
-	"github.com/Trustvian/trustvian/internal/features"
-	"github.com/Trustvian/trustvian/internal/fingerprint"
-	"github.com/Trustvian/trustvian/internal/policy"
-	"github.com/Trustvian/trustvian/internal/trust"
+	"github.com/trustvian/trustvian/event"
+	"github.com/trustvian/trustvian/internal/anomaly"
+	"github.com/trustvian/trustvian/internal/baseline"
+	"github.com/trustvian/trustvian/internal/features"
+	"github.com/trustvian/trustvian/internal/fingerprint"
+	"github.com/trustvian/trustvian/internal/policy"
+	"github.com/trustvian/trustvian/internal/trust"
 )
 
 // Result is the outcome of Engine.Analyze: the output of every pipeline

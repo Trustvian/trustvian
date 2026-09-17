@@ -8,7 +8,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 
-	"github.com/Trustvian/trustvian/event"
+	"github.com/trustvian/trustvian/event"
 	trustvianprocessor "trustvian-processor"
 )
 

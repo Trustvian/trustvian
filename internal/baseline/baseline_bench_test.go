@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Trustvian/trustvian/internal/baseline"
-	"github.com/Trustvian/trustvian/internal/features"
+	"github.com/trustvian/trustvian/internal/baseline"
+	"github.com/trustvian/trustvian/internal/features"
 )
 
 // BenchmarkObserve measures the copy-on-write update cost: every call

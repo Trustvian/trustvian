@@ -71,7 +71,7 @@ hand-written) plus a short `README.md` explaining the scenario.
 ## Technical Requirements
 
 - Each example must actually compile and run as a genuinely external
-  consumer of `github.com/Trustvian/trustvian` (verified via `go mod
+  consumer of `github.com/trustvian/trustvian` (verified via `go mod
   replace` during development, exactly as done throughout this
   documentation set) — not merely live inside this module's own
   `internal/` tree.

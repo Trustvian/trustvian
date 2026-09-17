@@ -12,9 +12,9 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/Trustvian/trustvian/event"
-	"github.com/Trustvian/trustvian/internal/features"
-	trustvianotel "github.com/Trustvian/trustvian/internal/otel"
+	"github.com/trustvian/trustvian/event"
+	"github.com/trustvian/trustvian/internal/features"
+	trustvianotel "github.com/trustvian/trustvian/internal/otel"
 )
 
 type capturingExporter struct {

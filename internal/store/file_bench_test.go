@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Trustvian/trustvian/internal/baseline"
-	"github.com/Trustvian/trustvian/internal/features"
-	"github.com/Trustvian/trustvian/internal/store"
+	"github.com/trustvian/trustvian/internal/baseline"
+	"github.com/trustvian/trustvian/internal/features"
+	"github.com/trustvian/trustvian/internal/store"
 )
 
 // BenchmarkFileStoreObserveSameKey is FileStore's counterpart to

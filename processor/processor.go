@@ -17,8 +17,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.uber.org/zap"
 
-	trustvian "github.com/Trustvian/trustvian"
-	"github.com/Trustvian/trustvian/config"
+	trustvian "github.com/trustvian/trustvian"
+	"github.com/trustvian/trustvian/config"
 
 	"trustvian-processor/internal/health"
 	"trustvian-processor/internal/metrics"

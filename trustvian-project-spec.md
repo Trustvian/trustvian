@@ -1455,7 +1455,7 @@ should have ruled out: `alert.Sink`'s entire purpose is for third-party
 code to implement it against a stable `Alert` type, which Go's
 `internal/` visibility rule makes structurally impossible. `alert`
 therefore lives as a **public** top-level package
-(`github.com/Trustvian/trustvian/alert`, a sibling to `event`), not
+(`github.com/trustvian/trustvian/alert`, a sibling to `event`), not
 under `internal/` — decided deliberately and recorded in
 [ADR 0007](docs/adr/0007-alert-package-is-public.md), following the
 exact "prove the interface is needed, then place it" discipline

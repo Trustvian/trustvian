@@ -71,7 +71,7 @@ func run(t *testing.T, dir string, offline bool) (bool, string) {
 	return err == nil, string(out)
 }
 
-const validRoot = "module github.com/Trustvian/trustvian\n\ngo 1.27\n"
+const validRoot = "module github.com/trustvian/trustvian\n\ngo 1.27\n"
 
 func TestValidDevelopmentStatePasses(t *testing.T) {
 	// The repository's actual shape: a canonical root with no replace, and a
@@ -79,8 +79,8 @@ func TestValidDevelopmentStatePasses(t *testing.T) {
 	// placeholder needs no version lookup, so this holds offline.
 	dir := fixture(t, validRoot,
 		"module trustvian-nested\n\ngo 1.27\n\n"+
-			"replace github.com/Trustvian/trustvian => ../\n\n"+
-			"require github.com/Trustvian/trustvian v0.0.0-00010101000000-000000000000\n")
+			"replace github.com/trustvian/trustvian => ../\n\n"+
+			"require github.com/trustvian/trustvian v0.0.0-00010101000000-000000000000\n")
 
 	ok, out := run(t, dir, true)
 	if !ok {
@@ -106,9 +106,9 @@ func TestResolvablePathWithLocalReplaceFails(t *testing.T) {
 	// Premature promotion: once the path is resolvable, a local replace
 	// makes it a module nobody else can build.
 	dir := fixture(t, validRoot,
-		"module github.com/Trustvian/trustvian/nested\n\ngo 1.27\n\n"+
-			"replace github.com/Trustvian/trustvian => ../\n\n"+
-			"require github.com/Trustvian/trustvian v0.0.0-00010101000000-000000000000\n")
+		"module github.com/trustvian/trustvian/nested\n\ngo 1.27\n\n"+
+			"replace github.com/trustvian/trustvian => ../\n\n"+
+			"require github.com/trustvian/trustvian v0.0.0-00010101000000-000000000000\n")
 
 	ok, out := run(t, dir, true)
 	if ok {
@@ -121,7 +121,7 @@ func TestReplaceToForeignPathFails(t *testing.T) {
 	// the machine that wrote it.
 	dir := fixture(t, validRoot,
 		"module trustvian-nested\n\ngo 1.27\n\n"+
-			"replace github.com/Trustvian/trustvian => /somewhere/else\n")
+			"replace github.com/trustvian/trustvian => /somewhere/else\n")
 
 	if ok, out := run(t, dir, true); ok {
 		t.Errorf("a replace to a foreign path was accepted:\n%s", out)
@@ -137,8 +137,8 @@ func TestReplaceToForeignPathFails(t *testing.T) {
 func TestUnverifiableVersionFailsExplicitly(t *testing.T) {
 	dir := fixture(t, validRoot,
 		"module trustvian-nested\n\ngo 1.27\n\n"+
-			"replace github.com/Trustvian/trustvian => ../\n\n"+
-			"require github.com/Trustvian/trustvian v0.8.0\n")
+			"replace github.com/trustvian/trustvian => ../\n\n"+
+			"require github.com/trustvian/trustvian v0.8.0\n")
 
 	ok, out := run(t, dir, true)
 	if ok {
@@ -159,8 +159,8 @@ func TestUnverifiableVersionFailsExplicitly(t *testing.T) {
 func TestSingleLineRequireIsParsed(t *testing.T) {
 	dir := fixture(t, validRoot,
 		"module trustvian-nested\n\ngo 1.27\n\n"+
-			"replace github.com/Trustvian/trustvian => ../\n\n"+
-			"require github.com/Trustvian/trustvian v0.8.0\n")
+			"replace github.com/trustvian/trustvian => ../\n\n"+
+			"require github.com/trustvian/trustvian v0.8.0\n")
 
 	_, out := run(t, dir, true)
 	if !strings.Contains(out, "v0.8.0") {

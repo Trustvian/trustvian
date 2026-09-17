@@ -265,8 +265,8 @@ func TestFingerprintIDIndependentOfEventIdentifiers(t *testing.T) {
 }
 ```
 
-Add `"time"`, `"github.com/Trustvian/trustvian/event"`, and
-`"github.com/Trustvian/trustvian/internal/features"` imports if not already
+Add `"time"`, `"github.com/trustvian/trustvian/event"`, and
+`"github.com/trustvian/trustvian/internal/features"` imports if not already
 present (check first — `internal/fingerprint`'s own package already imports
 `internal/features`, but the `_test` file may need `event` added).
 
@@ -918,7 +918,7 @@ func TestComputeScenarioMatrixBoundsAndMonotonicity(t *testing.T) {
 }
 ```
 
-Add `"github.com/Trustvian/trustvian/internal/anomaly"` to the test file's imports
+Add `"github.com/trustvian/trustvian/internal/anomaly"` to the test file's imports
 if not already present.
 
 - [ ] **Step 6: Run test to verify it fails or passes**
@@ -1353,8 +1353,8 @@ input/output pairs.
 ```bash
 cd examples
 go mod init trustvian-examples
-go mod edit -replace github.com/Trustvian/trustvian=../
-go get github.com/Trustvian/trustvian@v0.0.0
+go mod edit -replace github.com/trustvian/trustvian=../
+go get github.com/trustvian/trustvian@v0.0.0
 go mod tidy
 ```
 
@@ -1372,8 +1372,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/Trustvian/trustvian"
-	"github.com/Trustvian/trustvian/event"
+	"github.com/trustvian/trustvian"
+	"github.com/trustvian/trustvian/event"
 )
 
 func main() {

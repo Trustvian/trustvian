@@ -10,13 +10,13 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 	"go.opentelemetry.io/otel/trace"
 
-	trustvian "github.com/Trustvian/trustvian"
-	"github.com/Trustvian/trustvian/event"
-	"github.com/Trustvian/trustvian/internal/anomaly"
-	"github.com/Trustvian/trustvian/internal/fingerprint"
-	trustvianotel "github.com/Trustvian/trustvian/internal/otel"
-	"github.com/Trustvian/trustvian/internal/policy"
-	"github.com/Trustvian/trustvian/internal/trust"
+	trustvian "github.com/trustvian/trustvian"
+	"github.com/trustvian/trustvian/event"
+	"github.com/trustvian/trustvian/internal/anomaly"
+	"github.com/trustvian/trustvian/internal/fingerprint"
+	trustvianotel "github.com/trustvian/trustvian/internal/otel"
+	"github.com/trustvian/trustvian/internal/policy"
+	"github.com/trustvian/trustvian/internal/trust"
 )
 
 // findAttr looks up key in attrs, returning its Value and whether it

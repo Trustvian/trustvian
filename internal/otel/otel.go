@@ -31,8 +31,8 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/Trustvian/trustvian/event"
-	"github.com/Trustvian/trustvian/internal/features"
+	"github.com/trustvian/trustvian/event"
+	"github.com/trustvian/trustvian/internal/features"
 )
 
 // Trustvian-specific override attributes. See the package doc for why

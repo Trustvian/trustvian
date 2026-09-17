@@ -157,7 +157,7 @@ rewrites your code.
 ## Modules and releases
 
 This repository publishes exactly one Go module — the root,
-`github.com/Trustvian/trustvian`. The `processor` and `examples` modules
+`github.com/trustvian/trustvian`. The `processor` and `examples` modules
 are repository-internal: their module paths are not resolvable and they are
 built from a clone. `make check-modules` enforces the invariants that keeps
 true; [docs/release-guide.md](docs/release-guide.md) explains the model and
