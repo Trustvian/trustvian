@@ -405,6 +405,7 @@ computes; Trustvian is not an authenticator. See
 | Sequence analysis | [sequence-analysis.md](docs/sequence-analysis.md) |
 | OpenTelemetry · Collector processor | [OPENTELEMETRY.md](docs/OPENTELEMETRY.md) · [processor/README.md](processor/README.md) |
 | Reference deployment | [deployments/docker-compose/README.md](deployments/docker-compose/README.md) |
+| Observability and resource bounds | [observability.md](docs/observability.md) |
 | Security · Performance | [SECURITY.md](docs/SECURITY.md) · [PERFORMANCE.md](docs/PERFORMANCE.md) |
 | Use cases · Decision records | [use-cases.md](docs/use-cases.md) · [adr/](docs/adr/) |
 

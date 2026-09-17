@@ -453,6 +453,37 @@ public API is involved — which is what lets the processor's separate module
 use it despite being unable to import `internal/store`. A store with no
 external dependency implements nothing and is ready by construction.
 
+### Resource ownership
+
+Every resource the long-lived runtime holds has a named owner and a finite
+bound, and the inventory is short enough to state in full:
+
+| Resource | Bound | Shutdown owner |
+|---|---|---|
+| Health-server goroutine | One, bounded header-read timeout | Trustvian (`Shutdown` → `http.Server.Shutdown`) |
+| Channels, queues, tickers, timers | None exist | — |
+| PostgreSQL pool | `MaxConns`; lifetime 1h, idle 30m | Trustvian (`Shutdown` → `Close`, exactly once) |
+| In-memory store | O(distinct actors), each capped | Process lifetime |
+| Meter and instruments | Fixed, 15 time series | **The Collector** |
+| Engine | One, synchronous per call | Process lifetime |
+
+Two entries carry the architectural weight. The `MeterProvider` is the
+Collector's, so Trustvian records through it and never shuts it down —
+doing so would double-shut-down the framework's own telemetry, the same
+second-owner mistake the signal-handling row above avoids. And no global
+concurrency limiter exists: the Collector owns pipeline concurrency, and a
+second limiter would put two control layers on one throughput number.
+
+`Shutdown` orders its three steps for a reason: mark draining, then stop
+the health server, then release the store. Stopping the store first would
+let a readiness probe race a closing connection pool.
+
+Instrumentation follows the same dependency rule as everything else here —
+it lives in the processor, never in the engine, so the core's zero-OTel
+dependency graph survives. See
+[Observability](observability.md) for the metric reference and the
+in-memory growth characteristics.
+
 ## Relationship to Trustvian Control/Cloud
 
 Nothing in this repository implements Trustvian Control or Trustvian

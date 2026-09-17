@@ -274,6 +274,20 @@ make vulncheck         # govulncheck across both modules
 `make sbom` writes the SBOM to `dist/`, which is git-ignored: SBOMs are
 generated per build and belong to the artifact, not to the source tree.
 
+**`make sbom` needs a `docker-container` builder.** Attestations are not
+supported by buildx's default `docker` driver, so on a stock Docker
+Desktop the target fails with *"Attestation is not supported for the
+docker driver."* Create one once:
+
+```bash
+docker buildx create --name tv-builder --driver docker-container --bootstrap
+docker buildx use tv-builder
+```
+
+CI is unaffected — `docker/setup-buildx-action` provisions a container
+driver already. `make container-build` and `make container-scan` work on
+either driver.
+
 ## The reference deployment is unchanged
 
 `deployments/docker-compose/` still builds from source, and must keep

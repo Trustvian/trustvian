@@ -99,6 +99,100 @@ actually depend on.
   source now reports that explicitly instead of passing or blaming the
   version.
 
+- **Runtime liveness and readiness endpoints, and bounded graceful
+  shutdown** for the Collector runtime. Opt-in via a `health:` block on the
+  processor's configuration; omitting it leaves existing Collector configs
+  behaving exactly as before.
+
+  ```yaml
+  processors:
+    trustvian:
+      health:
+        endpoint: 0.0.0.0:13133      # default
+        readiness_timeout: 2s        # default
+  ```
+
+  `GET /livez` reports whether the runtime is functioning. It deliberately
+  does **not** consult the database: restarting a process because its
+  dependency is unreachable produces a restart storm that cannot fix
+  anything. `GET /readyz` reports whether this instance can safely process
+  work, and does consult the configured store — so PostgreSQL configured and
+  unusable returns 503 rather than silently falling back to non-durable
+  storage. A store with no external dependency (in-memory, file) is ready
+  once started.
+
+  Both return `200 {"status":"ok"}` or `503` with a status string and
+  nothing else: no DSN, hostname, database error, or behavioral state. The
+  reason a probe failed goes to the runtime's logs. Readiness probes are
+  bounded by `readiness_timeout` and cost one driver-level ping — no
+  migration, no query, no state load.
+
+  Shutdown transitions readiness to not-ready first, then stops the health
+  server, then closes the Store exactly once; repeated shutdown is safe.
+  Signal handling and in-flight draining remain the Collector framework's,
+  which already stops receivers before processors — this runtime adds no
+  second shutdown owner.
+
+  The official image documents port 13133 but adds **no Docker
+  `HEALTHCHECK`**: it has no shell by design, and adding one would discard a
+  deliberate security property. External HTTP probes are the intended
+  mechanism.
+
+- **Operational metrics for the Collector runtime**
+  ([task 043](docs/tasks/043-self-observability-resource-safety.md)) — five
+  OpenTelemetry instruments emitted through the `MeterProvider` the
+  Collector already injects. Nothing to configure, no vendor client, and no
+  second telemetry backend:
+
+  | Metric | Type | Unit | Attributes |
+  |---|---|---|---|
+  | `trustvian.analyses` | Counter | `{analysis}` | `trustvian.outcome`: `analyzed`, `invalid_event`, `error` |
+  | `trustvian.decisions` | Counter | `{decision}` | `trustvian.decision`: the six `policy.Decision` values, plus `other` |
+  | `trustvian.analysis.duration` | Histogram | `s` | — |
+  | `trustvian.observations` | Counter | `{observation}` | `trustvian.outcome`: `learned`, `not_eligible`, `error` |
+  | `trustvian.observe.duration` | Histogram | `s` | — |
+
+  These are the facts only Trustvian knows. Span counts are deliberately
+  **not** among them: the Collector already counts spans accepted, refused,
+  and dropped per component, and a parallel Trustvian counter would be a
+  second, subtly different number for the same thing.
+
+  **Cardinality is fixed at 15 time series**, regardless of how many actors,
+  environments, or tenants a deployment sees — and it is enforced
+  structurally rather than by review. Every attribute vocabulary is closed,
+  and its measurement options are pre-built at construction, so a value with
+  no entry has no option to record with; an unrecognized decision records as
+  `other` instead of opening a series. Actor IDs, trace IDs, raw error text,
+  DSNs, and behavioral payload cannot become labels, which a test asserts
+  against recorded telemetry rather than against documentation.
+
+  Instrumentation lives in the processor, never in the engine, so the core
+  module's zero-OpenTelemetry dependency graph is unchanged and no SDK
+  consumer gains a dependency. Recording is an in-process update — a failing
+  metrics backend cannot slow, block, or alter a security decision — and the
+  provider's lifecycle stays with the Collector, which created it.
+
+  The span path stays allocation-free: `BenchmarkConsumeTraces` reports the
+  same 33 allocs/op as before these metrics existed. With a real metrics SDK
+  attached it costs ~350 ns more per span, which is the SDK's own
+  aggregation across five measurements and is paid only when a metrics
+  pipeline is configured. See
+  [`docs/observability.md`](docs/observability.md).
+
+  Both duration histograms carry explicit bucket boundaries (1 ms to 10 s).
+  The SDK's defaults assume milliseconds; these instruments record seconds,
+  so without the advice every measurement lands in the first bucket.
+
+  Note that the bundled `cmd/trustvian-collector` — the minimal demo binary
+  the reference deployment runs — supplies a **no-op `MeterProvider`**, so
+  it records these metrics and exports none of them. That binary's
+  hand-built telemetry factory exists to keep the demo's dependency graph
+  small. Collecting them for real means building a Collector distribution
+  with `ocb` and `otelconftelemetry`, which is how a production
+  distribution is built anyway.
+
+  Existing deployments need no configuration change.
+
 ### Changed
 
 - GitHub Actions workflows now use `actions/checkout@v7` and
@@ -431,45 +525,6 @@ default and every `v0.5`–`v0.7` behavior is preserved.
   nobody, whereas removing it after `v0.8.0` would be a breaking change.
   Re-adding an error is backward-compatible if a future backend needs that
   distinction again.
-
-- **Runtime liveness and readiness endpoints, and bounded graceful
-  shutdown** for the Collector runtime. Opt-in via a `health:` block on the
-  processor's configuration; omitting it leaves existing Collector configs
-  behaving exactly as before.
-
-  ```yaml
-  processors:
-    trustvian:
-      health:
-        endpoint: 0.0.0.0:13133      # default
-        readiness_timeout: 2s        # default
-  ```
-
-  `GET /livez` reports whether the runtime is functioning. It deliberately
-  does **not** consult the database: restarting a process because its
-  dependency is unreachable produces a restart storm that cannot fix
-  anything. `GET /readyz` reports whether this instance can safely process
-  work, and does consult the configured store — so PostgreSQL configured and
-  unusable returns 503 rather than silently falling back to non-durable
-  storage. A store with no external dependency (in-memory, file) is ready
-  once started.
-
-  Both return `200 {"status":"ok"}` or `503` with a status string and
-  nothing else: no DSN, hostname, database error, or behavioral state. The
-  reason a probe failed goes to the runtime's logs. Readiness probes are
-  bounded by `readiness_timeout` and cost one driver-level ping — no
-  migration, no query, no state load.
-
-  Shutdown transitions readiness to not-ready first, then stops the health
-  server, then closes the Store exactly once; repeated shutdown is safe.
-  Signal handling and in-flight draining remain the Collector framework's,
-  which already stops receivers before processors — this runtime adds no
-  second shutdown owner.
-
-  The official image documents port 13133 but adds **no Docker
-  `HEALTHCHECK`**: it has no shell by design, and adding one would discard a
-  deliberate security property. External HTTP probes are the intended
-  mechanism.
 
 ### Security
 
