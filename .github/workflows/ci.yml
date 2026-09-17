@@ -377,6 +377,11 @@ jobs:
   # YAML was valid and actionlint was clean — only a network lookup can
   # catch it, and the release workflow itself runs only on a tag, so this
   # is the last place to catch it before one is created.
+  #
+  # Resolution is `git ls-remote` against the public repositories and needs
+  # no token: the first version of this check used the GitHub API, which
+  # failed here for one action while passing locally, and then reported a
+  # valid reference as nonexistent.
   # ---------------------------------------------------------------------
   workflow-refs:
     name: Workflow action references
@@ -386,10 +391,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Verify every action reference resolves
+      - name: Test the checker
+        # Its own tests first, including the two real lookups behind
+        # TRUSTVIAN_TEST_ACTION_REFS_NETWORK — a checker that cannot tell a
+        # missing ref from a failed lookup is worse than none, and this is
+        # the environment where that distinction was got wrong.
         env:
-          # For the API lookups. Read-only, like the rest of this workflow.
-          GITHUB_TOKEN: ${{ github.token }}
+          TRUSTVIAN_TEST_ACTION_REFS_NETWORK: "1"
+        run: ./scripts/test-check-action-refs.sh
+
+      - name: Verify every action reference resolves
         run: ./scripts/check-action-refs.sh
 
   # ---------------------------------------------------------------------

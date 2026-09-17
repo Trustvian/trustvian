@@ -310,7 +310,11 @@ actually depend on.
   anything. The installer is pinned to `v4.1.2`, and
   `scripts/check-action-refs.sh` now verifies in CI that every action
   reference in every workflow resolves, since valid YAML naming a
-  nonexistent action version passes both linting and review.
+  nonexistent action version passes both linting and review. It resolves
+  references with `git ls-remote` and needs no token, and it distinguishes
+  "this reference does not exist" from "the lookup could not be performed"
+  — an earlier API-based version reported a valid action as nonexistent
+  when the lookup itself failed. The checker has its own tests.
 
 - **Release candidates are marked as prereleases.** `gh release create` was
   called without `--prerelease` for any tag, so publishing a

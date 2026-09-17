@@ -88,6 +88,22 @@ TRUSTVIAN_TEST_POSTGRES_DSN='...' go test -race ./...          # everything
 TRUSTVIAN_TEST_POSTGRES_DSN='...' go test -race -short ./...   # integration only
 ```
 
+## Workflow action references
+
+`scripts/check-action-refs.sh` proves every `uses:` reference in
+`.github/workflows` resolves to a real tag, branch, or commit — the check
+that would have caught `sigstore/cosign-installer@v4` before it reached a
+release tag. It uses `git ls-remote`, so it needs no token:
+
+```bash
+./scripts/check-action-refs.sh          # every workflow reference
+./scripts/test-check-action-refs.sh     # the checker's own tests (no network)
+```
+
+A reference that cannot be looked up at all is reported as `UNVERIFIED`
+rather than as missing. Both fail the run; only one of them means the
+reference is wrong.
+
 ## Reference deployment
 
 ```bash
