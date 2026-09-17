@@ -1945,14 +1945,16 @@ Per-task acceptance criteria are fixed in each slice's own task file.
 
 ## v0.9 — Operational Readiness
 
-**Status: IN PROGRESS.** Tasks
+**Status: RELEASE READY** — every slice verified by
+[045](tasks/045-v0.9-stabilization-release-gate.md)'s release gate; the
+`v0.9.0` tag has not been created. Tasks
 [039](tasks/039-ci-quality-gate-automation.md),
 [040](tasks/040-release-artifacts-and-module-consistency.md), and
 [041](tasks/041-container-supply-chain-security.md),
 [042](tasks/042-runtime-health-readiness-graceful-shutdown.md),
 [043](tasks/043-self-observability-resource-safety.md), and
-[044](tasks/044-operations-backup-restore-upgrade.md) are done; 045 is
-named below and not yet task-filed.
+[044](tasks/044-operations-backup-restore-upgrade.md), and
+[045](tasks/045-v0.9-stabilization-release-gate.md) are done.
 
 **Objective.** Production engineering hygiene, so `v1.0` is a real
 release, not just a version number bump.
@@ -1980,7 +1982,7 @@ nobody can review.
 | [042](tasks/042-runtime-health-readiness-graceful-shutdown.md) | Runtime Health, Readiness & Graceful Shutdown | **DONE** |
 | [043](tasks/043-self-observability-resource-safety.md) | Self-Observability & Resource Safety | **DONE** |
 | [044](tasks/044-operations-backup-restore-upgrade.md) | Operations: Backup, Restore & Upgrade | **DONE** |
-| 045 | `v0.9` Stabilization & Release Gate | Next — not task-filed |
+| [045](tasks/045-v0.9-stabilization-release-gate.md) | `v0.9` Stabilization & Release Gate | **DONE** |
 
 **039 — CI & Quality Gate Automation — is done.** Every gate this project
 has run by hand on every task since `v0.1` now runs automatically, across
@@ -2152,10 +2154,23 @@ Three rows the capability table below originally gave this slice —
 *production examples* — concern none of learned state, and were left out
 rather than bundled in; 045's gate decides where they land.
 
-**045 — `v0.9` Stabilization & Release Gate.** The evidence-based gate,
-mirroring [038](tasks/038-v08-stabilization-release-gate.md): verify every
-slice from implementation, reconcile documentation, review any public
-surface added, and decide.
+**045 — `v0.9` Stabilization & Release Gate — is done.** Every slice was
+re-verified from executed evidence rather than its DONE status: all gates
+across three modules, the PostgreSQL tiers including restart durability,
+backup/restore/upgrade from the real `v0.8.0`, the recovery drill, the full
+binary matrix with checksums, both container architectures with scan, SBOM,
+and provenance inspected. The importable Go API is unchanged since `v0.8.0`.
+
+The gate's most useful finding was in the release workflow, which has never
+run: it moved `latest` before signing, so a signing failure would have left
+floating tags on an unsigned image. Floating tags now move by digest only
+after signing, and partial-release recovery is documented. It also added a
+private vulnerability-reporting policy and minimal issue templates, judged
+the reference deployment sufficient as the production example, and corrected
+documentation that had drifted from the code — including a getting-started
+example whose printed decision was wrong and 31 broken links. Recommended
+first step: tag `v0.9.0-rc.1`, which exercises the whole pipeline without
+moving floating tags.
 
 ### Capability coverage
 
@@ -2176,9 +2191,9 @@ it — so nothing is lost in the decomposition:
 | Resource limits | 043 |
 | Backup/restore documentation | 044 |
 | Upgrade/migration documentation | 044 |
-| Security disclosure process | Unassigned — 045 decides (out of 044's scope) |
-| CONTRIBUTING.md, issue templates | 039 (contributor-facing CI docs); issue templates unassigned — 045 decides |
-| Production examples | Unassigned — 045 decides (out of 044's scope) |
+| Security disclosure process | 045 (`.github/SECURITY.md`, private vulnerability reporting) |
+| CONTRIBUTING.md, issue templates | 039 (contributor-facing CI docs); 045 (issue templates) |
+| Production examples | 045 — satisfied by the reference deployment (037, 042, 044) |
 
 **Non-goals.** No behavioral capability, no new detector, no new storage
 backend, and none of the strategic items above (agent tool/MCP security,

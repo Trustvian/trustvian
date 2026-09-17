@@ -99,7 +99,7 @@ transform, no threshold bands, no additional smoothing:
   explain in a `Detail` string ("this transition happens 0.4% of the
   time" is legible; "this transition has a log-odds-transformed rarity
   of 0.87" is not) for no corresponding calibration benefit this task
-  can actually justify with data. [Task 026](../tasks/026-transition-rarity.md#no-arbitrary-magic-weights)'s
+  can actually justify with data. [Task 026](../tasks/026-transition-rarity.md#statistical-definition-the-central-correctness-question)'s
   own brief is explicit: no opaque formulas, no magic weights without
   justification.
 - **Why linear is not "naively" `1 - frequency` despite looking

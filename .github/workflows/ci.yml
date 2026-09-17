@@ -5,8 +5,8 @@
 #
 # Publishing is deliberately NOT here. This workflow creates no release,
 # image, or artifact, which is why it can run with read-only permissions
-# and needs no secrets at all. Release and supply-chain work are separate
-# workflows in later v0.9 slices.
+# and needs no secrets at all. Publishing, scanning the image, and signing
+# live in release.yml, which runs only on a version tag.
 #
 # See docs/tasks/039-ci-quality-gate-automation.md.
 

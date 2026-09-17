@@ -5,7 +5,7 @@
 **Independent of:** [019](019-policy-config-model.md)/[020](020-policy-config-loader.md)/[021](021-cli-config-integration.md)/[022](022-collector-config-integration.md)
 (this task reuses their package, YAML-decoding, and validation
 *conventions*, but shares no code path or document shape with
-`PolicyConfig` — see [ADR 0009](adr/0009-alert-config-is-a-separate-document.md))
+`PolicyConfig` — see [ADR 0009](../adr/0009-alert-config-is-a-separate-document.md))
 
 ## Objective
 
@@ -66,7 +66,7 @@ alert.Evaluate(Result, []alert.Rule) (Alert, bool)   — unchanged
 ## Non-Goals
 
 - **`PolicyConfig`/`Load`/`LoadFile`/schema v1 are not modified in any
-  way.** See [ADR 0009](adr/0009-alert-config-is-a-separate-document.md)
+  way.** See [ADR 0009](../adr/0009-alert-config-is-a-separate-document.md)
   for why a combined schema-v2 document was considered and rejected for
   this task.
 - **No merged `PolicyRule`/`AlertRuleConfig` type.** Non-negotiable —
@@ -157,17 +157,17 @@ per `[]alert.Rule` construction, never per `Result`).
 
 ## Documentation
 
-- [docs/DOMAIN.md](DOMAIN.md) § Alert: new "Configuring Alerts from
+- [docs/DOMAIN.md](../DOMAIN.md) § Alert: new "Configuring Alerts from
   outside this module" paragraph.
-- [docs/adr/0009-alert-config-is-a-separate-document.md](adr/0009-alert-config-is-a-separate-document.md)
+- [docs/adr/0009-alert-config-is-a-separate-document.md](../adr/0009-alert-config-is-a-separate-document.md)
   (new): the schema-v2-vs-separate-document decision.
 - [README.md](../README.md): new "Configuring Alerts" section
   alongside the existing "Configuring a Policy" one.
-- [docs/ROADMAP.md](ROADMAP.md): this task marked done under `v0.5`;
+- [docs/ROADMAP.md](../ROADMAP.md): this task marked done under `v0.5`;
   `v0.5`'s "Alert configuration does not exist" gap closed.
-- [docs/SECURITY.md](SECURITY.md): new Alert-config validation entry
+- [docs/SECURITY.md](../SECURITY.md): new Alert-config validation entry
   in the configuration-input-validation threat table.
-- [CHANGELOG.md](../CHANGELOG.md): per this repository's own
+- [CHANGELOG.md](../../CHANGELOG.md): per this repository's own
   convention (one heading per tag, no `Unreleased` section — see task
   021's precedent), this task's work is folded into the `v0.5.0`
   release notes prepared for the still-pending human tag, not given

@@ -175,7 +175,7 @@ therefore either (a) define `Alert` and `AlertSink` in a new public
 package (a sibling to `event`, following that package's own precedent
 for "the one type every caller must touch to use this feature at all"
 — see [ARCHITECTURE.md § The internal/ boundary — and why event isn't
-inside it](../ARCHITECTURE.md#the-internal-boundary--and-why-event-isnt-inside-it)),
+inside it](../../.claude/rules/architecture.md#the-internal-boundary--and-why-event-isnt-inside-it)),
 or (b) place them in the root package alongside `Result`. Decide
 between these two at implementation time against the real shape of the
 code, and record the decision in a new ADR — this is exactly the kind

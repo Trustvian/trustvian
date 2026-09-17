@@ -138,6 +138,18 @@ jobs:
           go vet ./...
           go test -race ./...
 
+      - name: Go vulnerability scan
+        # Re-run here, not inherited from CI: the vulnerability database moves
+        # independently of the code, so a commit that scanned clean when it
+        # merged can carry a reachable advisory by the time it is tagged.
+        # Both modules whose code ships — the CLI binaries and the image.
+        # GOWORK=off for the same reason as ci.yml.
+        env:
+          GOWORK: "off"
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+          (cd processor && go run golang.org/x/vuln/cmd/govulncheck@latest ./...)
+
       # --- Artifacts -----------------------------------------------------
       #
       # The same script a maintainer runs locally. Every target must build:
@@ -186,9 +198,11 @@ jobs:
   # passing gates instead of re-establishing trust in the source. One
   # release identity, two artifact kinds.
   #
-  # Ordering is build -> scan -> gate -> push -> sign, so a known-bad image
-  # is never published. Signing follows the push because Cosign signs a
-  # digest, which exists only once the image is in the registry.
+  # Ordering is build -> scan -> gate -> push (immutable tag) -> sign ->
+  # promote floating tags, so a known-bad image is never published and the
+  # floating tags (`X.Y`, `latest`) only ever point at a signed digest.
+  # Signing follows the push because Cosign signs a digest, which exists only
+  # once the image is in the registry.
   # ---------------------------------------------------------------------
   container:
     name: Container image
@@ -254,31 +268,16 @@ jobs:
 
       # --- Publish -------------------------------------------------------
 
-      - name: Tags for this release
-        id: tags
+      - name: Build and push the immutable tag
+        id: push
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          # The immutable vX.Y.Z tag is the deployment contract and is
-          # always published. The floating tags are convenience only, and a
-          # prerelease must never move them — someone tracking `latest`
-          # has not opted into release candidates.
-          tags="$IMAGE:$TAG"
-          if printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-            minor="${TAG#v}"; minor="${minor%.*}"
-            tags="$tags,$IMAGE:$minor,$IMAGE:latest"
-          else
-            echo "::notice::prerelease $TAG — publishing only the immutable tag"
-          fi
-          echo "tags=$tags" >> "$GITHUB_OUTPUT"
-
-      - name: Build and push multi-arch image
-        id: push
-        run: |
-          IFS=',' read -ra tag_list <<< "${{ steps.tags.outputs.tags }}"
-          tag_args=()
-          for tg in "${tag_list[@]}"; do tag_args+=(-t "$tg"); done
-
+          # ONLY the immutable vX.Y.Z tag here. The floating tags are moved
+          # after signing succeeds (below), so a failure between push and
+          # sign can never leave `latest` pointing at an unsigned image —
+          # someone pulling a floating tag has not opted into checking.
+          #
           # BuildKit's own SBOM (SPDX) and SLSA provenance attestations,
           # attached to the image in the registry. Platform-standard rather
           # than a bespoke format, and no extra tool in the release path.
@@ -286,14 +285,14 @@ jobs:
             --platform linux/amd64,linux/arm64 \
             --sbom=true \
             --provenance=mode=max \
-            "${tag_args[@]}" \
+            -t "$IMAGE:$TAG" \
             --metadata-file /tmp/metadata.json \
             --push \
             .
 
           digest="$(python3 -c "import json;print(json.load(open('/tmp/metadata.json'))['containerimage.digest'])")"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
-          echo "::notice::pushed $IMAGE@$digest"
+          echo "::notice::pushed $IMAGE:$TAG@$digest"
 
       # --- Sign ----------------------------------------------------------
 
@@ -304,18 +303,46 @@ jobs:
         # Keyless: identity comes from this workflow's OIDC token, so there
         # is no private key in the repository or in a secret. Signs the
         # digest rather than a tag, because a tag can later move.
-        run: cosign sign --yes "$IMAGE@${{ steps.push.outputs.digest }}"
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: cosign sign --yes "$IMAGE@$DIGEST"
+
+      # --- Promote floating tags ------------------------------------------
+
+      - name: Promote floating tags
+        env:
+          TAG: ${{ github.ref_name }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          # A retag by digest: no rebuild, so `X.Y` and `latest` resolve to
+          # exactly the signed, attested index pushed above. A prerelease
+          # never moves them — someone tracking `latest` has not opted into
+          # release candidates.
+          if printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            minor="${TAG#v}"; minor="${minor%.*}"
+            # One retag per call. Verified against a registry during task 045:
+            # every tag resolves to the pushed digest. Two -t flags in a single
+            # call behaved inconsistently in that verification, so they are
+            # not combined.
+            for floating in "$minor" latest; do
+              docker buildx imagetools create -t "$IMAGE:$floating" "$IMAGE@$DIGEST"
+            done
+            echo "::notice::$IMAGE:$minor and :latest now point at $DIGEST"
+          else
+            echo "::notice::prerelease $TAG — floating tags left unchanged"
+          fi
 
       - name: Summarize
         env:
           TAG: ${{ github.ref_name }}
+          DIGEST: ${{ steps.push.outputs.digest }}
         run: |
           {
             echo "### Container image"
             echo
             echo '```'
             echo "$IMAGE:$TAG"
-            echo "$IMAGE@${{ steps.push.outputs.digest }}"
+            echo "$IMAGE@$DIGEST"
             echo '```'
             echo
             echo "Signed keylessly; SBOM and SLSA provenance attached as attestations."

@@ -13,7 +13,7 @@ inbound-only (span → `Event`); this task completes the round trip.
 
 ## Why
 
-[OPENTELEMETRY.md § Trustvian output attributes](../OPENTELEMETRY.md#trustvian-output-attributes-not-yet-implemented)
+[OPENTELEMETRY.md § Trustvian output attributes](../OPENTELEMETRY.md#trustvian-output-attributes)
 already documents these six attributes as designed-but-unimplemented,
 explicitly to avoid documentation implying functionality that doesn't
 exist. This task is where that gap actually closes — and it's the
@@ -39,7 +39,7 @@ scoring and discarding the result.
   `trustvian.fingerprint.id` ← `Fingerprint.ID`.
 - Resolve `trustvian.behavior.id`'s undefined meaning (flagged as an
   open question in
-  [OPENTELEMETRY.md](../OPENTELEMETRY.md#trustvian-output-attributes-not-yet-implemented)):
+  [OPENTELEMETRY.md](../OPENTELEMETRY.md#trustvian-output-attributes)):
   decide during implementation whether it's redundant with
   `fingerprint.id` (and should be dropped from the documented set with
   a rationale) or represents something distinct (e.g. a

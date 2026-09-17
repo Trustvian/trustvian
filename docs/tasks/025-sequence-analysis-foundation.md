@@ -2,7 +2,7 @@
 
 **Milestone:** v0.6 · **Depends on:** `v0.1` (stable `Baseline`/
 `Anomaly` — this task extends both, in place) · **Blocks:**
-[026](#roadmap-successors-illustrative)–onward (n-gram, Markov, and any
+[026](../ROADMAP.md)–onward (n-gram, Markov, and any
 other v0.6 detector build on the transition observation this task
 establishes) · **Independent of:** `v0.5` (`config`/`alert`) — nothing
 here touches Policy or Alert configuration.
@@ -16,7 +16,7 @@ whether the immediately preceding action has ever led to this one
 before, for this actor. See
 [docs/sequence-analysis.md](../sequence-analysis.md) for the full
 design writeup and
-[ADR 0010](adr/0010-bounded-process-local-sequence-state.md) for why
+[ADR 0010](../adr/0010-bounded-process-local-sequence-state.md) for why
 the state model looks the way it does.
 
 ## Why
@@ -205,26 +205,26 @@ same immutability cost `Baseline.Fingerprints` itself already pays on
 every `Observe`, now paid a second time for `PredecessorCounts`. Not
 optimized away: numbers remain sub-microsecond and sub-kilobyte
 throughout, and the alternative (in-place mutation) would be unsafe
-(see [ADR 0010](adr/0010-bounded-process-local-sequence-state.md)).
+(see [ADR 0010](../adr/0010-bounded-process-local-sequence-state.md)).
 
 ## Documentation
 
 - [docs/sequence-analysis.md](../sequence-analysis.md) (new): the full
   design writeup.
-- [docs/adr/0010-bounded-process-local-sequence-state.md](adr/0010-bounded-process-local-sequence-state.md)
+- [docs/adr/0010-bounded-process-local-sequence-state.md](../adr/0010-bounded-process-local-sequence-state.md)
   (new): the state-model decision.
-- [docs/DOMAIN.md](DOMAIN.md): new "Sequence-aware detection" section.
-- [docs/SECURITY.md](SECURITY.md): new "Sequence state" threat entry
+- [docs/DOMAIN.md](../DOMAIN.md): new "Sequence-aware detection" section.
+- [docs/SECURITY.md](../SECURITY.md): new "Sequence state" threat entry
   (memory exhaustion, high-cardinality identities, cross-actor
   contamination, out-of-order events, sensitive history retention,
   process-local scope).
-- [docs/PERFORMANCE.md](PERFORMANCE.md): new benchmark results.
-- [docs/ROADMAP.md](ROADMAP.md): `v0.6` scope finalized into slices;
+- [docs/PERFORMANCE.md](../PERFORMANCE.md): new benchmark results.
+- [docs/ROADMAP.md](../ROADMAP.md): `v0.6` scope finalized into slices;
   this task marked done; `v0.6` marked in progress (not shipped).
-- [trustvian-project-spec.md](../trustvian-project-spec.md) § 6: status
+- [trustvian-project-spec.md](../../trustvian-project-spec.md) § 6: status
   callout, matching the convention § 17/§ 18 already use.
 - [README.md](../README.md): `v0.6` mentioned as in-progress work.
-- [CHANGELOG.md](../CHANGELOG.md): new `## Unreleased` section
+- [CHANGELOG.md](../../CHANGELOG.md): new `## Unreleased` section
   (this repository's first — see its own note on why, given the
   established one-heading-per-tag convention for `v0.1.0`–`v0.5.0`).
 

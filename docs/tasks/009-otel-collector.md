@@ -104,7 +104,7 @@ first time.
 
 - New `README.md` in the processor module/repository (separate from
   this repository's own).
-- [OPENTELEMETRY.md § the OTel Collector processor](../OPENTELEMETRY.md#the-otel-collector-processor-planned-separate-module):
+- [OPENTELEMETRY.md § the OTel Collector processor](../OPENTELEMETRY.md#the-otel-collector-processor):
   update from "planned" to point at the real location once it exists.
 - If [ADR 0002](../adr/0002-public-api-boundary.md) is revisited as
   part of this task, a new ADR recording that decision.

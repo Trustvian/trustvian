@@ -45,8 +45,8 @@ services:
       # developer may already be running.
       - "127.0.0.1:${TRUSTVIAN_POSTGRES_HOST_PORT:-5433}:5432"
     healthcheck:
-      # Dependency startup coordination only — this is not the application
-      # health/readiness capability planned for v0.9. It exists so the
+      # Dependency startup coordination only — this is not Trustvian's own
+      # /livez and /readyz (see the collector's health block). It exists so the
       # collector does not race an initializing database, which would
       # otherwise make it fail closed (correctly) on a perfectly healthy
       # stack.
@@ -66,9 +66,10 @@ services:
   # docs/tasks/037-reference-docker-compose-deployment.md § Runtime
   # decision.
   #
-  # Built from repository source rather than pulled: there is no published
-  # Trustvian image yet, and inventing a reference to one would be a lie.
-  # Official image publishing is v0.9's scope.
+  # Built from repository source rather than pulled, so the repository runs
+  # without any published image. The official image
+  # (ghcr.io/trustvian/trustvian-collector, built from the root Dockerfile)
+  # can be substituted once a release exists — see docs/supply-chain.md.
   # ---------------------------------------------------------------------
   otel-collector:
     build:

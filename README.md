@@ -341,8 +341,11 @@ demo producer → OTLP → Collector + Trustvian processor → PostgreSQL
 ```
 
 The demo sends deterministic telemetry, the engine learns from it, and the
-baseline survives a full `docker compose down` and `up`. `./smoke-test.sh`
-verifies the whole path and exits non-zero on failure.
+baseline survives a full `docker compose down` and `up`. The runtime serves
+`/livez` and `/readyz` on `127.0.0.1:13133`. `./smoke-test.sh` verifies the
+whole path, and `./recovery-drill.sh` proves a backup restores and serves;
+both exit non-zero on failure. Backup, restore, and upgrade procedures are
+in [docs/operations.md](docs/operations.md).
 
 This is a **reference deployment** for local evaluation, not hardened
 production orchestration: credentials are placeholders and TLS is off. Its
@@ -391,6 +394,9 @@ Identity confidence is an **input** Trustvian trusts, not something it
 computes; Trustvian is not an authenticator. See
 [docs/SECURITY.md](docs/SECURITY.md).
 
+Found a vulnerability? Report it privately, not in a public issue — see
+[.github/SECURITY.md](.github/SECURITY.md).
+
 ## Documentation
 
 [docs/README.md](docs/README.md) is the full index. The most-used entries:
@@ -408,6 +414,7 @@ computes; Trustvian is not an authenticator. See
 | Reference deployment | [deployments/docker-compose/README.md](deployments/docker-compose/README.md) |
 | Observability and resource bounds | [observability.md](docs/observability.md) |
 | Security · Performance | [SECURITY.md](docs/SECURITY.md) · [PERFORMANCE.md](docs/PERFORMANCE.md) |
+| Verifying releases and the container image | [release-guide.md](docs/release-guide.md) · [supply-chain.md](docs/supply-chain.md) |
 | Use cases · Decision records | [use-cases.md](docs/use-cases.md) · [adr/](docs/adr/) |
 
 ## Examples
