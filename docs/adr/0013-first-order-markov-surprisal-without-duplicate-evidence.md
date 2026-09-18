@@ -2,7 +2,7 @@
 
 ## Context
 
-[Task 028](../tasks/028-markov-transition-scoring.md) asks Trustvian to
+[Task 028](../archive/tasks/v0.6/028-markov-transition-scoring.md) asks Trustvian to
 add "Markov transition scoring." Before writing any code, this task
 requires answering a specific, mandatory question: **what capability
 would Markov scoring provide that task 026's `transition_rarity`
@@ -10,7 +10,7 @@ does not already provide?**
 
 ## The duplication analysis (mandatory, done first)
 
-[Task 026](../tasks/026-transition-rarity.md) already computes:
+[Task 026](../archive/tasks/v0.6/026-transition-rarity.md) already computes:
 
 ```
 frequency(A -> B) = PredecessorCounts_B[A] / OutgoingTransitionTotal_A

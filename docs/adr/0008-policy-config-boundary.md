@@ -2,7 +2,7 @@
 
 ## Context
 
-[Task 019](../tasks/019-policy-config-model.md) (`v0.5`, Policy &
+[Task 019](../archive/tasks/v0.5/019-policy-config-model.md) (`v0.5`, Policy &
 Configuration) exists to close a gap [ADR 0002](0002-public-api-boundary.md)
 named: no code outside this module can construct a `policy.Policy`,
 because `Policy`/`Condition`/`Rule`/`Decision` all live under

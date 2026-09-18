@@ -54,9 +54,9 @@ downstream:
   `OperationName`, `TargetName`, `TargetCategory`, `Environment`.
   These identify *what kind of behavior* this is and feed the
   `Fingerprint`. `TargetCategory` (added in
-  [task 001](tasks/001-feature-model.md)) mirrors `Event.Target.Category`
+  [task 001](archive/tasks/v0.1/001-feature-model.md)) mirrors `Event.Target.Category`
   and is optional — it flows through `Extract` and, as of
-  [task 002](tasks/002-fingerprint.md), is part of
+  [task 002](archive/tasks/v0.1/002-fingerprint.md), is part of
   `fingerprint.Compute`'s hash.
 - **Volatile features** — `Timestamp`, `Latency`, `Error`. These are
   per-event, noisy, and feed `Anomaly` directly; they never become
@@ -123,7 +123,7 @@ misread after an upgrade changes what its ID means. Bump
 `fingerprintVersion` whenever the stable field set or hash algorithm
 changes — version `"1"` is the version under which `TargetCategory`
 first became part of the hash (see
-[task 002](tasks/002-fingerprint.md)). There is deliberately no
+[task 002](archive/tasks/v0.1/002-fingerprint.md)). There is deliberately no
 separate `Version` field on `Fingerprint`: no current consumer needs to
 read the version independent of the ID it's baked into, so exposing
 one would be exactly the kind of interface `.claude/rules/architecture.md`
@@ -152,7 +152,7 @@ says to add only when needed, not speculatively.
   before it's overwritten, so it captures how much time elapsed since
   the fingerprint's last occurrence — the raw material
   `internal/anomaly`'s `frequency_deviation` signal (task
-  [004](tasks/004-anomaly.md)) scores against. It has no interval to
+  [004](archive/tasks/v0.1/004-anomaly.md)) scores against. It has no interval to
   record on a fingerprint's first observation (`IntervalObservations`
   stays 0), mirroring `LatencyObservations`' cold-start behavior.
 - **Ordering** — an observation whose timestamp does not strictly
@@ -200,7 +200,7 @@ says to add only when needed, not speculatively.
   where `HourActivity` unmarshals to its zero array — is correctly
   treated as immature rather than as a suspiciously empty, fully mature
   distribution. See `internal/anomaly`'s `time_pattern_deviation` signal
-  below, and [task 017](tasks/017-baseline-time-patterns.md).
+  below, and [task 017](archive/tasks/v0.3/017-baseline-time-patterns.md).
 
 ### What persists, and the contract it persists under
 
@@ -292,7 +292,7 @@ cross `MinObservations` within a single day's traffic has a
 real time-of-day pattern; scoring against it before the operator has
 confirmed enough elapsed-time coverage for their own traffic would
 misattribute normal activity in an unseen hour as anomalous. This is a
-known limitation, not a bug — see [task 017's Non-Goals](tasks/017-baseline-time-patterns.md).
+known limitation, not a bug — see [task 017's Non-Goals](archive/tasks/v0.3/017-baseline-time-patterns.md).
 
 For `frequency_deviation` specifically, the reason is calibration
 against real jitter. The signal divides by the standard deviation of a
@@ -366,7 +366,7 @@ computation.
 
 `TestComputeScenarioMatrixBoundsAndMonotonicity`
 (`internal/trust/trust_test.go`, task
-[005](tasks/005-trust-risk.md)) sweeps `IdentityConfidence`,
+[005](archive/tasks/v0.1/005-trust-risk.md)) sweeps `IdentityConfidence`,
 `Anomaly.Score`, `Anomaly.Confidence`, and `ContextRisk` each across
 `{0, 0.25, 0.5, 0.75, 1}` — the full cross product — and asserts two
 guarantees that were previously only implied by the formula, not
@@ -429,7 +429,7 @@ verified empirically, not assumed; see ADR 0008 for the experiment.
 This is the concrete fix for `processor/`'s documented "runs the
 default `Policy` only" limitation, though wiring `processor/` itself
 to use `config` is separate, later work — [task
-019](tasks/019-policy-config-model.md) only builds the model and
+019](archive/tasks/v0.5/019-policy-config-model.md) only builds the model and
 compiler.
 
 ## Alert
@@ -507,7 +507,7 @@ exactly as `alert.Evaluate`'s own structural independence from
 0009](adr/0009-alert-config-is-a-separate-document.md) for the full
 reasoning and the alternative (a combined `policy:`/`alerts:` schema
 v2) it weighs against. [Task
-023](tasks/023-declarative-alert-configuration.md) builds this model
+023](archive/tasks/v0.5/023-declarative-alert-configuration.md) builds this model
 and compiler; wiring it into the CLI or the Collector processor is
 explicitly out of that task's scope (there is no alert-delivery flow
 in either today for a compiled `[]alert.Rule` to plug into) and remains
@@ -517,7 +517,7 @@ separate, later work.
 
 Every signal above scores one event against its own fingerprint's
 history — none of them see what happened *immediately before* it.
-`v0.6` ([task 025](tasks/025-sequence-analysis-foundation.md), [ADR
+`v0.6` ([task 025](archive/tasks/v0.6/025-sequence-analysis-foundation.md), [ADR
 0010](adr/0010-bounded-process-local-sequence-state.md)) adds exactly
 one new signal, `transition_deviation`, integrated identically to
 every existing one: another `anomaly.Signal`, folded into the same
@@ -625,7 +625,7 @@ scoring path, no new pipeline stage.
 
 ## AI Agent behavioral context
 
-`v0.7` ([task 014](tasks/014-ai-agent.md), [ADR
+`v0.7` ([task 014](archive/tasks/v0.7/014-ai-agent.md), [ADR
 0014](adr/0014-ai-agents-as-first-class-behavioral-actors.md)) adds
 three optional `event.Context` fields for AI-agent session,
 delegation, and approval context. No new package, no new pipeline
@@ -770,7 +770,7 @@ not** — the central design question this task answers explicitly:
   signals fire on an unexpected tool call. The task's own mandatory
   critical test,
   `TestAnalyzeAgentToolSequenceNoveltyDetectedByExistingEngine`,
-  mirrors [task 027](tasks/027-bounded-ngram-detection.md)'s own proof:
+  mirrors [task 027](archive/tasks/v0.6/027-bounded-ngram-detection.md)'s own proof:
   `search -> secret.read` and `secret.read -> external.post` are each
   trained as familiar pairwise transitions via different contexts, the
   complete `search -> secret.read -> external.post` sequence is never

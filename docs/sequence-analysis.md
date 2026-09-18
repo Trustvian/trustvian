@@ -2,7 +2,7 @@
 
 How Trustvian reasons about the *order* of an actor's behavior, not
 just one event in isolation — the `v0.6` foundation
-([task 025](tasks/025-sequence-analysis-foundation.md),
+([task 025](archive/tasks/v0.6/025-sequence-analysis-foundation.md),
 [ADR 0010](adr/0010-bounded-process-local-sequence-state.md)).
 
 ## The problem
@@ -43,7 +43,7 @@ predecessor fingerprint ever led to this destination fingerprint
 before, for this actor?** Not "how often" (no rarity threshold yet),
 not "how probable" (no Markov model yet) — just seen vs. never seen.
 That is a deliberate scope boundary, not an oversight — see
-[task 025's Non-Goals](tasks/025-sequence-analysis-foundation.md#non-goals).
+[task 025's Non-Goals](archive/tasks/v0.6/025-sequence-analysis-foundation.md#non-goals).
 
 ## Where the state lives
 
@@ -79,7 +79,7 @@ inherited for free from `internal/store`'s existing per-`Key` sharding.
 
 The first detector operates on `E(n-1) -> E(n)` only — the smallest
 possible unit of order, and a deliberately narrow foundation (see
-[task 025's Non-Goals](tasks/025-sequence-analysis-foundation.md#non-goals)).
+[task 025's Non-Goals](archive/tasks/v0.6/025-sequence-analysis-foundation.md#non-goals)).
 A future n-gram or Markov task can generalize `LastFingerprintID` into
 a small, explicitly-bounded ring buffer without this design being
 reversed — the write path (`Baseline.Observe`) and read path
@@ -147,7 +147,7 @@ cfg.TransitionWeight = 0.7 // opt-in: defaults to 0
 engine := trustvian.NewEngine(trustvian.WithAnomalyConfig(cfg))
 ```
 
-or, since [task 033](tasks/033-v07-stabilization-release-gate.md),
+or, since [task 033](archive/tasks/v0.7/033-v07-stabilization-release-gate.md),
 through public API/config — no `internal/anomaly` import required —
 and the CLI's own `trustvian analyze/baseline build --anomaly-config
 <path>` flag:
@@ -170,7 +170,7 @@ specific to this signal.
 `transition_deviation` above answers seen vs. never seen. It cannot
 distinguish a transition that happens 40% of the time from one that has
 happened twice out of two thousand — both are simply "seen."
-`transition_rarity` ([task 026](tasks/026-transition-rarity.md),
+`transition_rarity` ([task 026](archive/tasks/v0.6/026-transition-rarity.md),
 [ADR 0011](adr/0011-transition-rarity-statistic-and-orientation.md))
 closes that gap with a graded measure, still without a Markov model:
 
@@ -219,7 +219,7 @@ a real gap: `authenticate -> read_customer` may be normal, and
 yet the complete sequence `authenticate -> read_customer ->
 export_customer`, as one continuous path, may never have happened for
 this actor. `ngram_deviation`/`ngram_rarity`
-([task 027](tasks/027-bounded-ngram-detection.md),
+([task 027](archive/tasks/v0.6/027-bounded-ngram-detection.md),
 [ADR 0012](adr/0012-bounded-trigram-behavioral-context.md)) close that
 gap with a fixed, bounded 3-gram — not a configurable `n`:
 

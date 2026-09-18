@@ -418,5 +418,5 @@ volume.
   credential handling
 - [processor/README.md](../../processor/README.md) — the Collector
   processor itself
-- [Task 037](../../docs/tasks/037-reference-docker-compose-deployment.md)
+- [Task 037](../../docs/archive/tasks/v0.8/037-reference-docker-compose-deployment.md)
   — why this deployment is shaped the way it is

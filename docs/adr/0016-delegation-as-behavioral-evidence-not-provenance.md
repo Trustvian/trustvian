@@ -2,11 +2,11 @@
 
 ## Context
 
-[Task 014](../tasks/014-ai-agent.md) added `event.Context.DelegatedFrom`
+[Task 014](../archive/tasks/v0.7/014-ai-agent.md) added `event.Context.DelegatedFrom`
 as a typed, optional field — the immediate delegator's `Actor.ID` for
 a single agent-to-agent delegation hop — deliberately unconsumed: no
 signal read it, no `Policy` condition matched on it. [Task
-031](../tasks/031-delegation-behavioral-semantics.md) gives it its
+031](../archive/tasks/v0.7/031-delegation-behavioral-semantics.md) gives it its
 first real consumer. Before writing any code, this task's own brief
 posed the central design question directly: can Trustvian identify
 unusual delegation relationships using bounded behavioral learning,

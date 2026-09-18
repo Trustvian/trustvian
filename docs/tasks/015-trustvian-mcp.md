@@ -2,7 +2,7 @@
 
 **Milestone:** Trustvian MCP · **Depends on:** v0.1 shipped (a stable
 `Result`/public API to expose); benefits from but does not strictly
-require [014](014-ai-agent.md) · **Blocks:** none
+require [014](../archive/tasks/v0.7/014-ai-agent.md) · **Blocks:** none
 
 ## Objective
 
@@ -17,14 +17,14 @@ AI agents and developer tools increasingly integrate via MCP rather
 than a bespoke SDK call; this is a distribution/integration surface,
 not new decision-making logic — Trustvian already computes everything
 these tools would name (`get_trust_score` ≈ `Result.Trust.Score`,
-`explain_decision` ≈ [007](007-decision.md)'s `Result.Explain()`), it
+`explain_decision` ≈ [007](../archive/tasks/v0.1/007-decision.md)'s `Result.Explain()`), it
 just doesn't expose it via MCP yet.
 
 ## Scope
 
 - A new binary (e.g. `cmd/trustvian-mcp`, in-module like
   `cmd/trustvian` today, or a separate module if
-  [009](009-otel-collector.md)'s public-API-boundary question resolves
+  [009](../archive/tasks/v0.2/009-otel-collector.md)'s public-API-boundary question resolves
   in a direction that makes a separate module cleaner — decide
   consistently with that precedent when this task starts) implementing
   an MCP server backed by one `Engine` instance.
@@ -35,11 +35,11 @@ just doesn't expose it via MCP yet.
   - `get_trust_score` / `get_risk` / `get_anomaly` → fields off the
     `Result` a prior `get_behavior` (or an internal equivalent) call
     produced.
-  - `explain_decision` → [007](007-decision.md)'s `Result.Explain()`.
+  - `explain_decision` → [007](../archive/tasks/v0.1/007-decision.md)'s `Result.Explain()`.
   - `evaluate_policy` → `Policy.Evaluate` against a supplied
     `Trust`/`Features.Stable` — bounded by whatever
     [ADR 0002](../adr/0002-public-api-boundary.md) resolution
-    [009](009-otel-collector.md) settles on for external `Policy`
+    [009](../archive/tasks/v0.2/009-otel-collector.md) settles on for external `Policy`
     construction; if `Policy` is still internal-only when this task
     starts, `evaluate_policy` operates against the server's own
     configured policy, not an arbitrary caller-supplied one.
@@ -56,7 +56,7 @@ just doesn't expose it via MCP yet.
   must not become a second policy engine or a second scoring path.
 - **No MCP dependency in the core.** `event`, `internal/*`, and the
   root `trustvian` package must never import an MCP library — verified
-  the same way [008](008-otel.md) verified no cycle: `go list -deps`.
+  the same way [008](../archive/tasks/v0.2/008-otel.md) verified no cycle: `go list -deps`.
 - No write/mutating MCP tools beyond what `Observe` already is
   (read-only `get_*`/`explain_*`/`check_*` tools only, unless a
   concrete need for an explicit `observe` tool emerges — decide

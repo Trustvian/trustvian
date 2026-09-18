@@ -7,7 +7,7 @@ a restart, and whether several Trustvian instances agree about what
 
 Three backends ship: **memory** (the default), **file**, and
 **PostgreSQL** (since [task
-035](tasks/035-postgresql-store-implementation.md)). All three are
+035](archive/tasks/v0.8/035-postgresql-store-implementation.md)). All three are
 selected through one public configuration document,
 `config.StorageConfig`, compiled by `config.CompileStorage` — the same
 pattern [`policy-guide.md`](policy-guide.md) and
@@ -233,7 +233,7 @@ handled there.
 ### Verified under load
 
 Measured against PostgreSQL 17 (task
-[036](tasks/036-store-durability-concurrency-and-migration-hardening.md)).
+[036](archive/tasks/v0.8/036-store-durability-concurrency-and-migration-hardening.md)).
 Read the rates as ratios and regression signals, not as advertised
 throughput — they are dominated by network round-trips:
 
@@ -343,7 +343,7 @@ binary must never mutate state whose layout it does not understand.
 
 The last two cases are fail-closed deliberately, and both were
 silently-accepted gaps until task
-[036](tasks/036-store-durability-concurrency-and-migration-hardening.md).
+[036](archive/tasks/v0.8/036-store-durability-concurrency-and-migration-hardening.md).
 "No recorded version" only means "new database" when there is also no
 data — otherwise it is data of unknown provenance, which is what a partial
 restore or an accidental `DELETE FROM trustvian_schema_version` produces.
@@ -604,7 +604,7 @@ throwaway container on loopback.
 - [ADR 0006](adr/0006-file-backed-persistent-store.md) — `FileStore`
 - [ADR 0018](adr/0018-production-store-boundary-and-postgresql-direction.md)
   — the public selection boundary and the PostgreSQL direction
-- [Task 036](tasks/036-store-durability-concurrency-and-migration-hardening.md)
+- [Task 036](archive/tasks/v0.8/036-store-durability-concurrency-and-migration-hardening.md)
   — the hardening evidence behind every guarantee on this page, including
   the two schema-metadata defects it found and fixed
 - [`examples/persistent-baseline`](../examples/persistent-baseline/) — a

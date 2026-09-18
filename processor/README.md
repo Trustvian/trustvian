@@ -46,7 +46,7 @@ ptrace.Span, enriched in place
 ## Why this can't just import `internal/otel`
 
 The core module's `internal/otel.EventFromSpan` and
-`AttributesFromResult` ([task 008](../docs/tasks/008-otel.md)) cannot be
+`AttributesFromResult` ([task 008](../docs/archive/tasks/v0.2/008-otel.md)) cannot be
 reused here, for two independent reasons:
 
 1. **They're under `internal/`.** Go's `internal/` visibility rule
@@ -169,7 +169,7 @@ exits, with nothing telling the operator their database was never used.
 
 Why `Config.Policy` is typed as a generic map (`map[string]any`)
 rather than `config.PolicyConfig` directly: see the core repository's
-[task 022](../docs/tasks/022-collector-config-integration.md) for the
+[task 022](../docs/archive/tasks/v0.5/022-collector-config-integration.md) for the
 full reasoning — in short, Collector's own confmap decoder only reads
 `mapstructure` struct tags, matched case-sensitively, and
 `config.PolicyConfig` only carries the `yaml:"..."` tags its own file
@@ -309,5 +309,5 @@ Grafana packaging, or vendor metrics client — the Collector's exporters
 already reach every backend. No Alert configuration (`alerts:`/`sinks:`/`webhook:` in Collector
 config) — a separate, future task. These match the scope boundaries in
 the core repository's
-[`docs/tasks/009-otel-collector.md`](../docs/tasks/009-otel-collector.md)
-and [`docs/tasks/022-collector-config-integration.md`](../docs/tasks/022-collector-config-integration.md).
+[`docs/tasks/009-otel-collector.md`](../docs/archive/tasks/v0.2/009-otel-collector.md)
+and [`docs/tasks/022-collector-config-integration.md`](../docs/archive/tasks/v0.5/022-collector-config-integration.md).

@@ -1,7 +1,8 @@
 // Package alert turns a Trustvian Result/Decision into a minimal,
 // explainable, externally deliverable notification — the "Foundation"
 // stage of the Alert & Notification phase described in
-// trustvian-project-spec.md § 18 and docs/tasks/018-alert-notification-foundation.md.
+// docs/archive/project-spec.md § 18 and
+// docs/archive/tasks/v0.4/018-alert-notification-foundation.md.
 //
 // This package is strictly downstream of the core detection pipeline:
 // Alert is assembled by reading an existing trustvian.Result, never by
@@ -66,7 +67,7 @@ func (s Severity) Valid() bool {
 // model that could drift from it. Every field below is read from a
 // Result field that already exists; nothing here is a second, competing
 // copy of trust score, anomaly score, risk, decision, actor, target, or
-// explanation logic. See docs/tasks/018-alert-notification-foundation.md
+// explanation logic. See docs/archive/tasks/v0.4/018-alert-notification-foundation.md
 // § Domain Model for the concept list this type implements.
 type Alert struct {
 	// ID identifies this Alert, distinct from Fingerprint.ID and from
@@ -168,7 +169,7 @@ func NewEnvelope(a Alert) Envelope {
 }
 
 // Sink is the boundary every notification provider implements —
-// conceptually named AlertSink in trustvian-project-spec.md § 18.6;
+// conceptually named AlertSink in docs/archive/project-spec.md § 18.6;
 // named Sink here to avoid the package/type stutter (alert.Sink) other
 // packages in this codebase generally avoid for secondary types. A new
 // provider is added by implementing this one method against Alert's

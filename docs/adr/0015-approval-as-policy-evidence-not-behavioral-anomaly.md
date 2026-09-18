@@ -2,10 +2,10 @@
 
 ## Context
 
-[Task 014](../tasks/014-ai-agent.md) added `event.ApprovalStatus` as a
+[Task 014](../archive/tasks/v0.7/014-ai-agent.md) added `event.ApprovalStatus` as a
 typed, optional `Context` field, deliberately unconsumed — a per-event
 fact recorded, not enforced. [Task
-030](../tasks/030-approval-aware-policy-semantics.md) gives it its
+030](../archive/tasks/v0.7/030-approval-aware-policy-semantics.md) gives it its
 first consumer. Before writing any code, this task's own brief posed
 the central design question directly: is approval primarily
 behavioral evidence (an `anomaly` signal — "is this unusual?"),

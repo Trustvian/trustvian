@@ -2,7 +2,7 @@
 
 `internal/anomaly.Score` combines behavioral signals using thresholds
 and weights held in `anomaly.Config`. Since [task
-033](tasks/033-v07-stabilization-release-gate.md) ([ADR
+033](archive/tasks/v0.7/033-v07-stabilization-release-gate.md) ([ADR
 0017](adr/0017-public-anomaly-configuration-boundary.md)), a caller
 outside this module configures that value through `config.AnomalyConfig`
 and `config.CompileAnomaly` — mirroring

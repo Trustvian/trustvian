@@ -2,10 +2,10 @@
 
 ## Context
 
-[Task 025](../tasks/025-sequence-analysis-foundation.md) shipped a
+[Task 025](../archive/tasks/v0.6/025-sequence-analysis-foundation.md) shipped a
 binary `transition_deviation` signal: has this exact predecessor
 `Fingerprint.ID` ever led to this destination before, for this actor?
-[Task 026](../tasks/026-transition-rarity.md) evolves that into a
+[Task 026](../archive/tasks/v0.6/026-transition-rarity.md) evolves that into a
 graded measure — common / uncommon / rare, not just seen / unseen —
 without building a Markov model. Before writing any code, this task
 had to answer a question that is easy to get silently wrong: **which
@@ -70,7 +70,7 @@ produces is `transition_rarity`, and the underlying number is called a
 probability* — it is an unsmoothed empirical ratio (no Laplace
 smoothing, no stationary distribution, no chain), and calling it a
 probability model would overstate what it actually is. See [task
-026's Non-Goals](../tasks/026-transition-rarity.md#non-goals) for the
+026's Non-Goals](../archive/tasks/v0.6/026-transition-rarity.md#non-goals) for the
 explicit line between this and the deferred Markov task.
 
 ## Minimum support
@@ -99,7 +99,7 @@ transform, no threshold bands, no additional smoothing:
   explain in a `Detail` string ("this transition happens 0.4% of the
   time" is legible; "this transition has a log-odds-transformed rarity
   of 0.87" is not) for no corresponding calibration benefit this task
-  can actually justify with data. [Task 026](../tasks/026-transition-rarity.md#statistical-definition-the-central-correctness-question)'s
+  can actually justify with data. [Task 026](../archive/tasks/v0.6/026-transition-rarity.md#statistical-definition-the-central-correctness-question)'s
   own brief is explicit: no opaque formulas, no magic weights without
   justification.
 - **Why linear is not "naively" `1 - frequency` despite looking
@@ -162,7 +162,7 @@ decisions needing to be revisited; it would add the missing pieces
 above (full-row queries, smoothing, or an explicit probability-model
 label), not change the counters underneath them.
 
-**Update (task 028):** [task 028](../tasks/028-markov-transition-scoring.md)
+**Update (task 028):** [task 028](../archive/tasks/v0.6/028-markov-transition-scoring.md)
 revisited this section and confirmed every point above still holds — no
 transition matrix, no higher-order history, no smoothing was added.
 What it *did* add, `markov_surprisal`, is not "the future Markov task"

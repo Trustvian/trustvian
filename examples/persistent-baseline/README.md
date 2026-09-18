@@ -1,6 +1,6 @@
 # persistent-baseline
 
-Demonstrates [task 034](../../docs/tasks/034-production-store-contract-and-public-boundary.md)'s
+Demonstrates [task 034](../../docs/archive/tasks/v0.8/034-production-store-contract-and-public-boundary.md)'s
 public storage boundary: selecting a **durable** Store through
 `config.StorageConfig` + `config.CompileStorage`, so a learned baseline
 survives a process restart.

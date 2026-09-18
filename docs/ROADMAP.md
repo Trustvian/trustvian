@@ -16,23 +16,23 @@ each has its own task file. `v0.9` is shipped too: all seven of its slices
 milestone through `v0.7` has each of its slices
 either scoped and done, or explicitly named as the next slice, not
 left as a vague placeholder: `v0.5` has all five of its tasks scoped
-and done — [019](tasks/019-policy-config-model.md),
-[020](tasks/020-policy-config-loader.md),
-[021](tasks/021-cli-config-integration.md),
-[022](tasks/022-collector-config-integration.md), and
-[023](tasks/023-declarative-alert-configuration.md); `v0.6` has all
+and done — [019](archive/tasks/v0.5/019-policy-config-model.md),
+[020](archive/tasks/v0.5/020-policy-config-loader.md),
+[021](archive/tasks/v0.5/021-cli-config-integration.md),
+[022](archive/tasks/v0.5/022-collector-config-integration.md), and
+[023](archive/tasks/v0.5/023-declarative-alert-configuration.md); `v0.6` has all
 four of its feature slices scoped and done, plus its stabilization
-gate — [025](tasks/025-sequence-analysis-foundation.md),
-[026](tasks/026-transition-rarity.md),
-[027](tasks/027-bounded-ngram-detection.md),
-[028](tasks/028-markov-transition-scoring.md), and
-[029](tasks/029-v06-stabilization-release-gate.md); `v0.7` has all
+gate — [025](archive/tasks/v0.6/025-sequence-analysis-foundation.md),
+[026](archive/tasks/v0.6/026-transition-rarity.md),
+[027](archive/tasks/v0.6/027-bounded-ngram-detection.md),
+[028](archive/tasks/v0.6/028-markov-transition-scoring.md), and
+[029](archive/tasks/v0.6/029-v06-stabilization-release-gate.md); `v0.7` has all
 five of its slices scoped and done, including its own stabilization
-gate — [014](tasks/014-ai-agent.md),
-[030](tasks/030-approval-aware-policy-semantics.md),
-[031](tasks/031-delegation-behavioral-semantics.md),
-[032](tasks/032-agent-security-scenario-validation.md), and
-[033](tasks/033-v07-stabilization-release-gate.md).
+gate — [014](archive/tasks/v0.7/014-ai-agent.md),
+[030](archive/tasks/v0.7/030-approval-aware-policy-semantics.md),
+[031](archive/tasks/v0.7/031-delegation-behavioral-semantics.md),
+[032](archive/tasks/v0.7/032-agent-security-scenario-validation.md), and
+[033](archive/tasks/v0.7/033-v07-stabilization-release-gate.md).
 
 Cross-references: [ARCHITECTURE.md](ARCHITECTURE.md) (system shape),
 [DOMAIN.md](DOMAIN.md) (what exists today), [SECURITY.md](SECURITY.md)
@@ -99,7 +99,7 @@ Fingerprint → Baseline → Anomaly → Trust → Policy → Decision` — is
 implemented, tested, benchmarked end to end, and race-clean, and every
 task in the `v0.1` milestone below (001–007, 010–013) is complete and
 individually verified against its own acceptance criteria as part of
-[task 013](tasks/013-oss-v01.md)'s release gate. See
+[task 013](archive/tasks/v0.1/013-oss-v01.md)'s release gate. See
 [CHANGELOG.md](../CHANGELOG.md) for what `v0.1.0` actually contains and
 the public API compatibility promise that starts at this tag.
 
@@ -122,18 +122,18 @@ and a dedicated, threat-organized security test suite (see
 [SECURITY.md](SECURITY.md)) all shipped as part of this milestone.
 
 **`v0.2` — OpenTelemetry maturation is also shipped.** Both of its
-tasks are done: [008](tasks/008-otel.md) added the five well-defined
+tasks are done: [008](archive/tasks/v0.2/008-otel.md) added the five well-defined
 outbound `trustvian.*` attributes (`internal/otel.AttributesFromResult`;
 `trustvian.behavior.id` deliberately omitted — see
 [OPENTELEMETRY.md](OPENTELEMETRY.md#trustvian-output-attributes)), and
-[009](tasks/009-otel-collector.md) added a real, working OTel Collector
+[009](archive/tasks/v0.2/009-otel-collector.md) added a real, working OTel Collector
 processor as a separate module ([`processor/`](../processor/) — see its
 own [README](../processor/README.md)), verified end-to-end against a
 real OTel-SDK span sent over real OTLP/gRPC to a real running Collector
 binary.
 
 **`v0.3.0` — Baseline & anomaly depth is shipped.** Its one task,
-[017](tasks/017-baseline-time-patterns.md), added an hour-of-day time
+[017](archive/tasks/v0.3/017-baseline-time-patterns.md), added an hour-of-day time
 pattern signal (`baseline.FingerprintStats.HourActivity`, `anomaly`'s
 `time_pattern_deviation`, shipped opt-in like `frequency_deviation`
 before it) — see the milestone section below for the full writeup,
@@ -141,7 +141,7 @@ including the day-of-week scope decision and the empirically-discovered
 `hourActivityAlpha` design correction.
 
 **`v0.4.0` — Alert & Notification Foundation is shipped.**
-[Task 018](tasks/018-alert-notification-foundation.md) added
+[Task 018](archive/tasks/v0.4/018-alert-notification-foundation.md) added
 a new public package, `alert` (sibling to `event` — see
 [ADR 0007](adr/0007-alert-package-is-public.md) for why it isn't
 `internal/`): `Alert`, a `Severity` concept, a
@@ -152,11 +152,11 @@ HMAC-signed HTTPS webhook, the one delivery mechanism this stage ships
 at all. See the milestone section below for the full writeup.
 
 **`v0.5.0` — Policy & Configuration is shipped.** All five of its
-tasks — [019](tasks/019-policy-config-model.md),
-[020](tasks/020-policy-config-loader.md),
-[021](tasks/021-cli-config-integration.md),
-[022](tasks/022-collector-config-integration.md), and
-[023](tasks/023-declarative-alert-configuration.md) — are done in code,
+tasks — [019](archive/tasks/v0.5/019-policy-config-model.md),
+[020](archive/tasks/v0.5/020-policy-config-loader.md),
+[021](archive/tasks/v0.5/021-cli-config-integration.md),
+[022](archive/tasks/v0.5/022-collector-config-integration.md), and
+[023](archive/tasks/v0.5/023-declarative-alert-configuration.md) — are done in code,
 tests, and documentation, and the `v0.5.0` tag itself is published on
 `origin`. A new public package, `config`, lets a caller outside this
 module compile a `PolicyConfig` into a real `policy.Policy` and hand it
@@ -167,28 +167,28 @@ strictly, with unknown fields and duplicate keys both rejected.
 `trustvian analyze`/`trustvian baseline build` now accept `--config
 <path>` and consume that exact loader/compiler path, failing closed
 (non-zero exit, no analysis output) if the file can't be safely loaded
-and compiled — see [task 021](tasks/021-cli-config-integration.md).
+and compiled — see [task 021](archive/tasks/v0.5/021-cli-config-integration.md).
 The standalone OTel Collector processor
 ([`processor/`](../processor/README.md)) now has an equivalent
 `policy:` block in its own configuration, decoded and compiled through
 the same `config` package — see [task
-022](tasks/022-collector-config-integration.md) — and `processor/go.mod`
+022](archive/tasks/v0.5/022-collector-config-integration.md) — and `processor/go.mod`
 depends on this exact `v0.5.0` release, verified with a clean
 `GOWORK=off` build/test against it (no local workspace involved).
 Declarative Alert configuration now exists too — a structurally
 **separate** `AlertConfig`/`CompileAlerts` model (see [task
-023](tasks/023-declarative-alert-configuration.md) and [ADR
+023](archive/tasks/v0.5/023-declarative-alert-configuration.md) and [ADR
 0009](adr/0009-alert-config-is-a-separate-document.md)), not merged
 into `PolicyConfig` and not yet wired into the CLI or the Collector
 processor (neither has an alert-delivery flow for it to plug into yet
 — a deliberate scope boundary, not a gap).
 
 **`v0.6.0` — Behavioral Detection Depth is shipped.** All five of its
-tasks — [025](tasks/025-sequence-analysis-foundation.md),
-[026](tasks/026-transition-rarity.md),
-[027](tasks/027-bounded-ngram-detection.md),
-[028](tasks/028-markov-transition-scoring.md), and
-[029](tasks/029-v06-stabilization-release-gate.md) — are done in code,
+tasks — [025](archive/tasks/v0.6/025-sequence-analysis-foundation.md),
+[026](archive/tasks/v0.6/026-transition-rarity.md),
+[027](archive/tasks/v0.6/027-bounded-ngram-detection.md),
+[028](archive/tasks/v0.6/028-markov-transition-scoring.md), and
+[029](archive/tasks/v0.6/029-v06-stabilization-release-gate.md) — are done in code,
 tests, and documentation, and the `v0.6.0` tag itself is published on
 `origin` (`gh release list` confirms the GitHub release, marked
 `Latest`). Four new, opt-in anomaly signals reuse the existing
@@ -227,15 +227,15 @@ milestones exist to close:
   produce which severity) is now implemented — see `v0.5` below — but
   that is a different concern from *delivery* reliability.
 - A custom `Policy` can now be constructed from outside this module in
-  Go ([task 019](tasks/019-policy-config-model.md)), loaded from
-  a real YAML file ([task 020](tasks/020-policy-config-loader.md),
+  Go ([task 019](archive/tasks/v0.5/019-policy-config-model.md)), loaded from
+  a real YAML file ([task 020](archive/tasks/v0.5/020-policy-config-loader.md),
   `config.LoadFile`), consumed directly by the CLI via `--config`
-  ([task 021](tasks/021-cli-config-integration.md)), and consumed by
+  ([task 021](archive/tasks/v0.5/021-cli-config-integration.md)), and consumed by
   `processor/`'s own code ([task
-  022](tasks/022-collector-config-integration.md), now depending on the
+  022](archive/tasks/v0.5/022-collector-config-integration.md), now depending on the
   real `v0.5.0` release). Declarative Alert configuration
   (`config.AlertConfig`/`CompileAlerts`, compiling into `[]alert.Rule`
-  — [task 023](tasks/023-declarative-alert-configuration.md)) now
+  — [task 023](archive/tasks/v0.5/023-declarative-alert-configuration.md)) now
   exists as a Go-SDK-usable capability, but is not wired into the CLI
   or `processor/` — deliberately, per task 023's own Non-Goals, not a
   gap analogous to the `processor/go.mod` release blocker above.
@@ -293,8 +293,8 @@ small vertical slices).
 demonstrated, and released as a stable OSS artifact." No new pipeline
 stages — this milestone is depth, not breadth.
 
-**Scope** (task files [001](tasks/001-feature-model.md)–[007](tasks/007-decision.md),
-[010](tasks/010-examples.md)–[013](tasks/013-oss-v01.md)). Every task
+**Scope** (task files [001](archive/tasks/v0.1/001-feature-model.md)–[007](archive/tasks/v0.1/007-decision.md),
+[010](archive/tasks/v0.1/010-examples.md)–[013](archive/tasks/v0.1/013-oss-v01.md)). Every task
 below shipped; see [CHANGELOG.md](../CHANGELOG.md) for the release-note
 version of the same list.
 
@@ -366,7 +366,7 @@ ML, no distributed/multi-instance anything.
 **Dependencies.** None outside this repository. Everything in v0.1
 builds on packages that already exist.
 
-**Acceptance criteria.** See [013-oss-v01.md](tasks/013-oss-v01.md) in
+**Acceptance criteria.** See [013-oss-v01.md](archive/tasks/v0.1/013-oss-v01.md) in
 full; summarized: `go build`/`go vet`/`go test -race`/`gofmt -l` clean;
 every task 001–012 individually meets its own acceptance criteria;
 `examples/` runs against a tagged release; `docs/` contains no
@@ -382,7 +382,7 @@ direction, and take the first step toward a production Collector
 deployment — without pulling OTel, or the Collector toolchain, into
 the core.
 
-**Scope** (task files [008](tasks/008-otel.md), [009](tasks/009-otel-collector.md)):
+**Scope** (task files [008](archive/tasks/v0.2/008-otel.md), [009](archive/tasks/v0.2/009-otel-collector.md)):
 
 - **008 OTel integration v2 — done.** `internal/otel.AttributesFromResult`
   derives five of the six outbound `trustvian.*` attributes
@@ -445,7 +445,7 @@ pipeline exists.
 "v2-and-beyond" statistical depth, kept deterministic and explainable,
 not ML.
 
-**Scope** (task file [017](tasks/017-baseline-time-patterns.md)).
+**Scope** (task file [017](archive/tasks/v0.3/017-baseline-time-patterns.md)).
 
 - **017 Baseline & anomaly depth: hour-of-day time pattern — done.**
   Resolved the open question this section previously carried
@@ -490,7 +490,7 @@ and [Future research](#future-research)), ML of any kind.
 frequency-tracking groundwork from 003/004) — satisfied.
 
 **Acceptance criteria.** See
-[task 017](tasks/017-baseline-time-patterns.md)'s own Acceptance
+[task 017](archive/tasks/v0.3/017-baseline-time-patterns.md)'s own Acceptance
 Criteria section — all met, verified by
 `go test ./... -race -count=1` and `go test -bench=. -benchmem ./...`.
 
@@ -507,7 +507,7 @@ ship before the rest are useful. See
 [`docs/archive/project-spec.md` § 18](archive/project-spec.md#18-alert--notification-system)
 for the full architecture this milestone implements against.
 
-**Scope** (task file [018](tasks/018-alert-notification-foundation.md)).
+**Scope** (task file [018](archive/tasks/v0.4/018-alert-notification-foundation.md)).
 
 - **018 Alert & Notification Foundation — done.** New public package
   `alert` (a sibling to `event`, not `internal/` — see
@@ -548,7 +548,7 @@ escalation, dead-letter handling — see the Reliability stage below); no
 incident-management domain (an `Alert` is one notification-worthy
 event, not a grouped investigation); no multi-tenancy, RBAC, or Control
 integration. See [task 018's own Non-Goals
-section](tasks/018-alert-notification-foundation.md#non-goals) for the
+section](archive/tasks/v0.4/018-alert-notification-foundation.md#non-goals) for the
 full, precise list.
 
 **Dependencies.** `v0.1`'s stable `Result` shape (Alert Evaluation
@@ -560,7 +560,7 @@ here, after those, because neither this roadmap nor the spec commits to
 shipping it before them.
 
 **Acceptance criteria.** See [task
-018](tasks/018-alert-notification-foundation.md)'s own Acceptance
+018](archive/tasks/v0.4/018-alert-notification-foundation.md)'s own Acceptance
 Criteria section — all met, verified by `go test ./... -race -count=1`,
 `go test -bench=. -benchmem ./alert/...`, `go list -deps` confirming no
 new HTTP/provider-SDK dependency reached the core engine, and
@@ -639,12 +639,12 @@ loader. This milestone closes that gap with a narrow, stable,
 declarative configuration boundary usable identically by the Go SDK,
 the CLI, the OTel Collector processor, and a standalone deployment.
 
-**Scope** (task files [019](tasks/019-policy-config-model.md),
-[020](tasks/020-policy-config-loader.md),
-[021](tasks/021-cli-config-integration.md),
-[022](tasks/022-collector-config-integration.md),
-[023](tasks/023-declarative-alert-configuration.md), and
-[024](tasks/024-v05-release-gate.md) — all five feature slices plus
+**Scope** (task files [019](archive/tasks/v0.5/019-policy-config-model.md),
+[020](archive/tasks/v0.5/020-policy-config-loader.md),
+[021](archive/tasks/v0.5/021-cli-config-integration.md),
+[022](archive/tasks/v0.5/022-collector-config-integration.md),
+[023](archive/tasks/v0.5/023-declarative-alert-configuration.md), and
+[024](archive/tasks/v0.5/024-v05-release-gate.md) — all five feature slices plus
 the release gate, closing this milestone's full scope):
 
 - **019 Public Policy configuration model + compiler — done.** New
@@ -723,7 +723,7 @@ the release gate, closing this milestone's full scope):
   catch-all-block policy turns `TestRunAnalyzeNormalEventIsAllowed`'s
   same `ALLOW` event into `BLOCK`), and `baseline build`'s own
   acceptance by `TestRunBaselineBuildAcceptsConfigFlag`. See [task
-  021](tasks/021-cli-config-integration.md).
+  021](archive/tasks/v0.5/021-cli-config-integration.md).
 - **022 OTel Collector policy configuration integration — done.**
   `processor.Config` gains a `Policy map[string]any` field
   (`mapstructure:"policy,omitempty"`); a new `decodePolicy` function
@@ -749,7 +749,7 @@ the release gate, closing this milestone's full scope):
   `origin`, `processor/go.mod` was updated to depend on it for real —
   verified with `GOWORK=off go build ./... && GOWORK=off go test ./...
   -race`, no workspace involved. See [task
-  022](tasks/022-collector-config-integration.md)'s own "Release /
+  022](archive/tasks/v0.5/022-collector-config-integration.md)'s own "Release /
   Module Compatibility" section for the original verification of the
   gap this closed.
 - **023 Declarative Alert configuration — done.** A new, independent
@@ -779,9 +779,9 @@ the release gate, closing this milestone's full scope):
   non-matching one. Not wired into the CLI or the Collector processor
   — deliberately: neither has an alert-delivery flow today for a
   compiled `[]alert.Rule` to plug into (see task 023's own Non-Goals).
-  See [task 023](tasks/023-declarative-alert-configuration.md).
+  See [task 023](archive/tasks/v0.5/023-declarative-alert-configuration.md).
 - **024 v0.5.0 release gate — done.** The `v0.1`-style release gate
-  ([task 013](tasks/013-oss-v01.md)) applied to `v0.5`: every task
+  ([task 013](archive/tasks/v0.1/013-oss-v01.md)) applied to `v0.5`: every task
   019–023 independently verified against its own acceptance criteria,
   the full root and `processor/` quality gates re-run together (not
   just per task), the documentation consistency check re-run across the
@@ -789,7 +789,7 @@ the release gate, closing this milestone's full scope):
   `processor/go.mod`'s dependency bumped to it in a follow-up commit,
   verified with a clean `GOWORK=off` build/test. See [Release readiness
   — v0.5.0](#release-readiness--v050) below and [task
-  024](tasks/024-v05-release-gate.md) for the exact checklist.
+  024](archive/tasks/v0.5/024-v05-release-gate.md) for the exact checklist.
 
 **Non-goals.** No general expression language, no scripting, no
 boolean-combinator DSL for `when:` blocks beyond what
@@ -802,9 +802,9 @@ today; adding one is a separate, future decision about
 `min_anomaly_score`/`max_trust_score`, because `alert.Condition`
 already supports them — this is translation, not scope expansion). No
 JSON support (YAML only), no environment-variable interpolation, no
-live config reload — see [task 019's](tasks/019-policy-config-model.md#non-goals),
-[task 020's](tasks/020-policy-config-loader.md#non-goals), and [task
-023's](tasks/023-declarative-alert-configuration.md#non-goals) own
+live config reload — see [task 019's](archive/tasks/v0.5/019-policy-config-model.md#non-goals),
+[task 020's](archive/tasks/v0.5/020-policy-config-loader.md#non-goals), and [task
+023's](archive/tasks/v0.5/023-declarative-alert-configuration.md#non-goals) own
 Non-Goals sections for the complete, precise lists.
 
 **Dependencies.** `v0.1` (stable `Policy`/`Decision`) — satisfied.
@@ -821,11 +821,11 @@ project's remote before its own code could be wired into
 produced that release and resolved this dependency.
 
 **Acceptance criteria.** See [task
-019](tasks/019-policy-config-model.md)'s, [task
-020](tasks/020-policy-config-loader.md)'s, [task
-021](tasks/021-cli-config-integration.md)'s, [task
-022](tasks/022-collector-config-integration.md)'s, and [task
-023](tasks/023-declarative-alert-configuration.md)'s own Acceptance
+019](archive/tasks/v0.5/019-policy-config-model.md)'s, [task
+020](archive/tasks/v0.5/020-policy-config-loader.md)'s, [task
+021](archive/tasks/v0.5/021-cli-config-integration.md)'s, [task
+022](archive/tasks/v0.5/022-collector-config-integration.md)'s, and [task
+023](archive/tasks/v0.5/023-declarative-alert-configuration.md)'s own Acceptance
 Criteria sections — all fully met, verified by `go test ./... -race
 -count=1`, `go test -bench=. -benchmem ./config/...`, `go list -deps`
 confirming no core-engine import of `config` or
@@ -844,7 +844,7 @@ v0.5.0 shipped: YES
 ```
 
 All code, tests, and documentation for tasks 019–023 are complete, and
-the release sequence [task 024](tasks/024-v05-release-gate.md) laid out
+the release sequence [task 024](archive/tasks/v0.5/024-v05-release-gate.md) laid out
 has run:
 
 1. ~~Resolve the pre-existing local-only `v0.5.0` tag.~~ **Done.** The
@@ -873,12 +873,12 @@ Nothing remains outstanding for this release.
 
 ## v0.6 — Behavioral Detection Depth
 
-**`v0.6.0` is shipped.** [Task 025](tasks/025-sequence-analysis-foundation.md)
-(Sequence Analysis Foundation), [task 026](tasks/026-transition-rarity.md)
-(Transition Rarity), [task 027](tasks/027-bounded-ngram-detection.md)
+**`v0.6.0` is shipped.** [Task 025](archive/tasks/v0.6/025-sequence-analysis-foundation.md)
+(Sequence Analysis Foundation), [task 026](archive/tasks/v0.6/026-transition-rarity.md)
+(Transition Rarity), [task 027](archive/tasks/v0.6/027-bounded-ngram-detection.md)
 (Bounded n-gram Detection), [task
-028](tasks/028-markov-transition-scoring.md) (Markov Transition
-Scoring), and [task 029](tasks/029-v06-stabilization-release-gate.md)
+028](archive/tasks/v0.6/028-markov-transition-scoring.md) (Markov Transition
+Scoring), and [task 029](archive/tasks/v0.6/029-v06-stabilization-release-gate.md)
 (Stabilization & Release Gate) are all done. Task 029's own audit found
 no release blocker — see its own Findings section for the full
 checklist (double-counting protection re-verified, state bounds
@@ -897,11 +897,11 @@ OSS capability — the one item this document's prior "Future research"
 section named that a production-usable OSS product genuinely needs
 before `v1.0`, per this roadmap's now-explicit product boundary.
 
-**Scope** (task files [025](tasks/025-sequence-analysis-foundation.md),
-[026](tasks/026-transition-rarity.md),
-[027](tasks/027-bounded-ngram-detection.md),
-[028](tasks/028-markov-transition-scoring.md), and
-[029](tasks/029-v06-stabilization-release-gate.md) — every task this
+**Scope** (task files [025](archive/tasks/v0.6/025-sequence-analysis-foundation.md),
+[026](archive/tasks/v0.6/026-transition-rarity.md),
+[027](archive/tasks/v0.6/027-bounded-ngram-detection.md),
+[028](archive/tasks/v0.6/028-markov-transition-scoring.md), and
+[029](archive/tasks/v0.6/029-v06-stabilization-release-gate.md) — every task this
 milestone currently scopes is done):
 
 - **025 Sequence Analysis Foundation — done.** `internal/baseline.Baseline`
@@ -927,7 +927,7 @@ milestone currently scopes is done):
   familiar via a different predecessor), and the actor's actual normal
   path (`read -> update`) carrying no such signal. See [Sequence
   Analysis](sequence-analysis.md) for the full design and [task
-  025](tasks/025-sequence-analysis-foundation.md) for benchmarks and
+  025](archive/tasks/v0.6/025-sequence-analysis-foundation.md) for benchmarks and
   the complete test list.
 - **026 Transition Rarity — done.** Evolves task 025's binary
   `transition_deviation` (seen vs. never seen) into a graded measure for
@@ -955,7 +955,7 @@ milestone currently scopes is done):
   `TestAnalyzeTransitionRarityEndToEnd` (see
   [engine_test.go](../engine_test.go)). See [Sequence
   Analysis § Transition rarity](sequence-analysis.md#transition-rarity-v06-task-026)
-  and [task 026](tasks/026-transition-rarity.md) for benchmarks and the
+  and [task 026](archive/tasks/v0.6/026-transition-rarity.md) for benchmarks and the
   complete test list.
 - **027 Bounded n-gram Detection — done.** Extends order-awareness one
   step further back: given a 3-gram `A -> B -> C`, has this exact
@@ -990,7 +990,7 @@ milestone currently scopes is done):
   hops familiar, complete 3-gram never observed,
   `ngram_deviation` still fires. See [Sequence Analysis § Bounded
   3-gram detection](sequence-analysis.md#bounded-3-gram-detection-v06-task-027)
-  and [task 027](tasks/027-bounded-ngram-detection.md) for benchmarks
+  and [task 027](archive/tasks/v0.6/027-bounded-ngram-detection.md) for benchmarks
   and the complete test list.
 - **028 Markov Transition Scoring — done.** Before writing any code,
   this task answered a mandatory question: what would Markov scoring
@@ -1022,11 +1022,11 @@ milestone currently scopes is done):
   `internal/store`, `internal/policy`, `internal/trust`, `alert`,
   `config`, the CLI, or `processor/`. See [ADR
   0013](adr/0013-first-order-markov-surprisal-without-duplicate-evidence.md)
-  and [task 028](tasks/028-markov-transition-scoring.md) for the full
+  and [task 028](archive/tasks/v0.6/028-markov-transition-scoring.md) for the full
   mathematical definition, benchmarks, and the complete test list.
 - **029 Stabilization & Release Gate — done.** Not new functionality —
   a verification pass tying tasks 025–028 together, mirroring [task
-  024](tasks/024-v05-release-gate.md)'s shape for `v0.5`. Its own
+  024](archive/tasks/v0.5/024-v05-release-gate.md)'s shape for `v0.5`. Its own
   highest-priority item: re-verifying, from source and by a fresh
   full-combination benchmark
   (`BenchmarkEngineAnalyzeFullBehavioral`), that
@@ -1044,7 +1044,7 @@ milestone currently scopes is done):
   in this package already follows, measured and documented rather than
   "optimized" away. Zero new dependencies and zero public API changes
   since `v0.5.0`, verified directly. See [task
-  029](tasks/029-v06-stabilization-release-gate.md) for the complete
+  029](archive/tasks/v0.6/029-v06-stabilization-release-gate.md) for the complete
   findings list and release checklist.
 - **Already covered by existing signals**, named here only to close
   the gap between this document's language and the original spec's
@@ -1088,16 +1088,16 @@ ML-based sequence models remain [Future research](#future-research),
 revisited only if a concrete design and consumer need emerge — this
 milestone does not build them speculatively. Day-of-week seasonality is
 a separate, independent EWMA dimension
-([task 017](tasks/017-baseline-time-patterns.md)'s own Non-Goals
+([task 017](archive/tasks/v0.3/017-baseline-time-patterns.md)'s own Non-Goals
 already established this) and stays in
 [Future research](#future-research) rather than being folded in here.
 No CLI/Collector/config-schema integration for `transition_deviation`,
 `transition_rarity`, `ngram_deviation`, `ngram_rarity`, or
 `markov_surprisal` yet — see
-[task 025's](tasks/025-sequence-analysis-foundation.md#non-goals),
-[task 026's](tasks/026-transition-rarity.md#non-goals), [task
-027's](tasks/027-bounded-ngram-detection.md#non-goals), and [task
-028's](tasks/028-markov-transition-scoring.md#non-goals) own Non-Goals
+[task 025's](archive/tasks/v0.6/025-sequence-analysis-foundation.md#non-goals),
+[task 026's](archive/tasks/v0.6/026-transition-rarity.md#non-goals), [task
+027's](archive/tasks/v0.6/027-bounded-ngram-detection.md#non-goals), and [task
+028's](archive/tasks/v0.6/028-markov-transition-scoring.md#non-goals) own Non-Goals
 sections. No configurable n-gram length either — task 027 ships a
 fixed 3-gram only (see [ADR 0012](adr/0012-bounded-trigram-behavioral-context.md#why-3-grams-first-not-arbitrary-n)).
 
@@ -1107,11 +1107,11 @@ signal reads a fingerprint's recent history the same way
 `v0.5`/`v0.7`.
 
 **Acceptance criteria.** See [task
-025](tasks/025-sequence-analysis-foundation.md)'s, [task
-026](tasks/026-transition-rarity.md)'s, [task
-027](tasks/027-bounded-ngram-detection.md)'s, [task
-028](tasks/028-markov-transition-scoring.md)'s, and [task
-029](tasks/029-v06-stabilization-release-gate.md)'s own Acceptance
+025](archive/tasks/v0.6/025-sequence-analysis-foundation.md)'s, [task
+026](archive/tasks/v0.6/026-transition-rarity.md)'s, [task
+027](archive/tasks/v0.6/027-bounded-ngram-detection.md)'s, [task
+028](archive/tasks/v0.6/028-markov-transition-scoring.md)'s, and [task
+029](archive/tasks/v0.6/029-v06-stabilization-release-gate.md)'s own Acceptance
 Criteria sections — all fully met, verified by `go
 test ./... -race -count=1` and `go test -bench=. -benchmem ./...`
 showing `BenchmarkEngineAnalyze`'s allocation profile unchanged across
@@ -1119,7 +1119,7 @@ all five tasks, and by task 029's own release-readiness audit finding
 no blocker. **The milestone is shipped** — `v0.6.0` is a real, tagged,
 published release (`gh release list` shows it marked `Latest`),
 matching the same tag/GitHub-release step `v0.5.0`'s own gate ([task
-024](tasks/024-v05-release-gate.md)) required before that milestone
+024](archive/tasks/v0.5/024-v05-release-gate.md)) required before that milestone
 could be called shipped.
 
 ## v0.7 — AI Agent Behavioral Security
@@ -1134,7 +1134,7 @@ Event → Features → Fingerprint → Baseline → Anomaly → Trust → Policy
 ```
 
 **Task 014 — AI Agent Event/Context Foundation — is done.** [Task
-file 014](tasks/014-ai-agent.md) added three optional `Context`
+file 014](archive/tasks/v0.7/014-ai-agent.md) added three optional `Context`
 fields — `SessionID` (session grouping), `DelegatedFrom` (single-hop
 agent-to-agent delegation), and `ApprovalStatus` (a recorded
 human-approval fact, typed the same way `OperationDirection` already
@@ -1153,7 +1153,7 @@ claims:
   `search → secret.read` and `secret.read → external.post` as
   independently familiar via separate contexts, then shows `v0.6`'s
   existing bounded 3-gram signal (`ngram_deviation`, task
-  [027](tasks/027-bounded-ngram-detection.md)) still flags
+  [027](archive/tasks/v0.6/027-bounded-ngram-detection.md)) still flags
   `search → secret.read → external.post` as anomalous — proving the
   higher-order novelty is caught by the same signal any other actor's
   operation sequence would use, with zero agent-specific code.
@@ -1181,10 +1181,10 @@ way, adding optional fields only). Benefited from `v0.6`'s
 sequence-deviation signal, which task 014 reused rather than
 duplicated.
 
-**Acceptance criteria.** See [014-ai-agent.md](tasks/014-ai-agent.md).
+**Acceptance criteria.** See [014-ai-agent.md](archive/tasks/v0.7/014-ai-agent.md).
 
 **Task 030 — Approval-Aware Policy Semantics — is done.** [Task file
-030](tasks/030-approval-aware-policy-semantics.md) gave
+030](archive/tasks/v0.7/030-approval-aware-policy-semantics.md) gave
 `ApprovalStatus` its first real consumer, entirely inside
 `internal/policy` — zero new anomaly signal, zero new pipeline stage.
 `policy.Input`/`Condition` and `config.PolicyCondition` each gained one
@@ -1225,10 +1225,10 @@ require zero code changes, since both already delegate to
 `config.CompilePolicy`/`internal/policy`.
 
 **Acceptance criteria.** See
-[030-approval-aware-policy-semantics.md](tasks/030-approval-aware-policy-semantics.md).
+[030-approval-aware-policy-semantics.md](archive/tasks/v0.7/030-approval-aware-policy-semantics.md).
 
 **Task 031 — Delegation Behavioral Semantics — is done.** [Task file
-031](tasks/031-delegation-behavioral-semantics.md) answers this
+031](archive/tasks/v0.7/031-delegation-behavioral-semantics.md) answers this
 milestone's own design question: *can Trustvian identify unusual
 delegation relationships using bounded behavioral learning without
 treating self-reported delegation metadata as authenticated
@@ -1269,10 +1269,10 @@ actor-isolation and Fingerprint-independence guarantees every other
 0016](adr/0016-delegation-as-behavioral-evidence-not-provenance.md).
 
 **Acceptance criteria.** See
-[031-delegation-behavioral-semantics.md](tasks/031-delegation-behavioral-semantics.md).
+[031-delegation-behavioral-semantics.md](archive/tasks/v0.7/031-delegation-behavioral-semantics.md).
 
 **Task 032 — Agent Security Scenario Validation — is done.** [Task
-file 032](tasks/032-agent-security-scenario-validation.md) validated
+file 032](archive/tasks/v0.7/032-agent-security-scenario-validation.md) validated
 the combined system (030 + 031 + existing `v0.6`/`v0.1` signals)
 against five realistic scenarios plus a combined case, adding
 **zero** new detectors: unexpected privileged tool use
@@ -1300,7 +1300,7 @@ rather than patching it speculatively mid-scenario-audit; task 033
 below is where it was actually fixed.
 
 **Task 033 — v0.7 Stabilization & Release Gate — is done.** [Task file
-033](tasks/033-v07-stabilization-release-gate.md) closed the gap task
+033](archive/tasks/v0.7/033-v07-stabilization-release-gate.md) closed the gap task
 032 found: `config.AnomalyConfig` (new), compiled by
 `config.CompileAnomaly` into the exact `anomaly.Config` value
 `trustvian.WithAnomalyConfig` already accepted — a third independent
@@ -1325,7 +1325,7 @@ passed under `go test ./... -race -count=1` with zero changes to
 `engine.go` itself.
 
 **Acceptance criteria.** See
-[033-v07-stabilization-release-gate.md](tasks/033-v07-stabilization-release-gate.md).
+[033-v07-stabilization-release-gate.md](archive/tasks/v0.7/033-v07-stabilization-release-gate.md).
 
 **`v0.7.0` is shipped.** All five tasks (014, 030, 031, 032, 033) are
 done, the one blocker task 032 found was resolved rather than deferred,
@@ -1333,8 +1333,8 @@ and `v0.7.0` is a real, tagged, published release (`refs/tags/v0.7.0`
 on origin; `gh release list` shows it marked `Latest`) — matching the
 same tag-and-publish step every prior milestone's gate required before
 it could be called shipped (`v0.5.0`'s [task
-024](tasks/024-v05-release-gate.md), `v0.6.0`'s [task
-029](tasks/029-v06-stabilization-release-gate.md)).
+024](archive/tasks/v0.5/024-v05-release-gate.md), `v0.6.0`'s [task
+029](archive/tasks/v0.6/029-v06-stabilization-release-gate.md)).
 
 **015** and **016** remain reserved for MCP and Control respectively —
 neither was touched or reused by any `v0.7` task.
@@ -1649,11 +1649,11 @@ No specific response mechanism is designed here.
 ## v0.8 — Production Runtime & Storage
 
 **Status: SHIPPED (`v0.8.0`).** All five slices are done:
-[034](tasks/034-production-store-contract-and-public-boundary.md),
-[035](tasks/035-postgresql-store-implementation.md),
-[036](tasks/036-store-durability-concurrency-and-migration-hardening.md),
-[037](tasks/037-reference-docker-compose-deployment.md), and
-[038](tasks/038-v08-stabilization-release-gate.md). The milestone's exit
+[034](archive/tasks/v0.8/034-production-store-contract-and-public-boundary.md),
+[035](archive/tasks/v0.8/035-postgresql-store-implementation.md),
+[036](archive/tasks/v0.8/036-store-durability-concurrency-and-migration-hardening.md),
+[037](archive/tasks/v0.8/037-reference-docker-compose-deployment.md), and
+[038](archive/tasks/v0.8/038-v08-stabilization-release-gate.md). The milestone's exit
 criteria below were all met before the tag was cut.
 
 **Objective.** OSS should be deployable as a real production system,
@@ -1666,11 +1666,11 @@ written when the slice became active:
 
 | Task | Title | Status |
 |---|---|---|
-| [034](tasks/034-production-store-contract-and-public-boundary.md) | Production Store Contract & Public Selection Boundary | **DONE** |
-| [035](tasks/035-postgresql-store-implementation.md) | PostgreSQL Store implementation | **DONE** |
-| [036](tasks/036-store-durability-concurrency-and-migration-hardening.md) | Store durability / concurrency / migration hardening | **DONE** |
-| [037](tasks/037-reference-docker-compose-deployment.md) | Reference Docker Compose deployment | **DONE** |
-| [038](tasks/038-v08-stabilization-release-gate.md) | `v0.8` stabilization & release gate | **DONE** |
+| [034](archive/tasks/v0.8/034-production-store-contract-and-public-boundary.md) | Production Store Contract & Public Selection Boundary | **DONE** |
+| [035](archive/tasks/v0.8/035-postgresql-store-implementation.md) | PostgreSQL Store implementation | **DONE** |
+| [036](archive/tasks/v0.8/036-store-durability-concurrency-and-migration-hardening.md) | Store durability / concurrency / migration hardening | **DONE** |
+| [037](archive/tasks/v0.8/037-reference-docker-compose-deployment.md) | Reference Docker Compose deployment | **DONE** |
+| [038](archive/tasks/v0.8/038-v08-stabilization-release-gate.md) | `v0.8` stabilization & release gate | **DONE** |
 
 **Task 034 — Production Store Contract & Public Selection Boundary — is
 done.** Starting this milestone surfaced a gap more basic than choosing
@@ -1889,10 +1889,10 @@ line for a tag that does not exist. Task 038 owns the release-time
 decision.
 
 **Acceptance criteria.** See
-[034-production-store-contract-and-public-boundary.md](tasks/034-production-store-contract-and-public-boundary.md),
-[035-postgresql-store-implementation.md](tasks/035-postgresql-store-implementation.md),
-[036-store-durability-concurrency-and-migration-hardening.md](tasks/036-store-durability-concurrency-and-migration-hardening.md),
-and [037-reference-docker-compose-deployment.md](tasks/037-reference-docker-compose-deployment.md).
+[034-production-store-contract-and-public-boundary.md](archive/tasks/v0.8/034-production-store-contract-and-public-boundary.md),
+[035-postgresql-store-implementation.md](archive/tasks/v0.8/035-postgresql-store-implementation.md),
+[036-store-durability-concurrency-and-migration-hardening.md](archive/tasks/v0.8/036-store-durability-concurrency-and-migration-hardening.md),
+and [037-reference-docker-compose-deployment.md](archive/tasks/v0.8/037-reference-docker-compose-deployment.md).
 
 ### Remaining scope (not yet task-filed)
 
@@ -1933,7 +1933,7 @@ follows rather than reinvents; the milestone is otherwise independent of
 `v0.5`–`v0.7`.
 
 **Exit criteria — all met**, verified by [task
-038](tasks/038-v08-stabilization-release-gate.md):
+038](archive/tasks/v0.8/038-v08-stabilization-release-gate.md):
 
 | Criterion | Evidence |
 |---|---|
@@ -1949,17 +1949,17 @@ Per-task acceptance criteria are fixed in each slice's own task file.
 ## v0.9 — Operational Readiness
 
 **Status: SHIPPED (`v0.9.0`).** Every slice was verified from executed
-evidence by [045](tasks/045-v0.9-stabilization-release-gate.md)'s release
+evidence by [045](archive/tasks/v0.9/045-v0.9-stabilization-release-gate.md)'s release
 gate, and the milestone's exit criteria were met before the tag was cut —
 through three release candidates, each of which caught a real
 release-pipeline defect that no earlier gate could reach. Tasks
-[039](tasks/039-ci-quality-gate-automation.md),
-[040](tasks/040-release-artifacts-and-module-consistency.md), and
-[041](tasks/041-container-supply-chain-security.md),
-[042](tasks/042-runtime-health-readiness-graceful-shutdown.md),
-[043](tasks/043-self-observability-resource-safety.md), and
-[044](tasks/044-operations-backup-restore-upgrade.md), and
-[045](tasks/045-v0.9-stabilization-release-gate.md) are done.
+[039](archive/tasks/v0.9/039-ci-quality-gate-automation.md),
+[040](archive/tasks/v0.9/040-release-artifacts-and-module-consistency.md), and
+[041](archive/tasks/v0.9/041-container-supply-chain-security.md),
+[042](archive/tasks/v0.9/042-runtime-health-readiness-graceful-shutdown.md),
+[043](archive/tasks/v0.9/043-self-observability-resource-safety.md), and
+[044](archive/tasks/v0.9/044-operations-backup-restore-upgrade.md), and
+[045](archive/tasks/v0.9/045-v0.9-stabilization-release-gate.md) are done.
 
 **Objective.** Production engineering hygiene, so `v1.0` is a real
 release, not just a version number bump.
@@ -1981,13 +1981,13 @@ nobody can review.
 
 | Task | Title | Status |
 |---|---|---|
-| [039](tasks/039-ci-quality-gate-automation.md) | CI & Quality Gate Automation | **DONE** |
-| [040](tasks/040-release-artifacts-and-module-consistency.md) | Release Artifacts & Module Consistency | **DONE** |
-| [041](tasks/041-container-supply-chain-security.md) | Container Supply Chain & Provenance | **DONE** |
-| [042](tasks/042-runtime-health-readiness-graceful-shutdown.md) | Runtime Health, Readiness & Graceful Shutdown | **DONE** |
-| [043](tasks/043-self-observability-resource-safety.md) | Self-Observability & Resource Safety | **DONE** |
-| [044](tasks/044-operations-backup-restore-upgrade.md) | Operations: Backup, Restore & Upgrade | **DONE** |
-| [045](tasks/045-v0.9-stabilization-release-gate.md) | `v0.9` Stabilization & Release Gate | **DONE** |
+| [039](archive/tasks/v0.9/039-ci-quality-gate-automation.md) | CI & Quality Gate Automation | **DONE** |
+| [040](archive/tasks/v0.9/040-release-artifacts-and-module-consistency.md) | Release Artifacts & Module Consistency | **DONE** |
+| [041](archive/tasks/v0.9/041-container-supply-chain-security.md) | Container Supply Chain & Provenance | **DONE** |
+| [042](archive/tasks/v0.9/042-runtime-health-readiness-graceful-shutdown.md) | Runtime Health, Readiness & Graceful Shutdown | **DONE** |
+| [043](archive/tasks/v0.9/043-self-observability-resource-safety.md) | Self-Observability & Resource Safety | **DONE** |
+| [044](archive/tasks/v0.9/044-operations-backup-restore-upgrade.md) | Operations: Backup, Restore & Upgrade | **DONE** |
+| [045](archive/tasks/v0.9/045-v0.9-stabilization-release-gate.md) | `v0.9` Stabilization & Release Gate | **DONE** |
 
 **039 — CI & Quality Gate Automation — is done.** Every gate this project
 has run by hand on every task since `v0.1` now runs automatically, across
@@ -2013,7 +2013,7 @@ and no package-level version variable.
 
 The module question this slice inherited resolved differently than
 expected. `processor/go.mod`'s `replace ... => ../` was recorded by
-[038](tasks/038-v08-stabilization-release-gate.md) as a post-tag transition
+[038](archive/tasks/v0.8/038-v08-stabilization-release-gate.md) as a post-tag transition
 to undo, but the audit found the nested modules declare *non-resolvable*
 module paths (`trustvian-processor`, `trustvian-examples`) and have never
 been tagged: they cannot be published as written, and the replace is
@@ -2226,7 +2226,7 @@ deployment path, and 044 documents its storage. Otherwise independent of
 
 **Acceptance criteria.** Fixed in each slice's own task file when the
 slice becomes active — 039's are in
-[its file](tasks/039-ci-quality-gate-automation.md).
+[its file](archive/tasks/v0.9/039-ci-quality-gate-automation.md).
 
 ## v1.0 — Production-Ready OSS
 
@@ -2512,7 +2512,7 @@ against the new goal rather than just carried over.
   concrete need does.
 - **Day-of-week seasonality** — **useful after `v1.0`, not required.**
   Moved here during [v0.3](#v03--baseline--anomaly-depth)'s scoping
-  pass ([task 017](tasks/017-baseline-time-patterns.md)). A second EWMA
+  pass ([task 017](archive/tasks/v0.3/017-baseline-time-patterns.md)). A second EWMA
   dimension (7 day-of-week buckets, or a 7×24 joint distribution) is a
   separate vertical slice from the hour-of-day signal task 017 shipped,
   not a small addition to it, and needs its own maturity/calibration

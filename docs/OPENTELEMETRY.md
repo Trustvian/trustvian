@@ -100,7 +100,7 @@ A pure function deriving the outbound `trustvian.*` attributes from a
 does not write to a live span itself — attaching the returned
 attributes to a real span is that caller's concern, not this adapter's
 (the shipped [OTel Collector processor](#the-otel-collector-processor),
-[task 009](tasks/009-otel-collector.md), is one such caller, though it
+[task 009](archive/tasks/v0.2/009-otel-collector.md), is one such caller, though it
 writes its own parallel attribute set rather than calling this function
 directly — see that section for why). This is the one function in `internal/otel`
 that depends on the root `trustvian` package rather than only `event`;
@@ -123,7 +123,7 @@ directions of the same adapter boundary.
 **`trustvian.behavior.id` is deliberately not implemented.** The
 original project spec named it alongside the five above, but never
 defined what it means beyond "carried over from the spec's original
-naming." [Task 008](tasks/008-otel.md) resolved this by tracing every
+naming." [Task 008](archive/tasks/v0.2/008-otel.md) resolved this by tracing every
 plausible reading back to `Fingerprint.ID`: `internal/fingerprint`'s
 `Fingerprint` already *is* the identity of one behavioral shape for an
 actor (see [DOMAIN.md § Fingerprint](DOMAIN.md#fingerprint)), so a
@@ -182,11 +182,11 @@ considered and deliberately NOT revisited** as part of *originally*
 building this processor (task 009) — `Policy` stayed unconfigurable
 from Collector config, since building this processor was not, by
 itself, the "real external consumer" trigger ADR 0002 named for
-promoting it to a public package. [Task 019](tasks/019-policy-config-model.md)'s
+promoting it to a public package. [Task 019](archive/tasks/v0.5/019-policy-config-model.md)'s
 `config` package later became that public surface for a different
-consumer (the Go SDK and, per [task 021](tasks/021-cli-config-integration.md),
+consumer (the Go SDK and, per [task 021](archive/tasks/v0.5/021-cli-config-integration.md),
 the CLI), without ADR 0002 needing to be revisited at all — and [task
-022](tasks/022-collector-config-integration.md) is this processor's
+022](archive/tasks/v0.5/022-collector-config-integration.md) is this processor's
 own update to consume that same surface: an explicit `policy:` block
 in Collector configuration now compiles into a real `Policy` via
 `config.PolicyConfig`/`config.CompilePolicy`, identically to the Go
@@ -202,12 +202,12 @@ is implemented and tested but not yet resolvable through
 
 See [ADR 0003](adr/0003-opentelemetry-adapter-single-module.md) for why
 this lives in a separate module at all, and
-[`tasks/009-otel-collector.md`](tasks/009-otel-collector.md) for the
+[`tasks/009-otel-collector.md`](archive/tasks/v0.2/009-otel-collector.md) for the
 task this closes.
 
 ## Potential AI-agent (GenAI) mappings — documented, not implemented
 
-`v0.7` ([task 014](tasks/014-ai-agent.md)) added `event.Context.SessionID`/
+`v0.7` ([task 014](archive/tasks/v0.7/014-ai-agent.md)) added `event.Context.SessionID`/
 `DelegatedFrom`/`ApprovalStatus`. OpenTelemetry's own GenAI semantic
 conventions (`gen_ai.*` span/event attributes — covering conversation
 IDs, agent names, and tool-call spans) are, as of this writing, still

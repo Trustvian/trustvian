@@ -2,13 +2,13 @@
 
 ## Context
 
-[Task 025](../tasks/025-sequence-analysis-foundation.md) gave Trustvian
-one step of order (`A -> B`, binary seen/unseen). [Task 026](../tasks/026-transition-rarity.md)
+[Task 025](../archive/tasks/v0.6/025-sequence-analysis-foundation.md) gave Trustvian
+one step of order (`A -> B`, binary seen/unseen). [Task 026](../archive/tasks/v0.6/026-transition-rarity.md)
 graded that into common/uncommon/rare. Both still only ever compare
 one event against the single fingerprint that immediately preceded it
 — they cannot see the canonical gap this task closes: `A -> B` and
 `B -> C` can each be completely familiar on their own while the
-specific sequence `A -> B -> C` has never happened. [Task 027](../tasks/027-bounded-ngram-detection.md)
+specific sequence `A -> B -> C` has never happened. [Task 027](../archive/tasks/v0.6/027-bounded-ngram-detection.md)
 adds exactly that: a fixed, bounded 3-gram detector, built the same
 way tasks 025/026 were — extending `internal/baseline`'s existing
 state model, not a parallel one.
@@ -185,7 +185,7 @@ directly (see ADR 0011's own "Why Markov still waits," which applies
 identically here — no transition matrix, no smoothing, no higher-order
 probability model exists yet).
 
-**Update (task 028):** [task 028](../tasks/028-markov-transition-scoring.md)
+**Update (task 028):** [task 028](../archive/tasks/v0.6/028-markov-transition-scoring.md)
 added a first-order Markov signal, `markov_surprisal`, but deliberately
 did not extend it over `TrigramCounts`/`TrigramContinuationTotal` — per
 its own explicit scope boundary, Markov scoring in that task stays

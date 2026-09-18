@@ -328,5 +328,5 @@ The default stays `build:`.
 - [Release guide](release-guide.md) — tags, binaries, module publication
 - [Security model](SECURITY.md) — Trustvian's runtime security properties
 - [Reference deployment](../deployments/docker-compose/README.md)
-- [Task 041](tasks/041-container-supply-chain-security.md) — why this is
+- [Task 041](archive/tasks/v0.9/041-container-supply-chain-security.md) — why this is
   shaped the way it is
