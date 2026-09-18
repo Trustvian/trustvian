@@ -1,5 +1,7 @@
 # 0011 — Transition rarity: the statistic, its orientation, and why Markov waits
 
+**Status:** Accepted
+
 ## Context
 
 [Task 025](../archive/tasks/v0.6/025-sequence-analysis-foundation.md) shipped a

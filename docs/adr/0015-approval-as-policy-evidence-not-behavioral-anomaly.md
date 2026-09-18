@@ -1,5 +1,7 @@
 # 0015 — Approval as policy evidence, not behavioral anomaly
 
+**Status:** Accepted
+
 ## Context
 
 [Task 014](../archive/tasks/v0.7/014-ai-agent.md) added `event.ApprovalStatus` as a

@@ -1,5 +1,7 @@
 # 0013 — First-order Markov surprisal without duplicate evidence
 
+**Status:** Accepted
+
 ## Context
 
 [Task 028](../archive/tasks/v0.6/028-markov-transition-scoring.md) asks Trustvian to

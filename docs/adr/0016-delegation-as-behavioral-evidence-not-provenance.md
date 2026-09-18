@@ -1,5 +1,7 @@
 # 0016 — Delegation as behavioral evidence, not provenance
 
+**Status:** Accepted
+
 ## Context
 
 [Task 014](../archive/tasks/v0.7/014-ai-agent.md) added `event.Context.DelegatedFrom`

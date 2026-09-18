@@ -1,5 +1,7 @@
 # 0002 — Public API boundary: `event` is public, `Policy`/`Config` stay internal
 
+**Status:** Accepted
+
 ## Context
 
 Go's `internal/` import restriction is the encapsulation mechanism

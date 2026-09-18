@@ -1,5 +1,7 @@
 # 0007 — `alert` is a public package, not `internal/alert`
 
+**Status:** Accepted
+
 ## Context
 
 [Task 018](../archive/tasks/v0.4/018-alert-notification-foundation.md) (v0.4,

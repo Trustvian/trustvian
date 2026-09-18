@@ -1,5 +1,7 @@
 # 0018 — Production Store boundary and PostgreSQL direction
 
+**Status:** Accepted
+
 ## Context
 
 [docs/ROADMAP.md § v0.8](../../CHANGELOG.md#v080--production-runtime--storage)
