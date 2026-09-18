@@ -971,7 +971,7 @@ future work an access-control addition, not a data migration.
 
 **Threat:** once a `Decision` can produce an externally-delivered
 `Alert` (webhook, chat, paging system — see
-[`trustvian-project-spec.md` § 18](../trustvian-project-spec.md#18-alert--notification-system)),
+[`docs/archive/project-spec.md` § 18](archive/project-spec.md#18-alert--notification-system)),
 a forged, replayed, or tampered delivery could make an external system
 act on a notification Trustvian never actually sent, or fail to notice
 a real one was dropped.

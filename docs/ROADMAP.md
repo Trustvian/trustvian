@@ -84,7 +84,7 @@ started, now stated as this roadmap's standing product principle, not
 just that task's own scope note.
 
 This section supersedes any earlier phrasing in this document, the
-[project spec](../trustvian-project-spec.md), or task files that could
+[project spec](archive/project-spec.md), or task files that could
 be read as "Enterprise provides X because OSS doesn't" for anything in
 the `Detect`/`Score`/`Decide`/`Alert`/`Integrate`/`Run` list above — see
 [§ Alert & Notification phase](#alert--notification-phase) and
@@ -504,7 +504,7 @@ explainable, externally deliverable `Alert`, without changing
 "Foundation" stage of the broader Alert & Notification phase (see
 below for the stages sequenced after it) — the only stage that must
 ship before the rest are useful. See
-[`trustvian-project-spec.md` § 18](../trustvian-project-spec.md#18-alert--notification-system)
+[`docs/archive/project-spec.md` § 18](archive/project-spec.md#18-alert--notification-system)
 for the full architecture this milestone implements against.
 
 **Scope** (task file [018](tasks/018-alert-notification-foundation.md)).
@@ -574,8 +574,8 @@ new HTTP/provider-SDK dependency reached the core engine, and
 Foundation stage above is `v0.4`, with its own numbered task file
 (018); this section is what comes after it. The remaining two stages
 named in
-[`trustvian-project-spec.md` §
-18](../trustvian-project-spec.md#18-alert--notification-system) depend
+[`docs/archive/project-spec.md` §
+18](archive/project-spec.md#18-alert--notification-system) depend
 on it and are not yet scoped as task files — each gets its own task
 file (following the existing template) once the prior stage is done and
 its real shape is known, per this roadmap's own "small vertical slices"
@@ -1048,8 +1048,8 @@ milestone currently scopes is done):
   findings list and release checklist.
 - **Already covered by existing signals**, named here only to close
   the gap between this document's language and the original spec's
-  ([`trustvian-project-spec.md` §
-  6](../trustvian-project-spec.md#6-sequence-analysis)) — no new work
+  ([`docs/archive/project-spec.md` §
+  6](archive/project-spec.md#6-sequence-analysis)) — no new work
   needed: "target deviation" and "destination deviation"
   (`categorical_novelty` on `Target`/`sensitive_target`), "dependency
   deviation" (`categorical_novelty` on an unexpected internal/external

@@ -190,7 +190,7 @@ All of the above run under `go test ./... -race -count=1`.
   diagram extended to show `DelegatorCounts` alongside
   `PredecessorCounts`/`TrigramCounts`, still inside the existing
   behavioral subsystem, not a new one.
-- [trustvian-project-spec.md](../../trustvian-project-spec.md) § 16:
+- [docs/archive/project-spec.md](../archive/project-spec.md) § 16:
   bounded delegation behavioral learning marked implemented;
   delegation authentication/authorization marked explicitly not
   implemented.

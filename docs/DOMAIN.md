@@ -442,8 +442,8 @@ strictly downstream of `Decision`, never a pipeline stage, never
 written back into a `Result`. See
 [ARCHITECTURE.md § Relationship to a future Alert & Notification
 layer](ARCHITECTURE.md#relationship-to-a-future-alert--notification-layer)
-and [`trustvian-project-spec.md` §
-18](../trustvian-project-spec.md#18-alert--notification-system) for the
+and [`docs/archive/project-spec.md` §
+18](archive/project-spec.md#18-alert--notification-system) for the
 full architecture; in domain terms:
 
 - **`Alert` is a view, not a parallel model.** Every field is read from

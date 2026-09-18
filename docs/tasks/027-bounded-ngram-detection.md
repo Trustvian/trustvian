@@ -241,7 +241,7 @@ existing at all, and how each was handled.
 - [docs/ROADMAP.md](../ROADMAP.md): task 027 marked done under `v0.6`;
   Markov transition scoring named as the next illustrative, unscoped
   slice.
-- [trustvian-project-spec.md](../../trustvian-project-spec.md) § 6:
+- [docs/archive/project-spec.md](../archive/project-spec.md) § 6:
   status callout extended to name higher-order sequence detection
   alongside transition novelty/rarity.
 - [README.md](../../README.md): `v0.6` progress line updated.

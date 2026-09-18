@@ -1,10 +1,10 @@
 # Trustvian Developer Documentation
 
-Practical documentation for building with and on Trustvian. For the
-project's long-term vision and positioning, see
-[`../trustvian-project-spec.md`](../trustvian-project-spec.md). For
-engineering conventions this codebase follows, see
-[`../CLAUDE.md`](../CLAUDE.md) and [`../.claude/rules/`](../.claude/rules/).
+Practical documentation for building with and on Trustvian. For engineering
+conventions this codebase follows, see [`../CLAUDE.md`](../CLAUDE.md) and
+[`../.claude/rules/`](../.claude/rules/). Early design material that predates
+this documentation set is kept, unmaintained, in
+[`archive/`](archive/project-spec.md).
 
 | Document | What's in it |
 |---|---|

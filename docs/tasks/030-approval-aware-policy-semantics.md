@@ -208,7 +208,7 @@ See [docs/PERFORMANCE.md § v0.7 task
   guarantee, now that a real consumer exists.
 - [docs/ARCHITECTURE.md](../ARCHITECTURE.md): pipeline note on Policy
   gaining an approval-aware condition, not a new stage.
-- [trustvian-project-spec.md](../../trustvian-project-spec.md) § 16:
+- [docs/archive/project-spec.md](../archive/project-spec.md) § 16:
   approval-aware deterministic policy marked implemented; approval
   workflow/granting/UI/persistence marked explicitly not implemented.
 - [docs/ROADMAP.md](../ROADMAP.md) § v0.7: task 030 marked done; 031–033
