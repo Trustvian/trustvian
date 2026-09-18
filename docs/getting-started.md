@@ -159,7 +159,7 @@ Sequence/Markov/delegation detection (`transition_deviation`,
 `ngram_deviation`, `markov_surprisal`, `delegation_deviation`, ...)
 all ship **opt-in, disabled by default** — every existing user's
 behavior stays unchanged until deliberately configured. As of
-[task 033](tasks/033-v07-stabilization-release-gate.md), enabling them
+[task 033](archive/tasks/v0.7/033-v07-stabilization-release-gate.md), enabling them
 follows the identical pattern as Policy above, through a second,
 independent document:
 

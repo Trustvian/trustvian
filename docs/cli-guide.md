@@ -84,7 +84,7 @@ makes a baseline survive past a single command.** Without it the CLI
 uses an in-memory store and learns nothing durable — unchanged from
 before the flag existed, and the reason `baseline build` was close to a
 dry run until `v0.8` ([task
-034](tasks/034-production-store-contract-and-public-boundary.md)).
+034](archive/tasks/v0.8/034-production-store-contract-and-public-boundary.md)).
 
 ```yaml
 # storage.yaml

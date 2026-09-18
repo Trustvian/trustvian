@@ -4,7 +4,7 @@
 // reasoning. In short: Policy answers "what decision should Trustvian
 // make," Alert configuration answers "which Results/Decisions should
 // produce an Alert" (see docs/DOMAIN.md § Policy and Decision and
-// trustvian-project-spec.md § 18.1); they are independently compiled
+// docs/archive/project-spec.md § 18.1); they are independently compiled
 // today (PolicyConfig -> CompilePolicy -> policy.Policy,
 // AlertConfig -> CompileAlerts -> []alert.Rule) and this package keeps
 // that independence at the configuration-document level too, rather

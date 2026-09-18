@@ -31,7 +31,7 @@ One change is visible to Go consumers: the module path is now lowercase
 ### Added
 
 - **CI & quality gate automation**
-  ([task 039](docs/tasks/039-ci-quality-gate-automation.md), first `v0.9`
+  ([task 039](docs/archive/tasks/v0.9/039-ci-quality-gate-automation.md), first `v0.9`
   slice) — the checks this project has run by hand since `v0.1` now run
   automatically, across every module and boundary a release depends on.
 
@@ -64,7 +64,7 @@ One change is visible to Go consumers: the module path is now lowercase
   deliberately later slices.
 
 - **Release artifacts and module consistency**
-  ([task 040](docs/tasks/040-release-artifacts-and-module-consistency.md),
+  ([task 040](docs/archive/tasks/v0.9/040-release-artifacts-and-module-consistency.md),
   second `v0.9` slice) — releases through `v0.8.0` were produced entirely
   by hand, and no release has ever carried a binary. Trustvian now has a
   tag-triggered release pipeline and a documented module publication model.
@@ -155,7 +155,7 @@ One change is visible to Go consumers: the module path is now lowercase
   mechanism.
 
 - **Operational metrics for the Collector runtime**
-  ([task 043](docs/tasks/043-self-observability-resource-safety.md)) — five
+  ([task 043](docs/archive/tasks/v0.9/043-self-observability-resource-safety.md)) — five
   OpenTelemetry instruments emitted through the `MeterProvider` the
   Collector already injects. Nothing to configure, no vendor client, and no
   second telemetry backend:
@@ -210,7 +210,7 @@ One change is visible to Go consumers: the module path is now lowercase
   Existing deployments need no configuration change.
 
 - **Backup, restore, and upgrade procedures for learned behavioral state**
-  ([task 044](docs/tasks/044-operations-backup-restore-upgrade.md)) —
+  ([task 044](docs/archive/tasks/v0.9/044-operations-backup-restore-upgrade.md)) —
   documented, tested, and built on PostgreSQL's own `pg_dump`/`pg_restore`
   rather than a Trustvian backup format.
 
@@ -298,7 +298,7 @@ One change is visible to Go consumers: the module path is now lowercase
   source. Running the repository does not require a published image.
 
 - **Security policy and issue templates**
-  ([task 045](docs/tasks/045-v0.9-stabilization-release-gate.md), the
+  ([task 045](docs/archive/tasks/v0.9/045-v0.9-stabilization-release-gate.md), the
   `v0.9` release gate). [`.github/SECURITY.md`](.github/SECURITY.md) gives
   vulnerability reporters a private path — GitHub's private vulnerability
   reporting — with what to include and what to expect; before it, the
@@ -465,7 +465,7 @@ default and every `v0.5`–`v0.7` behavior is preserved.
 ### Added
 
 - **Production Store Contract & Public Selection Boundary**
-  ([task 034](docs/tasks/034-production-store-contract-and-public-boundary.md),
+  ([task 034](docs/archive/tasks/v0.8/034-production-store-contract-and-public-boundary.md),
   first `v0.8` slice) — `config.StorageConfig` +
   `config.CompileStorage` (plus `LoadStorage`/`LoadStorageFile`) make
   persistence selectable through public API for the first time. Before
@@ -494,7 +494,7 @@ default and every `v0.5`–`v0.7` behavior is preserved.
   0018](docs/adr/0018-production-store-boundary-and-postgresql-direction.md).
 
 - **PostgreSQL Store implementation**
-  ([task 035](docs/tasks/035-postgresql-store-implementation.md), second
+  ([task 035](docs/archive/tasks/v0.8/035-postgresql-store-implementation.md), second
   `v0.8` slice) — `type: postgres` is now functional. The new
   `internal/store/postgres` package implements the existing
   `internal/store.Store` port against PostgreSQL and passes all nine of
@@ -547,7 +547,7 @@ default and every `v0.5`–`v0.7` behavior is preserved.
   `TRUSTVIAN_TEST_POSTGRES_DSN`.
 
 - **Store durability, concurrency & migration hardening**
-  ([task 036](docs/tasks/036-store-durability-concurrency-and-migration-hardening.md),
+  ([task 036](docs/archive/tasks/v0.8/036-store-durability-concurrency-and-migration-hardening.md),
   third `v0.8` slice) — proves the PostgreSQL backend holds under
   production failure and concurrency conditions, and fixes two
   schema-metadata safety gaps found while doing so. No new backend, no new
@@ -605,7 +605,7 @@ default and every `v0.5`–`v0.7` behavior is preserved.
   no PostgreSQL.
 
 - **Reference Docker Compose deployment**
-  ([task 037](docs/tasks/037-reference-docker-compose-deployment.md),
+  ([task 037](docs/archive/tasks/v0.8/037-reference-docker-compose-deployment.md),
   fourth `v0.8` slice) — a runnable local stack demonstrating Trustvian
   analyzing real OTLP telemetry against PostgreSQL-backed behavioral state
   that survives a restart:
@@ -742,7 +742,7 @@ behavior preserved by default.
 ### Added
 
 - **AI Agent Event/Context Foundation**
-  ([task 014](docs/tasks/014-ai-agent.md)) — `event.Context` gains
+  ([task 014](docs/archive/tasks/v0.7/014-ai-agent.md)) — `event.Context` gains
   three optional fields: `SessionID` (session/conversation grouping),
   `DelegatedFrom` (single-hop agent-to-agent delegation), and
   `ApprovalStatus` (a new exported enum type — `ApprovalUnspecified`
@@ -760,7 +760,7 @@ behavior preserved by default.
   `BenchmarkEngineAnalyze`'s allocation profile is unchanged. See [ADR
   0014](docs/adr/0014-ai-agents-as-first-class-behavioral-actors.md).
 - **Approval-Aware Policy Semantics**
-  ([task 030](docs/tasks/030-approval-aware-policy-semantics.md)) —
+  ([task 030](docs/archive/tasks/v0.7/030-approval-aware-policy-semantics.md)) —
   `ApprovalStatus` gains its first real consumer, entirely inside
   `internal/policy`: `policy.Input`/`Condition` and
   `config.PolicyCondition` each gain an `ApprovalStatus` field (config
@@ -780,7 +780,7 @@ behavior preserved by default.
   Collector processor require zero code changes. See [ADR
   0015](docs/adr/0015-approval-as-policy-evidence-not-behavioral-anomaly.md).
 - **Delegation Behavioral Semantics**
-  ([task 031](docs/tasks/031-delegation-behavioral-semantics.md)) —
+  ([task 031](docs/archive/tasks/v0.7/031-delegation-behavioral-semantics.md)) —
   a new, opt-in `internal/anomaly` signal, `delegation_deviation`:
   has this actor ever received delegation from this immediate
   delegator before? `internal/features.VolatileFeatures` gains
@@ -803,7 +803,7 @@ behavior preserved by default.
   confirms zero added allocation when unused. See [ADR
   0016](docs/adr/0016-delegation-as-behavioral-evidence-not-provenance.md).
 - **Agent Security Scenario Validation**
-  ([task 032](docs/tasks/032-agent-security-scenario-validation.md)) —
+  ([task 032](docs/archive/tasks/v0.7/032-agent-security-scenario-validation.md)) —
   validated combined agent-security scenarios (unexpected privileged
   tool use, a sensitive read-then-external-post sequence, an approval
   violation, an unexpected delegator, external-destination drift, and
@@ -823,7 +823,7 @@ behavior preserved by default.
   `policy.Policy`'s path, so delegation/sequence signals remain
   demonstrable only from inside this module today.
 - **`v0.7` Stabilization & Release Gate**
-  ([task 033](docs/tasks/033-v07-stabilization-release-gate.md)) —
+  ([task 033](docs/archive/tasks/v0.7/033-v07-stabilization-release-gate.md)) —
   closes the gap task 032 found: `config.AnomalyConfig` (new public
   document) compiled by `config.CompileAnomaly` into the exact
   `anomaly.Config` value `trustvian.WithAnomalyConfig` already
@@ -861,7 +861,7 @@ compatible with `v0.5.0` by default.
 ### Added
 
 - **Sequence Analysis Foundation**
-  ([task 025](docs/tasks/025-sequence-analysis-foundation.md)) — a new,
+  ([task 025](docs/archive/tasks/v0.6/025-sequence-analysis-foundation.md)) — a new,
   opt-in anomaly signal, `transition_deviation`: has the immediately
   preceding action ever led to this one before, for this actor?
   `internal/anomaly.Config` gains `TransitionWeight` (defaults to `0`,
@@ -877,7 +877,7 @@ compatible with `v0.5.0` by default.
   [docs/sequence-analysis.md](docs/sequence-analysis.md) for the full
   design.
 - **Transition Rarity**
-  ([task 026](docs/tasks/026-transition-rarity.md)) — a new, opt-in
+  ([task 026](docs/archive/tasks/v0.6/026-transition-rarity.md)) — a new, opt-in
   anomaly signal, `transition_rarity`, evolving task 025's binary
   seen/unseen `transition_deviation` into a graded common/uncommon/rare
   measure for transitions that *have* been seen:
@@ -899,7 +899,7 @@ compatible with `v0.5.0` by default.
   small, reported (not hidden) amount — see
   [docs/PERFORMANCE.md § v0.6 task 026](docs/PERFORMANCE.md#v06-task-026-transition-rarity).
 - **Bounded n-gram Detection**
-  ([task 027](docs/tasks/027-bounded-ngram-detection.md)) — two new,
+  ([task 027](docs/archive/tasks/v0.6/027-bounded-ngram-detection.md)) — two new,
   opt-in anomaly signals, `ngram_deviation`/`ngram_rarity`, extending
   order-awareness one step further back than tasks 025/026: given a
   3-gram `A -> B -> C`, has this exact (grandparent, predecessor) pair
@@ -932,7 +932,7 @@ compatible with `v0.5.0` by default.
   reported (not hidden) amount — see
   [docs/PERFORMANCE.md § v0.6 task 027](docs/PERFORMANCE.md#v06-task-027-bounded-n-gram-detection).
 - **Markov Transition Scoring**
-  ([task 028](docs/tasks/028-markov-transition-scoring.md)) — a new,
+  ([task 028](docs/archive/tasks/v0.6/028-markov-transition-scoring.md)) — a new,
   opt-in anomaly signal, `markov_surprisal`, computing first-order
   Markov surprisal (`-log2(P(B|A))`, bounded into `[0,1)`) over the
   identical evidence task 026's `transition_rarity` already reads.
@@ -974,7 +974,7 @@ Collector processor.
 ### Added
 
 - **Public Policy configuration model + compiler**
-  ([task 019](docs/tasks/019-policy-config-model.md)) — a new public
+  ([task 019](docs/archive/tasks/v0.5/019-policy-config-model.md)) — a new public
   package, `config` (a sibling to `event`/`alert`, not `internal/` —
   see [ADR 0008](docs/adr/0008-policy-config-boundary.md)):
   `PolicyConfig`/`PolicyRule`/`PolicyCondition` (primitive-typed
@@ -986,7 +986,7 @@ Collector processor.
   ordinary Go type inference, without ever importing `internal/policy`
   — a Go language property verified empirically, not assumed.
 - **Config file loader & schema v1 parsing**
-  ([task 020](docs/tasks/020-policy-config-loader.md)) —
+  ([task 020](docs/archive/tasks/v0.5/020-policy-config-loader.md)) —
   `Load([]byte) (PolicyConfig, error)` and
   `LoadFile(path string) (PolicyConfig, error)`, decoding a YAML
   document directly into task 019's existing public types via one new
@@ -995,7 +995,7 @@ Collector processor.
   fails loudly rather than silently falling through to a different
   security behavior. `LoadFile` bounds its read to 1 MiB.
 - **CLI configuration integration**
-  ([task 021](docs/tasks/021-cli-config-integration.md)) —
+  ([task 021](docs/archive/tasks/v0.5/021-cli-config-integration.md)) —
   `trustvian analyze`/`trustvian baseline build` accept an optional
   `--config <path>`, consuming `config.LoadFile`/`config.CompilePolicy`
   directly. Omitting it preserves the CLI's pre-existing built-in
@@ -1003,7 +1003,7 @@ Collector processor.
   fails the whole command closed (non-zero exit, no analysis output),
   never a silent fallback.
 - **OTel Collector policy configuration integration**
-  ([task 022](docs/tasks/022-collector-config-integration.md)) — the
+  ([task 022](docs/archive/tasks/v0.5/022-collector-config-integration.md)) — the
   standalone [`processor/`](processor/README.md) module accepts an
   optional `policy:` block in its own Collector configuration, decoded
   via `go-viper/mapstructure/v2` (pointed at `PolicyConfig`'s own
@@ -1014,7 +1014,7 @@ Collector processor.
   with a clean `GOWORK=off go build ./... && GOWORK=off go test ./...
   -race` — no local workspace involved.
 - **Declarative Alert configuration**
-  ([task 023](docs/tasks/023-declarative-alert-configuration.md)) — a
+  ([task 023](docs/archive/tasks/v0.5/023-declarative-alert-configuration.md)) — a
   new, independent public model in the same `config` package:
   `AlertConfig`/`AlertRuleConfig`/`AlertConditionConfig`,
   `(AlertConfig).Validate() error`,
@@ -1038,7 +1038,7 @@ release.
 ### Added
 
 - **Alert & Notification Foundation**
-  ([task 018](docs/tasks/018-alert-notification-foundation.md)) — a new
+  ([task 018](docs/archive/tasks/v0.4/018-alert-notification-foundation.md)) — a new
   public package, `alert` (a sibling to `event`, not `internal/` — see
   [ADR 0007](docs/adr/0007-alert-package-is-public.md)), turns a
   `Result`/`Decision` into a minimal, explainable, externally
@@ -1085,7 +1085,7 @@ seasonality was explicitly scoped and deferred, not built.
 ### Added
 
 - **Hour-of-day time-pattern anomaly signal**
-  ([task 017](docs/tasks/017-baseline-time-patterns.md)) —
+  ([task 017](docs/archive/tasks/v0.3/017-baseline-time-patterns.md)) —
   `baseline.FingerprintStats` gained `HourActivity [24]float64` (a
   per-UTC-hour EWMA of traffic share) and a dedicated
   `TimePatternObservations` maturity counter, gating the signal
@@ -1120,7 +1120,7 @@ core.
 ### Added
 
 - **Outbound `trustvian.*` result attributes**
-  ([task 008](docs/tasks/008-otel.md)) —
+  ([task 008](docs/archive/tasks/v0.2/008-otel.md)) —
   `internal/otel.AttributesFromResult` derives five outbound attributes
   (`trustvian.anomaly.score`, `trustvian.trust.score`,
   `trustvian.risk.level`, `trustvian.decision`,
@@ -1136,7 +1136,7 @@ core.
   [OPENTELEMETRY.md § Trustvian output
   attributes](docs/OPENTELEMETRY.md#trustvian-output-attributes).
 - **Standalone OTel Collector processor**
-  ([task 009](docs/tasks/009-otel-collector.md)) —
+  ([task 009](docs/archive/tasks/v0.2/009-otel-collector.md)) —
   [`processor/`](processor/README.md), a separate Go module
   (`trustvian-processor`) implementing a real OpenTelemetry Collector
   traces processor: maps `ptrace.Span` into Trustvian events, runs them
@@ -1173,7 +1173,7 @@ stages were added; this release is depth, not breadth.
 
 ### Added
 
-- **Target category** ([task 001](docs/tasks/001-feature-model.md)) —
+- **Target category** ([task 001](docs/archive/tasks/v0.1/001-feature-model.md)) —
   `event.Event.Target.Category` (`internal`, `external`, `database`) is
   a new, optional stable dimension. It flows through
   `internal/features.Extract` into `StableFeatures` and, from there,
@@ -1182,7 +1182,7 @@ stages were added; this release is depth, not breadth.
   detectable category shift, not just a specific-hostname novelty.
   Zero value (`unspecified`) is accepted by `Event.Validate()` and
   never required.
-- **Fingerprint versioning** ([task 002](docs/tasks/002-fingerprint.md))
+- **Fingerprint versioning** ([task 002](docs/archive/tasks/v0.1/002-fingerprint.md))
   — `internal/fingerprint.Compute` now writes an explicit version
   marker into its hash before the stable fields. A future change to
   which dimensions feed the hash (or to the hash algorithm) bumps this
@@ -1193,7 +1193,7 @@ stages were added; this release is depth, not breadth.
   what feeds the hash, in what order, and why FNV-1a — is now written
   up in [DOMAIN.md § Fingerprint](docs/DOMAIN.md#fingerprint).
 - **`frequency_deviation` anomaly signal**
-  ([task 004](docs/tasks/004-anomaly.md)) — `internal/baseline` now
+  ([task 004](docs/archive/tasks/v0.1/004-anomaly.md)) — `internal/baseline` now
   tracks an EWMA of inter-observation intervals
   (`FingerprintStats.IntervalMean`/`IntervalVariance`/
   `IntervalObservations`), and `internal/anomaly.Score` uses it to
@@ -1230,7 +1230,7 @@ stages were added; this release is depth, not breadth.
   `Observe`'s decision gating structurally could not catch, since such
   an event is normally decided `observe_only`. See
   [SECURITY.md § baseline poisoning](docs/SECURITY.md#baseline-poisoning).
-- **`Trust.Explain()`** ([task 005](docs/tasks/005-trust-risk.md)) — a
+- **`Trust.Explain()`** ([task 005](docs/archive/tasks/v0.1/005-trust-risk.md)) — a
   new method rendering a `Trust` value as a short, human-readable
   sentence (identity confidence, anomaly at its effective confidence,
   context risk, and the resulting risk level). The multiplicative trust
@@ -1239,14 +1239,14 @@ stages were added; this release is depth, not breadth.
   across representative ranges and asserts the formula never produces a
   value outside `[0,1]` and is monotonic in every input.
 - **Attribute matching in policy `Condition`**
-  ([task 006](docs/tasks/006-policy.md)) — `policy.Condition` gained an
+  ([task 006](docs/archive/tasks/v0.1/006-policy.md)) — `policy.Condition` gained an
   `Attributes map[string]string` field, ANDed with every other
   `Condition` field, closing the original spec's own
   `tool.category: secrets` policy example. This is flat key/value
   equality only — no AND/OR/NOT combinators, no comparison operators,
   and no dynamic policy loading were added; `Condition{}`'s zero-value
   "matches everything" behavior is unchanged.
-- **`Result.Explain()`** ([task 007](docs/tasks/007-decision.md)) — a
+- **`Result.Explain()`** ([task 007](docs/archive/tasks/v0.1/007-decision.md)) — a
   new method rendering a complete, human-readable decision summary:
   final decision, trust/risk/anomaly scores, every contributing
   anomaly signal with its detail, and the matched policy rule (or
@@ -1254,7 +1254,7 @@ stages were added; this release is depth, not breadth.
   names was already present on `Result`; this makes assembling them
   into a readable explanation a reusable SDK method instead of
   CLI-only formatting logic.
-- **`examples/`** ([task 010](docs/tasks/010-examples.md)) — a new,
+- **`examples/`** ([task 010](docs/archive/tasks/v0.1/010-examples.md)) — a new,
   runnable `examples/` directory with six self-contained programs
   (`basic`, `credential-misuse`, `unexpected-dependency`,
   `external-destination`, `frequency-abuse`, `ai-agent`), each a
@@ -1262,7 +1262,7 @@ stages were added; this release is depth, not breadth.
   each demonstrating the full `Event → ... → Decision` path with real,
   captured `go run` output. `make examples` runs and verifies all six.
 - **Two closed performance-measurement gaps**
-  ([task 011](docs/tasks/011-performance.md)) —
+  ([task 011](docs/archive/tasks/v0.1/011-performance.md)) —
   `BenchmarkEventFromSpan` (`internal/otel`) and
   `BenchmarkInMemoryMemoryGrowth` (`internal/store`, at 100/1,000/10,000
   distinct keys) close the two gaps [PERFORMANCE.md](docs/PERFORMANCE.md)
@@ -1271,7 +1271,7 @@ stages were added; this release is depth, not breadth.
   part of this release (see [PERFORMANCE.md § Measured
   results](docs/PERFORMANCE.md#measured-results)).
 - **Dedicated security test suite**
-  ([task 012](docs/tasks/012-security-tests.md)) — new tests for
+  ([task 012](docs/archive/tasks/v0.1/012-security-tests.md)) — new tests for
   malformed/extreme input (`NaN`/`±Inf` `IdentityConfidence`, very long
   strings, negative `duration_ms`), resource-exhaustion safety (a
   100,000-key `Attributes` map, a single actor producing 5,000 distinct

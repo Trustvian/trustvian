@@ -41,7 +41,7 @@ for `anomaly.Config.SensitiveTargetFloor`, a stronger, Go-SDK-only
 version of this scenario where a sensitive destination stays flagged
 even once fully familiar — out of scope for this example, since building
 it requires an `anomaly.Config` from `internal/anomaly`, which (per
-[Non-Goals](../../docs/tasks/010-examples.md)) this example, as a true
+[Non-Goals](../../docs/archive/tasks/v0.1/010-examples.md)) this example, as a true
 external module, cannot construct. See
 [the examples index](../README.md#a-note-on-decision) for why `Decision`
 here is `observe_only` rather than the `BLOCK` shown in

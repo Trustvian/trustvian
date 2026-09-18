@@ -1,7 +1,7 @@
 # alert-webhook
 
 Demonstrates the v0.4 Alert & Notification Foundation
-([task 018](../../docs/tasks/018-alert-notification-foundation.md))
+([task 018](../../docs/archive/tasks/v0.4/018-alert-notification-foundation.md))
 end to end, entirely through the direct Go SDK — no OTel adapter and no
 Collector processor involved anywhere in this program.
 

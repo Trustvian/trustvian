@@ -402,7 +402,7 @@ Potential enterprise features:
 **`v0.7` — AI Agent Behavioral Security is shipped (`v0.7.0`):**
 [`docs/ROADMAP.md` §
 v0.7](../ROADMAP.md#v07--ai-agent-behavioral-security)
-([task 014](../tasks/014-ai-agent.md) onward) was the pre-`v1.0` OSS
+([task 014](tasks/v0.7/014-ai-agent.md) onward) was the pre-`v1.0` OSS
 milestone for this. **AI agents are behavioral actors analyzed by the
 same Trustvian engine** — not a second product, not a second security
 engine. Agent identity, tool calls, external
@@ -847,7 +847,7 @@ real Go type — are:
 (the actor's behavioral history this event belongs to) — this list
 originally named one, but every plausible meaning collapses into
 `Fingerprint.ID`, exactly the same finding [task
-008](../tasks/008-otel.md) already reached for
+008](tasks/v0.2/008-otel.md) already reached for
 `trustvian.behavior.id` in the OTel attribute set (see
 [OPENTELEMETRY.md](../OPENTELEMETRY.md#trustvian-output-attributes)).
 `Alert.FingerprintID` is the one identifier that concept resolves to;
@@ -908,7 +908,7 @@ input. It does not use this section's illustrative `alerts:`
 list-of-`when:` shape or its `">0.90"` comparison-operator-in-string
 syntax verbatim (see the real, current shape in [ADR
 0009](../adr/0009-alert-config-is-a-separate-document.md) and
-[`docs/tasks/023`](../tasks/023-declarative-alert-configuration.md)):
+[`docs/tasks/023`](tasks/v0.5/023-declarative-alert-configuration.md)):
 numeric thresholds are typed `float64` fields
 (`min_anomaly_score`/`max_trust_score`), not an embedded operator
 string, matching `PolicyCondition`'s own established convention of

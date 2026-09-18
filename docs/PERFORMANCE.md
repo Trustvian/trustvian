@@ -27,7 +27,7 @@ In order of how often they run in a typical deployment:
 ## Measured results
 
 **This table is the `v0.1` release baseline** (confirmed as part of
-[task 013](tasks/013-oss-v01.md)'s release gate, 2026-09-04). Every
+[task 013](archive/tasks/v0.1/013-oss-v01.md)'s release gate, 2026-09-04). Every
 number in it was already current as of task 011's own re-measurement;
 task 013 re-ran the full `go test ./... -bench . -benchmem -run ^$`
 suite fresh (no cache) on the exact commit being released and confirms
@@ -43,7 +43,7 @@ Environment: Go 1.27, darwin/arm64, Apple M3 Pro. Run with
 (`-cpu 1`).
 
 Full suite re-measured for task 011 (see
-[tasks/011-performance.md](tasks/011-performance.md)) after tasks
+[tasks/011-performance.md](archive/tasks/v0.1/011-performance.md)) after tasks
 002/004/006 landed. Every allocation count (`B/op`/`allocs/op`) below
 is unchanged from the prior recorded session for every benchmark whose
 underlying code did not change in those tasks (allocation counts are
@@ -80,7 +80,7 @@ versus this session's general measurement noise.
 ### v0.1 gate confirmation run
 
 Same environment, same commit, run fresh (no test cache) as part of
-[task 013](tasks/013-oss-v01.md)'s release-gate verification. Shown
+[task 013](archive/tasks/v0.1/013-oss-v01.md)'s release-gate verification. Shown
 here to prove the table above reproduces, not as a replacement for it —
 `B/op`/`allocs/op` match exactly everywhere; `ns/op` differences are
 normal machine-load variance (this run shared the machine with other
@@ -109,7 +109,7 @@ work), not code changes.
 
 ### v0.3 task 017 re-measurement (HourActivity time-pattern signal)
 
-[Task 017](tasks/017-baseline-time-patterns.md) added a `[24]float64`
+[Task 017](archive/tasks/v0.3/017-baseline-time-patterns.md) added a `[24]float64`
 array and a `uint64` counter to `FingerprintStats`
 (`internal/baseline`), and one additional signal-scoring branch to
 `anomaly.Score`. Re-measured same environment (Go 1.27, darwin/arm64,
@@ -181,7 +181,7 @@ table above — nothing existing changed. Measured same environment (Go
 
 **The no-match path is zero-allocation, verified rather than assumed.**
 `BenchmarkEvaluateNoMatch` confirms
-[task 018](tasks/018-alert-notification-foundation.md)'s own
+[task 018](archive/tasks/v0.4/018-alert-notification-foundation.md)'s own
 Acceptance Criteria bullet directly: a `Result` that matches no
 configured `Rule` costs nothing beyond the `Condition.Matches` field
 comparisons themselves — no `Alert` is constructed, no ID is generated,
@@ -946,7 +946,7 @@ code change is named.
 `anomaly.Score`'s familiar-path floor (54.1ns, which itself already
 includes the fingerprint map lookup plus the frequency-deviation
 branch's map read, subtraction, and `math.Sqrt`, even when the signal
-doesn't fire — see [task 004](tasks/004-anomaly.md)) + `trust.Compute`
+doesn't fire — see [task 004](archive/tasks/v0.1/004-anomaly.md)) + `trust.Compute`
 (5.8ns) + `policy.Evaluate` (30.5–43.2ns) sum to roughly 331–344ns
 against the measured 553.8ns, with the remainder attributable to
 `Store.Get`'s map read and struct construction for `Result` (the same
@@ -1033,7 +1033,7 @@ request-method attribute, a measured duration — the same shape as
 `fingerprint.Compute` alone (221.1ns) plus `store.InMemory.Observe`
 (345.7–363.1ns) combined, and it runs once per span, before `Analyze`,
 not inside it. This closes the first item task 011 was scoped to
-measure (see [tasks/011-performance.md](tasks/011-performance.md)) —
+measure (see [tasks/011-performance.md](archive/tasks/v0.1/011-performance.md)) —
 there was no reason to expect it to be expensive, and it isn't.
 
 **`otel.AttributesFromResult` (task 008) is the cheapest adapter
@@ -1046,7 +1046,7 @@ map construction or ID-stringification work like `EventFromSpan`'s
 `attributeMap`/`SpanID().String()` calls. It is not on the
 `Engine.Analyze` hot path itself — it runs after a `Result` already
 exists, for a caller (e.g. a future OTel Collector processor,
-[task 009](tasks/009-otel-collector.md)) choosing to export it.
+[task 009](archive/tasks/v0.2/009-otel-collector.md)) choosing to export it.
 
 **`store.InMemory`'s per-`Observe` cost does not grow with the number
 of distinct keys it holds — allocation-wise, at least.** Across 100,
@@ -1083,7 +1083,7 @@ sampled across a run) if it becomes a real question.
   not yet optimized further since it hasn't shown up as the dominant
   cost in end-to-end benchmarks. A future optimization (reusing a
   hasher, avoiding the string conversion) is possible but unmeasured —
-  not claimed here as already done. [Task 002](tasks/002-fingerprint.md)
+  not claimed here as already done. [Task 002](archive/tasks/v0.1/002-fingerprint.md)
   added the `fingerprintVersion` marker and `TargetCategory` to the
   hash input (two more `writeField` calls), which is the entirety of
   the increase from the prior 12 allocs/op, 104 B/op, 136.7 ns/op —
@@ -1097,7 +1097,7 @@ sampled across a run) if it becomes a real question.
   *infrequent, gated* write path (`Observe`) is what makes the *hot,
   frequent* read path (`Get`, called on every `Analyze`) completely
   lock-free after acquiring a read lock, with no defensive copying
-  needed. [Task 004](tasks/004-anomaly.md)'s three new
+  needed. [Task 004](archive/tasks/v0.1/004-anomaly.md)'s three new
   `FingerprintStats` fields (`IntervalObservations`, `IntervalMean`,
   `IntervalVariance`) grew the struct copied into that map by 24 bytes
   (three more `float64`/`uint64`-sized fields), which is the entirety
@@ -1133,14 +1133,14 @@ sampled across a run) if it becomes a real question.
   `go func`/goroutine spawns anywhere in non-test code.
 - The **Collector processor** is where the one exception lives, and it
   is deliberate: the health listener added in
-  [task 042](tasks/042-runtime-health-readiness-graceful-shutdown.md)
+  [task 042](archive/tasks/v0.9/042-runtime-health-readiness-graceful-shutdown.md)
   runs one goroutine, serving until `Shutdown` stops it. That is the
   entire goroutine inventory of the long-lived runtime — still zero
   channels, zero tickers, and zero timers in non-test code across both
   modules. `Analyze`/`Observe` remain synchronous, so the processor adds
   no per-span goroutine either.
 - The processor's operational metrics
-  ([task 043](tasks/043-self-observability-resource-safety.md)) are
+  ([task 043](archive/tasks/v0.9/043-self-observability-resource-safety.md)) are
   **allocation-free**: `BenchmarkConsumeTraces` reports the same 33
   allocs/op and 1352 B/op as before they existed, because every
   attribute set is pre-built at construction from a closed vocabulary
@@ -1154,7 +1154,7 @@ sampled across a run) if it becomes a real question.
 Both gaps this section previously named —
 `internal/otel.EventFromSpan` and `store.InMemory`'s per-call cost as
 the number of distinct keys it holds grows — are closed as of
-[task 011](tasks/011-performance.md): see `BenchmarkEventFromSpan` and
+[task 011](archive/tasks/v0.1/011-performance.md): see `BenchmarkEventFromSpan` and
 `BenchmarkInMemoryMemoryGrowth` above. Every pipeline stage named in
 the roadmap brief (event processing, feature extraction, fingerprint
 generation, baseline lookup, baseline update, anomaly detection,

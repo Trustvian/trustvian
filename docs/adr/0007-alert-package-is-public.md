@@ -2,7 +2,7 @@
 
 ## Context
 
-[Task 018](../tasks/018-alert-notification-foundation.md) (v0.4,
+[Task 018](../archive/tasks/v0.4/018-alert-notification-foundation.md) (v0.4,
 Alert & Notification Foundation) named a genuine open question rather
 than deferring it: where should `Alert` and its `Sink` interface live?
 

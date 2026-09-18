@@ -2,10 +2,10 @@
 
 ## Context
 
-[Task 023](../tasks/023-declarative-alert-configuration.md) (`v0.5`,
+[Task 023](../archive/tasks/v0.5/023-declarative-alert-configuration.md) (`v0.5`,
 Policy & Configuration) closes the last named gap in that milestone:
 `alert.Rule` — like `policy.Policy` before [task
-019](../tasks/019-policy-config-model.md) — can only be constructed by
+019](../archive/tasks/v0.5/019-policy-config-model.md) — can only be constructed by
 code living inside this module. The obvious question this task had to
 answer first: does the existing, released `PolicyConfig` document grow
 an `alerts:` section, or does Alert configuration get its own,
@@ -80,9 +80,9 @@ but never merged into one schema or one Go type.
      already-released (locally tagged `v0.5.0`) loader — risk this
      task has no forcing external consumer to justify yet.
   2. **No real consumer asked for one file yet.** Neither the CLI
-     ([task 021](../tasks/021-cli-config-integration.md)) nor the
+     ([task 021](../archive/tasks/v0.5/021-cli-config-integration.md)) nor the
      Collector processor ([task
-     022](../tasks/022-collector-config-integration.md)) wires Alert
+     022](../archive/tasks/v0.5/022-collector-config-integration.md)) wires Alert
      configuration in at all (see both tasks' own Non-Goals) — there is
      no `--alert-config` flag and no `alerts:` Collector block today.
      Building the combined-file plumbing before either consumer exists

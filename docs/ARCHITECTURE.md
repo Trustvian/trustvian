@@ -76,7 +76,7 @@ Event → Features → Fingerprint → Baseline(read) → Anomaly → Trust → 
 `Engine` (the root `trustvian` package) is the composition root that
 wires all of this together — see [`engine.go`](../engine.go).
 
-[Task 001](tasks/001-feature-model.md) added `event.Target.Category`
+[Task 001](archive/tasks/v0.1/001-feature-model.md) added `event.Target.Category`
 and `features.StableFeatures.TargetCategory` — a new field on existing
 types, not a new package or dependency edge, so no change to the
 pipeline shape or [dependency direction](#dependency-direction) below.
@@ -84,7 +84,7 @@ pipeline shape or [dependency direction](#dependency-direction) below.
 **A human, a service, and an AI agent are all just `Actor.Type` values
 flowing into the exact same pipeline above** — never a second
 pipeline. `ActorTypeAIAgent` (`v0.1`) and, since `v0.7` ([task
-014](tasks/014-ai-agent.md), [ADR
+014](archive/tasks/v0.7/014-ai-agent.md), [ADR
 0014](adr/0014-ai-agents-as-first-class-behavioral-actors.md)),
 `event.Context`'s `SessionID`/`DelegatedFrom`/`ApprovalStatus` fields
 are additive `Event`/`Context` fields, not a parallel `AgentEngine`,
@@ -94,8 +94,8 @@ identical `internal/anomaly` signals (including every `v0.6` sequence
 signal) any other actor's operation sequence would be — proven, not
 merely asserted, by `TestAnalyzeAgentToolSequenceNoveltyDetectedByExistingEngine`
 in [`engine_test.go`](../engine_test.go). Task
-[030](tasks/030-approval-aware-policy-semantics.md) and
-[031](tasks/031-delegation-behavioral-semantics.md) hold the identical
+[030](archive/tasks/v0.7/030-approval-aware-policy-semantics.md) and
+[031](archive/tasks/v0.7/031-delegation-behavioral-semantics.md) hold the identical
 line: approval-aware policy is one more `policy.Condition` field, and
 delegation novelty is one more bounded map on `Baseline`
 (`DelegatorCounts`, alongside `PredecessorCounts`/`TrigramCounts`) and
@@ -153,7 +153,7 @@ blocked just for being new — see the walkthrough in
 
 Four packages are importable from outside this module: the root
 `trustvian` package, `event`, `alert` (`v0.4.0`), and `config`
-(`v0.5`, [task 019](tasks/019-policy-config-model.md)). Everything
+(`v0.5`, [task 019](archive/tasks/v0.5/019-policy-config-model.md)). Everything
 else lives under `internal/`, which Go's compiler enforces.
 
 ```
@@ -399,7 +399,7 @@ Two things about this diagram are load-bearing.
 on a socket. The Collector does, and the Trustvian processor is a component
 inside it. The reference deployment containerizes an *existing* runtime
 shape rather than introducing a daemon — see
-[task 037](tasks/037-reference-docker-compose-deployment.md) § Runtime
+[task 037](archive/tasks/v0.8/037-reference-docker-compose-deployment.md) § Runtime
 decision for why that mattered.
 
 **Dependency direction is unchanged by packaging.** The arrows point from
@@ -530,7 +530,7 @@ work.
 
 The Foundation stage of this layer is implemented as of `v0.4` (package
 `alert` — see [ADR 0007](adr/0007-alert-package-is-public.md) and
-[task 018](tasks/018-alert-notification-foundation.md)); the Reliability
+[task 018](archive/tasks/v0.4/018-alert-notification-foundation.md)); the Reliability
 and Additional-sinks-and-governance stages named in
 [ROADMAP.md § Alert & Notification
 phase](ROADMAP.md#alert--notification-phase) remain future work. The

@@ -22,7 +22,7 @@ explicitly out of core scope — see
 Every threat below is backed by a specific, named test, not just a
 design argument. This table exists so that fact is verifiable at a
 glance rather than requiring a read of every section
-([`docs/tasks/012-security-tests.md`](tasks/012-security-tests.md)).
+([`docs/tasks/012-security-tests.md`](archive/tasks/v0.1/012-security-tests.md)).
 Threats whose tests already existed before that task are referenced
 here, not moved or rewritten.
 
@@ -87,7 +87,7 @@ pattern, not a redesign. This was true by construction from
 `baseline.Key`'s shape but not directly proven end-to-end through
 `Engine` until `TestAnalyzeCrossActorIsolation` in
 [`engine_test.go`](../engine_test.go)
-([task 012](tasks/012-security-tests.md)): two actors that produce an
+([task 012](archive/tasks/v0.1/012-security-tests.md)): two actors that produce an
 otherwise identical stable feature shape (same operation, same target,
 same environment) never share `Baseline` state — actor-a is matured
 over 30 observations, and actor-b's first-ever event for the exact same
@@ -181,7 +181,7 @@ follow:
   **Future work:** if a deployment needs it, per-sample outlier
   rejection belongs in `FingerprintStats.observe` alongside the
   ordering guard, not in caller discipline.
-- **`HourActivity` (task [017](tasks/017-baseline-time-patterns.md))
+- **`HourActivity` (task [017](archive/tasks/v0.3/017-baseline-time-patterns.md))
   is the same bounded, self-correcting shape, not a new threat class.**
   `FingerprintStats.HourActivity` is an EWMA-of-indicator per UTC
   hour-of-day, structurally identical to `ErrorRate` above except
@@ -211,7 +211,7 @@ leave.
 ### Sequence state
 
 **Threat:** `v0.6`'s [transition-deviation
-signal](tasks/025-sequence-analysis-foundation.md) introduces the
+signal](archive/tasks/v0.6/025-sequence-analysis-foundation.md) introduces the
 first runtime state whose size is driven not just by an actor's
 *current* fingerprint but by pairs of them — a new resource-exhaustion
 surface, and a new place cross-actor or ordering mistakes could leak
@@ -491,7 +491,7 @@ silently stops firing; nothing about evaluation itself looks wrong, so
 an operator who believes a rule is active has no signal it never was.
 
 **Status: implemented**
-([task 019](tasks/019-policy-config-model.md), `config` package).
+([task 019](archive/tasks/v0.5/019-policy-config-model.md), `config` package).
 `(PolicyConfig).Validate()` — called unconditionally inside
 `CompilePolicy` too, so this protection cannot be bypassed by skipping
 an explicit validation step — rejects, with a field-path-identifying
@@ -522,7 +522,7 @@ numeric matcher field (`MinRiskLevel` is a qualitative string enum,
 not a float) — `internal/policy.Condition` itself would need a numeric
 matching dimension before this validation surface grows to cover it.
 
-**File parsing** ([task 020](tasks/020-policy-config-loader.md),
+**File parsing** ([task 020](archive/tasks/v0.5/020-policy-config-loader.md),
 `config.Load`/`config.LoadFile`) introduced the threats a file format
 adds beyond `Validate()`'s own checks, all implemented, not deferred:
 
@@ -577,7 +577,7 @@ observable failure mode is simply the total *absence* of an alert that
 should have fired.
 
 **Status: implemented** ([task
-023](tasks/023-declarative-alert-configuration.md), `config` package —
+023](archive/tasks/v0.5/023-declarative-alert-configuration.md), `config` package —
 `AlertConfig`/`CompileAlerts`/`LoadAlerts`/`LoadAlertsFile`, a
 deliberately **separate** document and compilation path from
 `PolicyConfig`/`CompilePolicy`, not a shared one — see [ADR
@@ -622,7 +622,7 @@ noisy-OR beyond its documented range, or — for a `NaN` specifically —
 propagate an undefined value into `Anomaly.Score` itself.
 
 **Status: implemented** ([task
-033](tasks/033-v07-stabilization-release-gate.md), `config`
+033](archive/tasks/v0.7/033-v07-stabilization-release-gate.md), `config`
 package — `AnomalyConfig`/`CompileAnomaly`/`LoadAnomaly`/
 `LoadAnomalyFile`, a third document/compilation path independent of
 `PolicyConfig`/`AlertConfig`, per [ADR
@@ -674,9 +674,9 @@ operator can observe, whereas a silently substituted store produces
 *data loss*, invisible until the restart that needed the data.
 
 **Status: implemented and hardened** ([task
-034](tasks/034-production-store-contract-and-public-boundary.md), [task
-035](tasks/035-postgresql-store-implementation.md), [task
-036](tasks/036-store-durability-concurrency-and-migration-hardening.md),
+034](archive/tasks/v0.8/034-production-store-contract-and-public-boundary.md), [task
+035](archive/tasks/v0.8/035-postgresql-store-implementation.md), [task
+036](archive/tasks/v0.8/036-store-durability-concurrency-and-migration-hardening.md),
 [ADR 0018](adr/0018-production-store-boundary-and-postgresql-direction.md)).
 See [`storage-guide.md`](storage-guide.md) for the operator-facing
 version of everything below.
@@ -833,7 +833,7 @@ accepted behavior, not gaps.**
 - `Actor.ID` has no length limit, and `TestValidateAcceptsVeryLongActorID`
   in [`event/event_test.go`](../event/event_test.go) asserts that a
   100,000-character `Actor.ID` is accepted, not rejected — this is
-  deliberate current behavior per [task 012](tasks/012-security-tests.md)'s
+  deliberate current behavior per [task 012](archive/tasks/v0.1/012-security-tests.md)'s
   Non-Goals (no length limit added absent a concrete DoS vector), stated
   explicitly rather than left an untested assumption.
 - A negative `duration_ms` attribute is not rejected by `Validate` (only
@@ -913,11 +913,11 @@ consumed, not to the map's total size).
 [`engine_test.go`](../engine_test.go) proves a single actor producing
 5,000 distinct fingerprints does not panic or error `Engine.Observe`.
 Neither test bounds memory growth itself — that's a deliberate scope
-line from [task 012](tasks/012-security-tests.md): the *safety*
+line from [task 012](archive/tasks/v0.1/012-security-tests.md): the *safety*
 property (no panic, no deadlock) is this task's concern, the *growth
-curve* was [task 011](tasks/011-performance.md)'s.
+curve* was [task 011](archive/tasks/v0.1/011-performance.md)'s.
 
-[Task 011](tasks/011-performance.md) has since run that
+[Task 011](archive/tasks/v0.1/011-performance.md) has since run that
 characterization. `BenchmarkInMemoryMemoryGrowth` measures
 `store.InMemory.Observe` against stores pre-populated with 100, 1,000,
 and 10,000 distinct keys, and the *per-call* cost is flat: `B/op` and
@@ -978,7 +978,7 @@ a real one was dropped.
 
 **Status: implemented for the one delivery mechanism this stage ships
 (`alert.WebhookSink`, [task
-018](tasks/018-alert-notification-foundation.md)).** `NewWebhookSink`
+018](archive/tasks/v0.4/018-alert-notification-foundation.md)).** `NewWebhookSink`
 fails closed at construction — not silently at the first `Send` — for
 a non-HTTPS destination (`ErrNonHTTPSDestination`,
 `TestNewWebhookSinkRejectsNonHTTPS`), a literal loopback/link-local
@@ -1020,7 +1020,7 @@ belongs at the deploying application's network layer.
 
 ### AI Agent behavioral security
 
-`v0.7` ([task 014](tasks/014-ai-agent.md), [ADR
+`v0.7` ([task 014](archive/tasks/v0.7/014-ai-agent.md), [ADR
 0014](adr/0014-ai-agents-as-first-class-behavioral-actors.md))
 introduces no new state, no new pipeline stage, and no agent-specific
 detector — an AI agent is `Actor{Type: ActorTypeAIAgent}`, scored by
@@ -1072,7 +1072,7 @@ the AI-agent case specifically; a few are explicitly future work.
   unauthorized action appear delegated from a trusted agent, or to
   behaviorally "normalize" a forged delegator through repetition).
   **Status: `DelegatedFrom` now has a real consumer ([task
-  031](tasks/031-delegation-behavioral-semantics.md), [ADR
+  031](archive/tasks/v0.7/031-delegation-behavioral-semantics.md), [ADR
   0016](adr/0016-delegation-as-behavioral-evidence-not-provenance.md))
   — behavioral novelty is detected, but provenance verification
   remains genuinely future work, honestly labeled, not something this
@@ -1097,7 +1097,7 @@ the AI-agent case specifically; a few are explicitly future work.
 - **Approval self-assertion** (an agent's own event claiming
   `ApprovalStatus = Approved` and having that trusted merely because
   the event says so). **Status: `ApprovalStatus` now has a real
-  consumer ([task 030](tasks/030-approval-aware-policy-semantics.md),
+  consumer ([task 030](archive/tasks/v0.7/030-approval-aware-policy-semantics.md),
   [ADR 0015](adr/0015-approval-as-policy-evidence-not-behavioral-anomaly.md)) —
   the trust boundary below is enforced by construction, not merely
   documented, but provenance verification itself remains future
@@ -1181,7 +1181,7 @@ the AI-agent case specifically; a few are explicitly future work.
 
 ### Agent security scenario matrix
 
-[Task 032](tasks/032-agent-security-scenario-validation.md) validated
+[Task 032](archive/tasks/v0.7/032-agent-security-scenario-validation.md) validated
 the mechanisms above in composition, against five representative
 scenarios plus one combined case — no new detector, no new mechanism.
 Each row's "Security limitation" is unchanged from that mechanism's
@@ -1199,7 +1199,7 @@ prove.
 | Combined (delegation + sequence + approval) | all of the above, composed via noisy-OR + `Policy` | Same limitations as each row above, individually — composition adds no new guarantee beyond them |
 
 Task 032 found, and [task
-033](tasks/033-v07-stabilization-release-gate.md) closed, a public-API
+033](archive/tasks/v0.7/033-v07-stabilization-release-gate.md) closed, a public-API
 gap: `anomaly.Config` had no `config`-package equivalent of
 `policy.Policy`'s `config.CompilePolicy` path, so an OSS consumer
 outside this module could not enable the `delegation_deviation`/`v0.6`
@@ -1221,7 +1221,7 @@ that fails whenever PostgreSQL does, so a supervisor restarts healthy
 processes in a loop and the outage is masked as a crash.
 
 **Status: implemented** ([task
-042](tasks/042-runtime-health-readiness-graceful-shutdown.md)).
+042](archive/tasks/v0.9/042-runtime-health-readiness-graceful-shutdown.md)).
 
 - **Near-zero information content.** `/livez` and `/readyz` return a status
   string and nothing else — no DSN, hostname, error text, configuration, or
@@ -1250,7 +1250,7 @@ label set turns the metrics pipeline into a resource-exhaustion vector
 driven by attacker-chosen actor IDs.
 
 **Status: implemented** ([task
-043](tasks/043-self-observability-resource-safety.md)).
+043](archive/tasks/v0.9/043-self-observability-resource-safety.md)).
 
 - **Closed vocabularies only.** Two attribute keys exist
   (`trustvian.outcome`, `trustvian.decision`), each with a fixed value set;
@@ -1276,7 +1276,7 @@ same place as baseline poisoning's worst case: actors Trustvian had learned
 become unfamiliar, and nothing reports an error.
 
 **Status: implemented** ([task
-044](tasks/044-operations-backup-restore-upgrade.md)). The operator
+044](archive/tasks/v0.9/044-operations-backup-restore-upgrade.md)). The operator
 procedure is [`operations.md`](operations.md); this section records the
 security properties it depends on.
 

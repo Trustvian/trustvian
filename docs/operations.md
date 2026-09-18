@@ -598,5 +598,5 @@ taking one deliberate step.
   verifying what you upgrade to
 - [Reference deployment](../deployments/docker-compose/README.md) — the
   drill, runnable
-- [Task 044](tasks/044-operations-backup-restore-upgrade.md) — the design
+- [Task 044](archive/tasks/v0.9/044-operations-backup-restore-upgrade.md) — the design
   and evidence behind this document

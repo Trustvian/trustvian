@@ -3,7 +3,7 @@
 The one scenario in this directory with no corresponding
 [docs/use-cases.md](../../docs/use-cases.md) section to port — the
 `frequency_deviation` anomaly signal
-([docs/tasks/004-anomaly.md](../../docs/tasks/004-anomaly.md)) did not
+([docs/tasks/004-anomaly.md](../../docs/archive/tasks/v0.1/004-anomaly.md)) did not
 exist when that document was written.
 
 A service (`svc-poller`) polls the same status endpoint

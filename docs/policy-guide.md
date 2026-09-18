@@ -174,7 +174,7 @@ triggers the alert.
 
 ## Example: an operation that requires approval
 
-[Task 030](tasks/030-approval-aware-policy-semantics.md) reuses this
+[Task 030](archive/tasks/v0.7/030-approval-aware-policy-semantics.md) reuses this
 exact `Unless` mechanism — no new Rule-level primitive — to express
 "this operation requires approval":
 
@@ -244,7 +244,7 @@ equality per key (event attribute values are stringified with
 `fmt.Sprint`) — there is deliberately no `>`/`<`/regex matching, and no
 AND/OR/NOT composition between `Condition`s. That would be a real
 policy language, which this project's roadmap explicitly defers (see
-[`docs/tasks/006-policy.md`](tasks/006-policy.md#non-goals)).
+[`docs/tasks/006-policy.md`](archive/tasks/v0.1/006-policy.md#non-goals)).
 
 ## Testing a policy
 
@@ -263,9 +263,9 @@ a `Policy` — a Go struct literal naming `policy.Rule`/`Condition`/
 `internal/policy`. A caller outside this module (the CLI conceptually
 could, but doesn't need to, since it's in-module; a standalone
 deployment or the OTel Collector processor integration
-([task 022](tasks/022-collector-config-integration.md)) genuinely
+([task 022](archive/tasks/v0.5/022-collector-config-integration.md)) genuinely
 does) uses the public `config` package instead
-([task 019](tasks/019-policy-config-model.md),
+([task 019](archive/tasks/v0.5/019-policy-config-model.md),
 [ADR 0008](adr/0008-policy-config-boundary.md)):
 
 ```go
@@ -316,7 +316,7 @@ matters as a security property, not just an ergonomics one.
 
 ## Loading a Policy from a YAML file
 
-[Task 020](tasks/020-policy-config-loader.md) added a loader that
+[Task 020](archive/tasks/v0.5/020-policy-config-loader.md) added a loader that
 decodes a YAML file directly into the same `PolicyConfig` shown above —
 there is no separate, file-specific config type:
 
@@ -338,7 +338,7 @@ rules:
 ```
 
 `unless.approval_status: approved` is [task
-030](tasks/030-approval-aware-policy-semantics.md)'s typed field —
+030](archive/tasks/v0.7/030-approval-aware-policy-semantics.md)'s typed field —
 before it existed, the only way to express this was the ad hoc
 `attributes: {approval: human}` convention (still valid syntax, since
 `Condition.Attributes` is unchanged, but with no defined meaning
@@ -389,6 +389,6 @@ also consumes this same schema (a `policy:` block matching
 already parses its own YAML before the processor ever sees it, so the
 processor decodes that already-parsed structure directly into a
 `PolicyConfig` value (see [task
-022](tasks/022-collector-config-integration.md) for why, and its
+022](archive/tasks/v0.5/022-collector-config-integration.md) for why, and its
 caveat on what's not yet resolvable through `processor/go.mod`'s
 committed dependency).

@@ -2,9 +2,10 @@
 
 Practical documentation for building with and on Trustvian. For engineering
 conventions this codebase follows, see [`../CLAUDE.md`](../CLAUDE.md) and
-[`../.claude/rules/`](../.claude/rules/). Early design material that predates
-this documentation set is kept, unmaintained, in
-[`archive/`](archive/project-spec.md).
+[`../.claude/rules/`](../.claude/rules/). Completed engineering history —
+early design material, finished task specifications, and historical
+implementation plans — is kept, unmaintained, under
+[`archive/`](archive/tasks/README.md).
 
 | Document | What's in it |
 |---|---|
@@ -32,6 +33,7 @@ this documentation set is kept, unmaintained, in
 | [Performance](PERFORMANCE.md) | Hot paths, measured benchmark results, allocation/concurrency notes |
 | [Roadmap](ROADMAP.md) | What's implemented, in progress, planned, and explicitly out of scope |
 | [Use Cases](use-cases.md) | Four real scenarios (API anomaly, AI-agent security, service-to-service, valid-identity/abnormal-behavior) with verified input/output |
+| [Task Specifications](tasks/README.md) | Active task specifications, and where completed ones are archived |
 | [Architecture Decision Records](adr/) | Why: hexagonal core, public API boundary, OTel as a single-module adapter, narrow Store port, the fingerprint-dedup fix |
 
 All code, command output, and benchmark numbers in these documents were

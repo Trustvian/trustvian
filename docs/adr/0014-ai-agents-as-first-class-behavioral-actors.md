@@ -2,7 +2,7 @@
 
 ## Context
 
-[Task 014](../tasks/014-ai-agent.md) opens `v0.7` — AI Agent Behavioral
+[Task 014](../archive/tasks/v0.7/014-ai-agent.md) opens `v0.7` — AI Agent Behavioral
 Security. `ActorTypeAIAgent` and `OperationCategoryTool` already
 existed (`v0.1`) and already flow through the full, unmodified
 pipeline (`event.Extract` → `fingerprint.Compute` → `baseline.Observe`
@@ -139,7 +139,7 @@ shape:
   004/025) — no agent-specific detector exists.
 - `TestAnalyzeAgentToolSequenceNoveltyDetectedByExistingEngine`: the
   task's own mandatory critical semantic test, mirroring [task
-  027](../tasks/027-bounded-ngram-detection.md)'s own proof exactly.
+  027](../archive/tasks/v0.6/027-bounded-ngram-detection.md)'s own proof exactly.
   `search -> secret.read` and `secret.read -> external.post` are each
   trained as familiar pairwise transitions (via different contexts);
   the complete sequence `search -> secret.read -> external.post` is

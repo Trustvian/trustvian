@@ -2,7 +2,7 @@
 
 ## Context
 
-[Task 032](../tasks/032-agent-security-scenario-validation.md) found,
+[Task 032](../archive/tasks/v0.7/032-agent-security-scenario-validation.md) found,
 while building a fully-public example, that `trustvian.WithAnomalyConfig`
 takes an `internal/anomaly.Config` value directly. An external module
 cannot spell that type — Go's `internal/` import restriction blocks it
@@ -11,7 +11,7 @@ outright, regardless of any `replace` directive — and, unlike
 for pass-through. Concretely: an OSS consumer had no way, by any
 means, to enable `DelegationWeight`, `NGramWeight`, `TransitionWeight`,
 or any other `v0.6`/`v0.7` signal weight, ever, from outside this
-module. [Task 033](../tasks/033-v07-stabilization-release-gate.md)
+module. [Task 033](../archive/tasks/v0.7/033-v07-stabilization-release-gate.md)
 closes that gap, the same way `v0.5` closed the identical gap for
 `policy.Policy` (ADR 0008).
 

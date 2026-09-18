@@ -2,7 +2,7 @@
 
 ## Context
 
-[Task 025](../tasks/025-sequence-analysis-foundation.md) (`v0.6`,
+[Task 025](../archive/tasks/v0.6/025-sequence-analysis-foundation.md) (`v0.6`,
 Behavioral Detection Depth) needed to answer, before writing any code,
 where "what did this actor do immediately before this event" should
 live, and how far that state needs to be generalized on day one.
@@ -56,7 +56,7 @@ This reuses, unmodified:
   old file missing them unmarshals to the correct, safe zero value
   (`""`, zero `time.Time`, `nil` map) — cold start, not an error state,
   exactly like `HourActivity`'s own precedent from
-  [task 017](../tasks/017-baseline-time-patterns.md).
+  [task 017](../archive/tasks/v0.3/017-baseline-time-patterns.md).
 - **Immutability discipline** — `Baseline.Observe`'s existing
   copy-on-write contract extends unchanged: the new fields are copied
   by value into each returned `Baseline`, and `PredecessorCounts`
