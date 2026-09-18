@@ -1,5 +1,7 @@
 # 0014 — AI agents as first-class behavioral actors, not a second engine
 
+**Status:** Accepted
+
 ## Context
 
 [Task 014](../archive/tasks/v0.7/014-ai-agent.md) opens `v0.7` — AI Agent Behavioral

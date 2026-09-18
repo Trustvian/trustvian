@@ -1,5 +1,7 @@
 # 0004 — Narrow `Store` port, in-memory implementation only
 
+**Status:** Accepted
+
 ## Context
 
 `Baseline` data must be readable and updatable by `Engine` without the

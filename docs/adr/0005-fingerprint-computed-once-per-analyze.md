@@ -1,5 +1,7 @@
 # 0005 — Compute the Fingerprint once per `Analyze` call
 
+**Status:** Accepted
+
 ## Context
 
 `Engine.Analyze` needs a `fingerprint.Fingerprint` for two independent

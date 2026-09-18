@@ -1,5 +1,7 @@
 # 0008 — `config` is public; `internal/policy` stays internal
 
+**Status:** Accepted
+
 ## Context
 
 [Task 019](../archive/tasks/v0.5/019-policy-config-model.md) (`v0.5`, Policy &

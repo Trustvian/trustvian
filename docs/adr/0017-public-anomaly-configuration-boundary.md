@@ -1,5 +1,7 @@
 # 0017 — Public anomaly configuration boundary
 
+**Status:** Accepted
+
 ## Context
 
 [Task 032](../archive/tasks/v0.7/032-agent-security-scenario-validation.md) found,

@@ -1,5 +1,7 @@
 # 0001 — Hexagonal core, one package per pipeline stage
 
+**Status:** Accepted
+
 ## Context
 
 Trustvian's core job is a fixed sequence — Event → Features →

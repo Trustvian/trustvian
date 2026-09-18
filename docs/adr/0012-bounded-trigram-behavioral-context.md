@@ -1,5 +1,7 @@
 # 0012 — Bounded higher-order behavioral context: 3-grams, orientation, and why arbitrary n waits
 
+**Status:** Accepted
+
 ## Context
 
 [Task 025](../archive/tasks/v0.6/025-sequence-analysis-foundation.md) gave Trustvian

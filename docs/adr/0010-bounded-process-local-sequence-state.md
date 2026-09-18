@@ -1,5 +1,7 @@
 # 0010 — Bounded, process-local sequence state, embedded in `Baseline`
 
+**Status:** Accepted
+
 ## Context
 
 [Task 025](../archive/tasks/v0.6/025-sequence-analysis-foundation.md) (`v0.6`,

@@ -1,5 +1,7 @@
 # 0009 — Alert configuration is a separate document from Policy configuration
 
+**Status:** Accepted
+
 ## Context
 
 [Task 023](../archive/tasks/v0.5/023-declarative-alert-configuration.md) (`v0.5`,

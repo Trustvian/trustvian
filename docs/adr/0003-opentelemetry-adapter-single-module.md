@@ -1,5 +1,7 @@
 # 0003 — OpenTelemetry as an internal adapter, in the same Go module
 
+**Status:** Accepted
+
 ## Context
 
 CLAUDE.md and the project spec require the core engine to have no

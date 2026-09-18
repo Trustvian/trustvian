@@ -1,5 +1,7 @@
 # 0006 — File-backed persistent `Store`, synchronous flush-per-`Observe`
 
+**Status:** Accepted
+
 ## Context
 
 Baselines not surviving a process restart was, by a wide margin, the
