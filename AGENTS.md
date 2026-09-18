@@ -125,7 +125,9 @@ Never use `--force` or `--force-with-lease` against protected branches or
 tags.
 
 Never add an AI agent, bot, automation identity, or the current credential as
-a ruleset bypass actor.
+a ruleset bypass actor, and never use an existing bypass entry — including the
+Organization Admin bypass — even when running under a credential that holds
+it.
 
 These operations are prohibited even if the authenticated GitHub credential
 has administrator privileges. Technical capability is not authorization.

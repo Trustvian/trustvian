@@ -365,9 +365,9 @@ repository today:
 | Allowed merge method | squash only | One commit per pull request, no exceptions |
 | Conversation resolution | yes | Review comments are not lost in a merge |
 | Stale approval dismissal | yes | An approval describes a diff, not a branch |
-| Required approvals | `0` today, `1` once a second reviewer exists | See below |
+| Required approvals | `1` | A second pair of eyes on every change |
 | Final merge | human Organization Admin only | Not natively enforceable — see below |
-| Bypass actors | none — administrators included | A gate an admin can step around is a suggestion |
+| Bypass actors | Organization Admin, pull-request-only | A single-maintainer stopgap — see below |
 
 Required check names, exactly as `ci.yml` reports them:
 
@@ -412,35 +412,38 @@ merge rather than exempting it. Details, and what GitHub can and cannot
 enforce natively, are in
 [Repository Governance](REPOSITORY_GOVERNANCE.md#merge-authority).
 
-### Why required approvals is `0`
+### The single-maintainer bypass
 
-GitHub does not permit a pull request's author to approve it. Trustvian has
-one maintainer, so a requirement of one approval would make every pull
-request unmergeable except by an administrator bypass — turning bypass into
-the routine path and hollowing out every other rule in the table. The
-requirement is therefore `0` until the reviewer pool can satisfy it.
+One approving review is required, and GitHub does not let a pull request's
+author approve it. With one human on the project, a pull request that human
+authors has no eligible reviewer and cannot merge on the normal path.
 
-Everything that does not depend on a second person is enforced now: the pull
-request itself, the eight checks, strict-up-to-date, squash-only, linear
-history, conversation resolution, and no bypass for anyone.
+An Organization Admin therefore holds a **pull-request-only** bypass on
+`main`: enough to complete such a merge, and not enough to push, force-push,
+or delete the branch — those are not pull requests, and remain impossible for
+everyone.
 
-The upgrade trigger and the exact settings to change are in
-[Repository Governance](REPOSITORY_GOVERNANCE.md#review-authority).
+This is a stopgap for a one-person project, not the intended workflow. The
+normal path is unchanged, and the bypass should be removed once a second
+reviewing identity exists. The reasoning, the exact scope, and the target
+state are in
+[Repository Governance](REPOSITORY_GOVERNANCE.md#bypass).
 
 ### AI agents and automation
 
 Agents follow the same path as anyone else — branch, pull request, CI, human
 approval — and hold no authority to delete, rewrite, or bypass `main`, or to
-mutate release tags. The full policy, including the credential isolation that
+create or mutate release tags. An agent must never use the administrator
+bypass, whatever credential it happens to hold. The full policy, including the credential isolation that
 makes it a boundary rather than a request, is
 [Agent Governance](AGENT_GOVERNANCE.md).
 
 ### Release tags
 
-Tags matching `v*` are protected by a ruleset named **`Protect release tags`**:
-they cannot be deleted, updated, or force-moved by anyone. Creating a tag is
-still permitted, because `release.yml` is *triggered* by a maintainer-pushed
-tag rather than creating one.
+Tags matching `v*` are protected by a ruleset named **`Protect release tags`**
+against creation, deletion, update, and force-move. Only a human Organization
+Admin may create one — `release.yml` is *triggered* by that tag push and never
+creates a tag itself, so no workflow can mint a release.
 
 Immutability was previously a process commitment. It is now a server-side
 rule, which is what `v0.9.0-rc.1` and `rc.2` deserve: failed release
