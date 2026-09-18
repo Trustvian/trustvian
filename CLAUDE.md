@@ -111,6 +111,35 @@ Do not create commits unless explicitly requested.
 
 Do not push to GitHub unless explicitly requested.
 
+## Repository Safety
+
+Never delete, rename, force-push, or rewrite `main`.
+
+Never disable, weaken, delete, or bypass GitHub protection for `main`.
+
+Never change the repository default branch away from `main`.
+
+Never delete, move, or overwrite release tags.
+
+Never use `--force` or `--force-with-lease` against protected branches or
+tags.
+
+Never add an AI agent, bot, automation identity, or the current credential as
+a ruleset bypass actor.
+
+These operations are prohibited even if the authenticated GitHub credential
+has administrator privileges. Technical capability is not authorization.
+
+Normal changes must use:
+
+short-lived branch -> Pull Request -> CI -> human approval -> main
+
+If a task appears to require violating one of these invariants, STOP and
+request explicit human intervention instead.
+
+This section is a reminder, not a security boundary — see
+`docs/AGENT_GOVERNANCE.md` for the credential isolation that is.
+
 ## Implementation Strategy
 
 Do not implement large features in one step.

@@ -405,6 +405,14 @@ history, conversation resolution, and no bypass for anyone.
 The upgrade trigger and the exact settings to change are in
 [Repository Governance](REPOSITORY_GOVERNANCE.md#approval-requirements).
 
+### AI agents and automation
+
+Agents follow the same path as anyone else — branch, pull request, CI, human
+approval — and hold no authority to delete, rewrite, or bypass `main`, or to
+mutate release tags. The full policy, including the credential isolation that
+makes it a boundary rather than a request, is
+[Agent Governance](AGENT_GOVERNANCE.md).
+
 ### Release tags
 
 Tags matching `v*` are protected by a ruleset named **`Protect release tags`**:
@@ -525,4 +533,5 @@ commitment exists, the branch would be pure overhead.
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — the local gates and module layout
 - [.github/SECURITY.md](../.github/SECURITY.md) — reporting vulnerabilities
 - [Repository Governance](REPOSITORY_GOVERNANCE.md) — the enforced GitHub configuration
+- [Agent Governance](AGENT_GOVERNANCE.md) — what AI agents may and may not do
 - [Operations](operations.md) — upgrade and compatibility contracts

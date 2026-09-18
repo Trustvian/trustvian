@@ -37,6 +37,38 @@ readable through the API as *effective* rules, they apply to tags as well as
 branches, and their bypass list is explicit rather than an implied
 administrator exemption.
 
+## Authority model
+
+```text
+Human Admin
+    │
+    ├── repository governance
+    ├── emergency administration
+    └── credential management
+
+Maintainer
+    │
+    ├── review
+    ├── approval
+    └── normal merge
+
+AI Agent
+    │
+    ├── implementation
+    ├── tests
+    ├── documentation
+    ├── branch push
+    └── PR creation
+
+    NEVER:
+    destructive administration
+```
+
+Rulesets enforce the *branch* half of this: nobody, of any role, can push to
+`main`, force-push it, or delete it. The *role* half — that an agent does not
+administer governance — is enforced by which credential the agent holds, and
+is documented in [Agent Governance](AGENT_GOVERNANCE.md#credential-isolation).
+
 ## The pull request flow
 
 ```mermaid
@@ -159,6 +191,25 @@ This is why `v0.9.0-rc.1` and `v0.9.0-rc.2` are still in the history. Both
 failed. Both stay — a version number that was published, even to a failed
 pipeline, is spent.
 
+## GitHub Actions privilege
+
+| Workflow | Trigger | Privilege |
+|---|---|---|
+| `ci.yml` | push / PR on `main` | `contents: read` |
+| `nightly.yml` | schedule, manual | `contents: read` |
+| `release.yml` | tag `v*` | `contents: read`; publish job `contents: write`; container job `packages: write` + `id-token: write` |
+
+Repository-wide, the default `GITHUB_TOKEN` is **read**, and **GitHub Actions
+may not approve pull requests**. That second setting matters more than it
+looks: with it enabled, a workflow could supply the approving review a ruleset
+requires, which would make "human approval" a formality any automated change
+could satisfy.
+
+Pull request CI holds no write scope and no secrets, so a fork's pull request
+runs untrusted code with no credential worth stealing. `pull_request_target`
+is not used anywhere, and must not be introduced — it is the standard way this
+property gets lost.
+
 ## Reading the live configuration
 
 ```bash
@@ -171,6 +222,9 @@ gh api repos/trustvian/trustvian/rulesets --jq '.[] | "\(.name)  \(.target)  \(.
 # Merge settings
 gh api repos/trustvian/trustvian \
   --jq '{allow_squash_merge, allow_merge_commit, allow_rebase_merge, delete_branch_on_merge}'
+
+# Default workflow token, and whether Actions may approve pull requests
+gh api repos/trustvian/trustvian/actions/permissions/workflow
 ```
 
 If `rules/branches/main` returns an empty array, `main` is unprotected and
@@ -190,5 +244,6 @@ organization-level policy.
 ## Related
 
 - [Branching Strategy](BRANCHING_STRATEGY.md) — the model these rules enforce
+- [Agent Governance](AGENT_GOVERNANCE.md) — human vs. agent authority, and credential isolation
 - [Release Guide](release-guide.md) — producing and verifying a release
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — the local gates
