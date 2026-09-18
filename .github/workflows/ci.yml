@@ -17,7 +17,7 @@ on:
     # `main` is the only long-lived branch: every change reaches it by pull
     # request, so gating those pull requests is what keeps it releasable.
     # The push trigger covers the merge itself and anything a maintainer
-    # lands directly. See docs/BRANCHING_STRATEGY.md.
+    # lands directly. See docs/governance/branching.md.
     branches: [main]
   pull_request:
     branches: [main]

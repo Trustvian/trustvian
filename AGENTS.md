@@ -173,7 +173,7 @@ requirement.
 When a pull request becomes merge-ready, stop and report that it is waiting
 for a human Organization Admin. Do not merge it.
 
-See `docs/AGENT_GOVERNANCE.md` for the credential isolation that makes this a
+See `docs/governance/agents.md` for the credential isolation that makes this a
 boundary rather than a request.
 
 ## Implementation Strategy

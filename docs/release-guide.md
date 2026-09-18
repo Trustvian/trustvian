@@ -195,7 +195,7 @@ valid and `0.9` or `v0.9` are not.
 ### 5. Tag and push
 
 Release tags are cut from `main`, which every change reaches by pull
-request — see [Branching Strategy](BRANCHING_STRATEGY.md). Tag the commit on
+request — see [Branching Strategy](governance/branching.md). Tag the commit on
 `main` that the candidate verified:
 
 ```bash

@@ -1,22 +1,12 @@
-# Trustvian Branching Strategy
+# Branching Strategy
 
 **Main-based development with short-lived branches and immutable release
 tags.** One long-lived branch, one pull-request target, and every release
 identified by a tag that is never moved.
 
 This document is the contract for where work happens. For how a release is
-produced and verified, see the [Release Guide](release-guide.md); for how to
-run the gates locally, see [CONTRIBUTING.md](../CONTRIBUTING.md).
-
-## Goals
-
-- A contributor can tell, in one sentence, where to branch from and what to
-  target.
-- `main` is always releasable, and that claim is enforced by CI rather than
-  by memory.
-- Releases are reproducible from a commit, not assembled on a branch.
-- The number of permanent branches stays at the minimum that the project's
-  actual support commitments require.
+produced and verified, see the [Release Guide](../release-guide.md); for how to
+run the gates locally, see [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
 ## Core Principles
 
@@ -139,9 +129,11 @@ open a pull request against main        ← always main; there is no other targe
    ↓
 CI runs the full gate set
    ↓
-review
+review by a human — maintainer or Organization Admin
    ↓
-squash merge into main
+approval + conversations resolved
+   ↓
+squash merge by a human Organization Admin
    ↓
 delete the branch
 ```
@@ -173,19 +165,9 @@ follow-up commit, not by a force push.
 
 ### Commit messages
 
-Commit subjects and pull request titles follow Conventional Commits:
-
-```text
-feat(store): add PostgreSQL baseline persistence
-fix(postgres): restore readiness after a reconnect
-docs(governance): define agent merge restrictions
-```
-
-Since a pull request is squash-merged, its title becomes the subject in
-`main`, and CI validates that title. The types, scopes, body and
-breaking-change rules are in
-[Commit Convention](COMMIT_CONVENTION.md); history predating its adoption
-keeps its unprefixed subjects and is not rewritten.
+A pull request is squash-merged, so its title becomes the commit subject on
+`main`, and CI validates that title. The format, types, and scopes are in
+[Commit Convention](../COMMIT_CONVENTION.md).
 
 ## Release Candidates
 
@@ -193,17 +175,10 @@ A release candidate is a tag on `main`. There is no release branch, and
 nothing is frozen.
 
 ```text
-main@<sha>
-   ↓
-tag vX.Y.Z-rc.N (annotated)
-   ↓
-release workflow: gates → binaries → checksums → container → scan
-                  → publish → sign → attest
-   ↓
-verification against the published artifacts
+main@<sha>  →  tag vX.Y.Z-rc.N  →  release workflow  →  verification
 ```
 
-A candidate marks itself as a prerelease: it never becomes GitHub's "Latest
+A candidate is marked as a prerelease: it never becomes GitHub's "Latest
 release", and it never moves the floating container tags. Only a stable
 release does either.
 
@@ -212,21 +187,15 @@ release does either.
 ```text
 verified vX.Y.Z-rc.N at <sha>
    ↓  same commit, no source change
-tag vX.Y.Z (annotated)
-   ↓
-release workflow
-   ↓
-binaries + checksums, container image, signature, SBOM, provenance,
-floating container tags (X.Y and latest) move to this release
+tag vX.Y.Z  →  release workflow  →  floating container tags move here
 ```
 
 **The invariant:** when a candidate verifies and requires no correction, the
 final tag is created from *that same commit*. If anything at all changed —
 source, workflow, dependency, documentation — the result is a new candidate,
-not a promotion.
-
-What each artifact contains and how to verify it is the
-[Release Guide](release-guide.md)'s job, not this document's.
+not a promotion. [Release Governance](releases.md) states the rule and who
+may act on it; the [Release Guide](../release-guide.md) covers what each
+artifact contains and how to verify it.
 
 ## Failed Release Candidates
 
@@ -240,11 +209,9 @@ pull request → CI → review → main
 tag vX.Y.Z-rc.2 at the new commit
 ```
 
-The failed tag stays exactly where it is. It is the evidence of what was
-attempted and what the pipeline caught — the most useful record a release
-process produces. Candidate numbers only ever increase.
-
-Never move, delete, re-point, or reuse a published candidate tag.
+The failed tag stays exactly where it is, and candidate numbers only ever
+increase. Why that matters, and the ruleset that enforces it, are in
+[Release Governance](releases.md).
 
 ## Hotfixes
 
@@ -293,7 +260,7 @@ Rules:
 
 Pre-`v1.0`, Trustvian supports the latest release line only, so no
 maintenance branch is expected. See
-[.github/SECURITY.md](../.github/SECURITY.md).
+[.github/SECURITY.md](../../.github/SECURITY.md).
 
 ## Security Fixes
 
@@ -319,7 +286,7 @@ tightening a check — is normal work on a `security/` branch and needs none
 of this.
 
 Reporting and triage are covered by
-[.github/SECURITY.md](../.github/SECURITY.md).
+[.github/SECURITY.md](../../.github/SECURITY.md).
 
 ## Semantic Versioning
 
@@ -346,109 +313,28 @@ release. That permission is not a license to break users:
 - The persisted-state contract is stricter than the API contract: any change
   to the stored `Baseline` shape bumps the storage schema version, whatever
   the release number does. See the
-  [Operations guide](operations.md#compatibility-matrix).
+  [Operations guide](../operations.md#compatibility-matrix).
 
-## Branch Protection
+## Protection and review
 
-`main` is protected by a repository ruleset named **`Protect main`**. This is
-enforced configuration, not a recommendation — every row below is live on the
-repository today:
-
-| Setting | Enforced value | Why |
-|---|---|---|
-| Pull request required | yes | No direct pushes to the trunk |
-| Required status checks | the `ci.yml` jobs below | "`main` is releasable" must be enforced, not assumed |
-| Strict (branch up to date) | yes | A check that passed against stale trunk proves less |
-| Block force pushes | yes | Published history is never rewritten |
-| Block deletion | yes | — |
-| Linear history | yes | The squash rule above, enforced rather than trusted |
-| Allowed merge method | squash only | One commit per pull request, no exceptions |
-| Conversation resolution | yes | Review comments are not lost in a merge |
-| Stale approval dismissal | yes | An approval describes a diff, not a branch |
-| Required approvals | `1` | A second pair of eyes on every change |
-| Final merge | human Organization Admin only | Not natively enforceable — see below |
-| Bypass actors | Organization Admin, pull-request-only | A single-maintainer stopgap — see below |
-
-Required check names, exactly as `ci.yml` reports them:
-
-```text
-Root module
-Processor module (GOWORK=off)
-Examples module (GOWORK=off)
-Backup, restore & upgrade
-Release build (dry run)
-Container image (build only)
-Workflow action references
-Reference deployment
-```
-
-Nightly jobs (`PostgreSQL stress tier`, `Reference deployment smoke test`,
-`Reference deployment recovery drill`) are **not** required checks — they are
-scheduled tiers, and requiring them would block every pull request on work
-that is valuable as a trend. The release checklist consults them instead.
-
-### Who merges
-
-```text
-short-lived branch
-      |
-      v
-PR -> main
-      |
-      +-- CI
-      +-- >=1 human review (maintainer or Organization Admin)
-      |
-      v
-Organization Admin final merge
-      |
-      v
-main
-```
+`main` is protected by a repository ruleset: pull request required, the
+`ci.yml` gate set required and strict, squash-only, linear history,
+conversation resolution, one approving review, and no force push or deletion.
 
 The reviewer may be any authorized maintainer. The final merge is reserved for
-a human Organization Admin, who may be the same person who reviewed it — and
-who must still satisfy every rule above, because admin status authorizes the
-merge rather than exempting it. Details, and what GitHub can and cannot
-enforce natively, are in
-[Repository Governance](REPOSITORY_GOVERNANCE.md#merge-authority).
+a human Organization Admin, who may be the same person who reviewed it.
 
-### The single-maintainer bypass
+The enforced values, the exact required check names, the bypass entry that
+exists while the project has a single maintainer, and what GitHub can and
+cannot enforce natively are all in
+[Repository Governance](repository.md) — that document is canonical for
+repository controls, and this one does not restate them.
 
-One approving review is required, and GitHub does not let a pull request's
-author approve it. With one human on the project, a pull request that human
-authors has no eligible reviewer and cannot merge on the normal path.
+Agents follow the same path as anyone else and hold no authority to merge,
+bypass, or mutate tags; see [Agent Governance](agents.md).
 
-An Organization Admin therefore holds a **pull-request-only** bypass on
-`main`: enough to complete such a merge, and not enough to push, force-push,
-or delete the branch — those are not pull requests, and remain impossible for
-everyone.
-
-This is a stopgap for a one-person project, not the intended workflow. The
-normal path is unchanged, and the bypass should be removed once a second
-reviewing identity exists. The reasoning, the exact scope, and the target
-state are in
-[Repository Governance](REPOSITORY_GOVERNANCE.md#bypass).
-
-### AI agents and automation
-
-Agents follow the same path as anyone else — branch, pull request, CI, human
-approval — and hold no authority to delete, rewrite, or bypass `main`, or to
-create or mutate release tags. An agent must never use the administrator
-bypass, whatever credential it happens to hold. The full policy, including the credential isolation that
-makes it a boundary rather than a request, is
-[Agent Governance](AGENT_GOVERNANCE.md).
-
-### Release tags
-
-Tags matching `v*` are protected by a ruleset named **`Protect release tags`**
-against creation, deletion, update, and force-move. Only a human Organization
-Admin may create one — `release.yml` is *triggered* by that tag push and never
-creates a tag itself, so no workflow can mint a release.
-
-Immutability was previously a process commitment. It is now a server-side
-rule, which is what `v0.9.0-rc.1` and `rc.2` deserve: failed release
-candidates stay in the history as evidence, and no one can quietly recycle a
-version number.
+Release tags are protected against creation, update, deletion, and
+force-move — see [Release Governance](releases.md).
 
 ## Automation
 
@@ -459,39 +345,6 @@ gate a release, because a dependency bump is exactly the kind of change that
 can break a build or introduce a vulnerability.
 
 Use `chore/` for dependency branches when creating them by hand.
-
-## Examples
-
-**Feature**
-
-```text
-feat/webhook-alert-routing  →  PR → main  →  (ships in the next minor)
-```
-
-**Bug fix**
-
-```text
-fix/postgres-readiness-after-reconnect  →  PR → main  →  (ships in the next patch)
-```
-
-**Release**
-
-```text
-main@abc123  →  v0.10.0-rc.1  →  verification passes  →  v0.10.0 at abc123
-```
-
-**Failed candidate**
-
-```text
-main@abc123  →  v0.10.0-rc.1  →  verification fails
-ci/fix-release-step  →  PR  →  main@def456  →  v0.10.0-rc.2  →  v0.10.0 at def456
-```
-
-**Maintenance patch** (only with a live maintenance branch)
-
-```text
-release/0.9  →  fix/<defect>  →  PR  →  v0.9.2-rc.1  →  v0.9.2
-```
 
 ## Anti-Patterns
 
@@ -515,48 +368,40 @@ release/0.9  →  fix/<defect>  →  PR  →  v0.9.2-rc.1  →  v0.9.2
 
 ## Why This Model
 
-**Why main-based with short-lived branches?** Trustvian's releases are
-already defined by tags and reproduced by a workflow that re-runs every gate
-against the tagged commit. Nothing about producing a release needs a branch
-to stage it. What the project does need — a trunk that is always releasable,
-small reviewable changes, and a single obvious target for outside
-contributors — is exactly what this model provides.
+**Why main-based with short-lived branches?** Releases are already defined by
+tags and reproduced by a workflow that re-runs every gate against the tagged
+commit, so nothing about producing a release needs a branch to stage it. What
+the project does need — a trunk that is always releasable, small reviewable
+changes, and one obvious target for outside contributors — is what this model
+provides.
 
-**Why not GitFlow?** GitFlow's `develop`, `release/*`, and `hotfix/*`
-branches exist to stabilize a release while new work continues, and to
-support many parallel released versions. Trustvian stabilizes with release
-candidates on the trunk, and supports one release line. Adopting GitFlow
-would add three branch classes and a merge matrix to solve problems the
-project does not have.
+**Why not GitFlow?** Its `develop`, `release/*`, and `hotfix/*` branches exist
+to stabilize a release while new work continues and to support many parallel
+released versions. Trustvian stabilizes with candidate tags on the trunk and
+supports one release line, so GitFlow would add three branch classes and a
+merge matrix for problems the project does not have.
 
 **Why no permanent `develop`?** <a id="why-no-permanent-develop"></a>
-It provided no release isolation. Because every change accumulated on
-`develop` and was merged to `main` as a single wholesale pull request at
-release time, the review unit was "everything since the last release" — the
-opposite of a small reviewable change — while the individual changes reached
-`develop` with no pull request at all. It also required periodic `main` →
-`develop` sync merges purely to undo drift the split created, and it left
-contributors with two plausible targets. Pull-request validation plus
-immutable candidate tags give the isolation `develop` was supposed to
-provide, at one branch instead of two.
-
-**How do candidate tags replace a release-staging branch?** A staging branch
-answers "what exactly will ship, and is it good?" A candidate tag answers the
-same question with a stronger guarantee: it names one immutable commit, and
-the artifacts under test are the ones the pipeline actually published. Fixes
-go forward on the trunk and the next candidate is cut, so no change ever
-exists only on a branch that must later be merged back.
+It provided no release isolation. Every change accumulated on `develop` and
+reached `main` as one wholesale pull request at release time, so the review
+unit was "everything since the last release" — the opposite of a small
+reviewable change — while individual changes reached `develop` with no pull
+request at all. It also required periodic `main` → `develop` sync merges
+purely to undo drift the split created, and left contributors two plausible
+targets. Pull-request validation plus immutable candidate tags give the
+isolation `develop` was meant to provide, at one branch instead of two.
 
 **When do maintenance branches become justified?** When Trustvian commits to
-patching a release line that `main` has moved past — for example after
-`v1.0`, supporting `1.0` while `main` works toward `1.1`. Until that
-commitment exists, the branch would be pure overhead.
+patching a release line that `main` has moved past — for example supporting
+`1.0` while `main` works toward `1.1`. Until that commitment exists, the
+branch is pure overhead.
 
 ## Related
 
-- [Release Guide](release-guide.md) — producing and verifying a release
-- [CONTRIBUTING.md](../CONTRIBUTING.md) — the local gates and module layout
-- [.github/SECURITY.md](../.github/SECURITY.md) — reporting vulnerabilities
-- [Repository Governance](REPOSITORY_GOVERNANCE.md) — the enforced GitHub configuration
-- [Agent Governance](AGENT_GOVERNANCE.md) — what AI agents may and may not do
-- [Operations](operations.md) — upgrade and compatibility contracts
+- [Repository Governance](repository.md) — the enforced GitHub configuration
+- [Release Governance](releases.md) — release and tag authority
+- [Agent Governance](agents.md) — what AI agents may and may not do
+- [Commit Convention](../COMMIT_CONVENTION.md) — commit and pull request titles
+- [Release Guide](../release-guide.md) — producing and verifying a release
+- [CONTRIBUTING.md](../../CONTRIBUTING.md) — the local gates and module layout
+- [Operations](../operations.md) — upgrade and compatibility contracts
