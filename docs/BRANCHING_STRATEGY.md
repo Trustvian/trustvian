@@ -72,8 +72,9 @@ gitGraph
 | Release relationship | Every `vX.Y.Z-rc.N` and `vX.Y.Z` tag points at a commit on `main` |
 | Protection | PR required, required status checks, no force push, no deletion |
 
-`main` is the repository's default branch and the base of every pull
-request. There is no second integration branch: see
+`main` is the repository's default branch, the base of every pull request,
+and — apart from any conditional maintenance branch below — the repository's
+only branch. There is no second integration branch: see
 [Why no permanent `develop`](#why-no-permanent-develop).
 
 ### `release/X.Y` — conditional, not standing
