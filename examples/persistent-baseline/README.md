@@ -103,7 +103,7 @@ durable case is genuinely doing something).
 ## What this example does not show
 
 PostgreSQL. It is the documented next slice
-([docs/ROADMAP.md § v0.8](../../docs/ROADMAP.md#v08--production-runtime--storage)),
+([docs/ROADMAP.md § v0.8](../../CHANGELOG.md#v080--production-runtime--storage)),
 not yet implemented — this slice deliberately established the contract
 and the public boundary first, so the backend that follows has an
 executable target (`TestStoreContract` in

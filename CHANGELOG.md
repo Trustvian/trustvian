@@ -1065,7 +1065,7 @@ release.
   stages (retry, deduplication, cooldown, Slack/Teams/PagerDuty) remain
   explicitly deferred — see
   [ROADMAP.md § Alert & Notification
-  phase](docs/ROADMAP.md#alert--notification-phase).
+  phase](CHANGELOG.md#v040--alert--notification-foundation).
 
 ### Changed
 

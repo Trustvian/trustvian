@@ -2,7 +2,7 @@
 
 **Milestone:** v0.4 · **Depends on:** v0.1 shipped (needs the stable
 `Result` shape Alert Evaluation reads — see
-[ROADMAP.md § Alert & Notification phase](../../../ROADMAP.md#alert--notification-phase)'s
+[ROADMAP.md § Alert & Notification phase](../../../../CHANGELOG.md#v040--alert--notification-foundation)'s
 existing dependency note) · **Blocks:** the Reliability stage and the
 Additional-sinks-and-governance stage of the Alert & Notification
 phase (both explicitly deferred — see Non-Goals)
@@ -13,7 +13,7 @@ Turn a Trustvian `Result`/`Decision` into a minimal, explainable,
 externally deliverable `Alert` — without changing `Decision` semantics
 or the existing detection pipeline. This is the "Foundation" stage
 named in [ROADMAP.md § Alert & Notification
-phase](../../../ROADMAP.md#alert--notification-phase) and specified in full
+phase](../../../../CHANGELOG.md#v040--alert--notification-foundation) and specified in full
 in [`docs/archive/project-spec.md` §
 18](../../../archive/project-spec.md#18-alert--notification-system);
 this task file is the first concrete, implementable slice of that
@@ -85,7 +85,7 @@ integrations are Trustvian Control/Enterprise territory — not because
 they're hard, but because they're governance/centralization concerns
 this OSS core has never carried for any other feature (see
 [ADR 0002](../../../adr/0002-public-api-boundary.md) and
-[ROADMAP.md § Control / Enterprise phase](../../../ROADMAP.md#control--enterprise-phase)
+[ROADMAP.md § Control / Enterprise phase](../../../ROADMAP.md#trustvian-control)
 for the same line drawn elsewhere in this project).
 
 ## Non-Goals
@@ -112,7 +112,7 @@ for the same line drawn elsewhere in this project).
   dead-letter/failure handling, no delivery observability. This is the
   explicitly separate **Reliability** stage (spec § 18.11–18.12,
   [ROADMAP.md § Alert & Notification
-  phase](../../../ROADMAP.md#alert--notification-phase)) — it depends on this
+  phase](../../../../CHANGELOG.md#v040--alert--notification-foundation)) — it depends on this
   Foundation stage shipping first and is not scoped here. A webhook
   `Send` call in this stage either succeeds or returns an error; nothing
   retries it.

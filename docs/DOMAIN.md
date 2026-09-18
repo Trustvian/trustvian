@@ -484,7 +484,7 @@ full architecture; in domain terms:
   deduplication, or delivery-state tracking exists yet — that is the
   separately-scoped Reliability stage
   ([ROADMAP.md § Alert & Notification
-  phase](ROADMAP.md#alert--notification-phase)), not this one.
+  phase](../CHANGELOG.md#v040--alert--notification-foundation)), not this one.
 - **The webhook payload is a versioned contract**
   (`alert.Envelope{Version, Alert}`, currently `alert.PayloadVersion =
   "1"`) from its first release, not an internal struct serialized as a
@@ -552,7 +552,7 @@ scoring path, no new pipeline stage.
   treated as dangerous, since `TransitionWeight` defaults to `0`.
 - **Sequence length.** One step (`E(n-1) -> E(n)`) — a deliberately
   narrow foundation. n-gram/Markov generalization is explicitly future,
-  unscoped work (see [ROADMAP.md § v0.6](ROADMAP.md#v06--behavioral-detection-depth)).
+  unscoped work (see [ROADMAP.md § v0.6](../CHANGELOG.md#v060--behavioral-detection-depth)).
 - **Transition rarity (`v0.6` task 026).** A second signal,
   `transition_rarity`, evolves `transition_deviation`'s binary
   seen/unseen into a graded common/uncommon/rare measure for

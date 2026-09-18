@@ -488,7 +488,7 @@ PostgreSQL. It also means these tests are safe to point at a database that
 already holds data.
 
 A reference Docker Compose environment is [task
-037](ROADMAP.md#v08--production-runtime--storage)'s deliverable; the
+037](../CHANGELOG.md#v080--production-runtime--storage)'s deliverable; the
 command above is the minimum for running the tests today.
 
 ## In the reference deployment

@@ -1,7 +1,7 @@
 # 017 — Baseline & Anomaly Depth: Hour-of-Day Time Pattern
 
 **Milestone:** v0.3 · **Depends on:** v0.2 shipped (this task file is
-written now, per [ROADMAP.md § v0.3](../../../ROADMAP.md#v03--baseline--anomaly-depth)'s
+written now, per [ROADMAP.md § v0.3](../../../../CHANGELOG.md#v030--baseline--anomaly-depth)'s
 own stated trigger: "scoped as a proper task once v0.2 is done") ·
 **Blocks:** none
 
@@ -76,7 +76,7 @@ error rate, and frequency — that nothing currently detects.
   own "keep it simple and statistical" mandate (CLAUDE.md).
 - **No sequence/n-gram/Markov work of any kind** — orthogonal to time
   patterns and explicitly out of v0.3's scope (see
-  [ROADMAP.md § v0.3 Non-goals](../../../ROADMAP.md#v03--baseline--anomaly-depth)).
+  [ROADMAP.md § v0.3 Non-goals](../../../../CHANGELOG.md#v030--baseline--anomaly-depth)).
 - **`TimePatternWeight` ships at `0` (opt-in), exactly like
   `FrequencyWeight`.** The single-day-maturity limitation above, plus
   the general "an EWMA-smoothed distribution needs real calibration

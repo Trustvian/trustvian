@@ -533,7 +533,7 @@ The Foundation stage of this layer is implemented as of `v0.4` (package
 [task 018](archive/tasks/v0.4/018-alert-notification-foundation.md)); the Reliability
 and Additional-sinks-and-governance stages named in
 [ROADMAP.md § Alert & Notification
-phase](ROADMAP.md#alert--notification-phase) remain future work. The
+phase](../CHANGELOG.md#v040--alert--notification-foundation) remain future work. The
 relationship is exactly the adapter shape this heading originally
 predicted: a layer that consumes this module's output without becoming
 part of the pipeline or a dependency the core links against.
@@ -558,7 +558,7 @@ awareness this layer exists. See
 [`docs/archive/project-spec.md` § 18](archive/project-spec.md#18-alert--notification-system)
 for the full architecture, [DOMAIN.md § Alert](DOMAIN.md#alert) for the
 domain model, and [ROADMAP.md § Alert & Notification
-phase](ROADMAP.md#alert--notification-phase) for what's shipped versus
+phase](../CHANGELOG.md#v040--alert--notification-foundation) for what's shipped versus
 still future.
 
 `alert` sits outside `internal/` — unlike `internal/otel`, which this
@@ -629,7 +629,7 @@ allocations. See [ADR 0005](adr/0005-fingerprint-computed-once-per-analyze.md).
 **Everything in this section is planning, not current architecture.**
 No type, package, or diagram element named here exists in source. See
 [docs/ROADMAP.md § Beyond v0.7 — Strategic Capability
-Direction](ROADMAP.md#beyond-v07--strategic-capability-direction) for
+Direction](ROADMAP.md#beyond-v10) for
 the product-level reasoning; this section carries only the durable
 architectural shape, so it doesn't need to be re-derived if the
 roadmap's own prose changes.

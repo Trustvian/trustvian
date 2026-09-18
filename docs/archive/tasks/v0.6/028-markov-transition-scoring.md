@@ -5,7 +5,7 @@
 numerator/denominator this task reuses in full) · **Independent of:**
 [027](027-bounded-ngram-detection.md) — orthogonal, not merged (see
 Non-Goals) · **Blocks:** Sequence Config Integration (illustrative,
-unscoped — [docs/ROADMAP.md § v0.6](../../../ROADMAP.md#v06--behavioral-detection-depth)).
+unscoped — [docs/ROADMAP.md § v0.6](../../../../CHANGELOG.md#v060--behavioral-detection-depth)).
 
 ## Objective
 
