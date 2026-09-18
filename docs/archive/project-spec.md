@@ -218,7 +218,7 @@ Order matters. Trustvian should support sequence-based anomaly detection.
 
 **Status: foundation implemented, as of the in-progress `v0.6`
 milestone** (see [`docs/ROADMAP.md` §
-v0.6](../ROADMAP.md#v06--behavioral-detection-depth) for the current,
+v0.6](../../CHANGELOG.md#v060--behavioral-detection-depth) for the current,
 accurate state — this is not yet a release, only implementation
 progress). `internal/anomaly` has two signals here, deliberately kept
 distinct rather than collapsed into one: `transition_deviation`
@@ -401,7 +401,7 @@ Potential enterprise features:
 
 **`v0.7` — AI Agent Behavioral Security is shipped (`v0.7.0`):**
 [`docs/ROADMAP.md` §
-v0.7](../ROADMAP.md#v07--ai-agent-behavioral-security)
+v0.7](../../CHANGELOG.md#v070--ai-agent-behavioral-security)
 ([task 014](tasks/v0.7/014-ai-agent.md) onward) was the pre-`v1.0` OSS
 milestone for this. **AI agents are behavioral actors analyzed by the
 same Trustvian engine** — not a second product, not a second security
@@ -416,7 +416,7 @@ missing correlation dimensions as optional `Context` fields —
 recorded human-approval fact, not a workflow engine) — and proved,
 with integration tests through the real engine, that tool-*sequence*
 analysis needs no agent-specific algorithm: [§ v0.6 — Behavioral
-Detection Depth](../ROADMAP.md#v06--behavioral-detection-depth)'s
+Detection Depth](../../CHANGELOG.md#v060--behavioral-detection-depth)'s
 existing bounded 3-gram signal already detects a novel tool sequence
 (e.g. a sensitive read immediately followed by an external post) even
 when both individual steps are independently familiar. Agents remain
@@ -572,7 +572,7 @@ ordered `[]Rule`, first-match-wins, fail-closed to `BLOCK` on
 misconfiguration (see [`docs/policy-guide.md`](../policy-guide.md)).
 What's missing is a way to *configure* that engine without writing Go
 code inside this module — the problem [`docs/ROADMAP.md` §
-v0.5](../ROADMAP.md#v05--policy--configuration) exists to close.
+v0.5](../../CHANGELOG.md#v050--policy--configuration) exists to close.
 
 ### 17.1 The problem
 
@@ -974,7 +974,7 @@ component, as described below, is future work — most naturally
 alongside `v0.5`'s configuration format (an `alerts:` rule's
 `notify:` list is exactly this dispatcher's input) or the
 provider-sinks/governance stage named in
-[`docs/ROADMAP.md`](../ROADMAP.md#alert--notification-phase).
+[`docs/ROADMAP.md`](../../CHANGELOG.md#v040--alert--notification-foundation).
 
 The Notification Dispatcher's one job, once built:
 
@@ -1052,7 +1052,7 @@ same `Sink` abstraction as the webhook — not as Trustvian Core
 dependencies. The generic webhook (§18.7) shipped first, as planned;
 Slack and Teams (and PagerDuty, and anything else) remain unbuilt —
 see [`docs/ROADMAP.md` § Alert & Notification
-phase](../ROADMAP.md#alert--notification-phase), which also corrects
+phase](../../CHANGELOG.md#v040--alert--notification-foundation), which also corrects
 this document's own earlier framing: a provider-specific `Sink` is OSS
 scope if architecturally clean, same as the webhook, not automatically
 Enterprise territory. Trustvian Core must never import a Slack or Teams

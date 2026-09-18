@@ -4,7 +4,7 @@
 (the transition foundation this task evolves, in place — the same
 `Baseline`/`Store` infrastructure, no parallel state) · **Blocks:**
 n-gram/Markov detection (illustrative, unscoped —
-[docs/ROADMAP.md § v0.6](../../../ROADMAP.md#v06--behavioral-detection-depth))
+[docs/ROADMAP.md § v0.6](../../../../CHANGELOG.md#v060--behavioral-detection-depth))
 · **Independent of:** `v0.5` (`config`/`alert`) — nothing here touches
 Policy or Alert configuration.
 

@@ -1009,7 +1009,7 @@ model and [ADR 0007](adr/0007-alert-package-is-public.md) for why
 delivery-state/dead-letter mechanism, and deduplication are the
 separately-scoped Reliability stage's job (see
 [ROADMAP.md § Alert & Notification
-phase](ROADMAP.md#alert--notification-phase)), not this one's — a
+phase](../CHANGELOG.md#v040--alert--notification-foundation)), not this one's — a
 failed or dropped delivery today simply returns an error to the caller,
 with no automatic recovery. Full SSRF protection (DNS-resolution-based
 destination validation, not just literal-IP loopback checks) is

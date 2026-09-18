@@ -178,7 +178,7 @@ persistence](../../../PERFORMANCE.md).
   (new): the full design — boundary, contract, lost-update analysis,
   PostgreSQL direction, rejected infrastructure, schema/security
   posture.
-- [ROADMAP.md § v0.8](../../../ROADMAP.md#v08--production-runtime--storage):
+- [ROADMAP.md § v0.8](../../../../CHANGELOG.md#v080--production-runtime--storage):
   slice sequence (034–038), this task marked done.
 - [ARCHITECTURE.md](../../../ARCHITECTURE.md): the storage boundary alongside
   the existing Policy/Anomaly config boundaries.
