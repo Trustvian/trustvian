@@ -672,10 +672,18 @@ func TestPoolExhaustionIsBoundedAndContextAware(t *testing.T) {
 
 	// With no capacity left, a second operation must fail on its deadline.
 	const deadline = 2 * time.Second
+
+	// `start` is taken BEFORE the context, so the measured window fully
+	// contains the context's own. Taking it after — the obvious order —
+	// starts the deadline clock first and the stopwatch second, so `elapsed`
+	// is legitimately a hair under `deadline` and the "gave up early" check
+	// below fails on nothing: observed at 1.999082437s against a 2s
+	// deadline, 918µs short, on a runner where that gap happened to be
+	// visible.
+	start := time.Now()
 	waitCtx, cancelWait := context.WithTimeout(ctx, deadline)
 	defer cancelWait()
 
-	start := time.Now()
 	_, err = s.Observe(waitCtx, hardeningKey("pool-other-actor"), fp, features.VolatileFeatures{}, testTime)
 	elapsed := time.Since(start)
 
