@@ -40,17 +40,18 @@ administrator exemption.
 ## Authority model
 
 ```text
-Human Admin
+Human Admin (Organization Admin)
     │
     ├── repository governance
     ├── emergency administration
-    └── credential management
+    ├── credential management
+    ├── review and approval
+    └── FINAL MERGE into main
 
 Maintainer
     │
     ├── review
-    ├── approval
-    └── normal merge
+    └── approval
 
 AI Agent
     │
@@ -82,7 +83,7 @@ flowchart TD
     G -->|no| H["Update branch<br/>checks re-run"] --> C
     G -->|yes| I{"Approvals ≥ required?"}
     I -->|no| J["Request review"] --> I
-    I -->|yes| K["Squash merge"]
+    I -->|yes| K["Squash merge by a<br/>HUMAN ORGANIZATION ADMIN"]
     K --> L["Branch deleted automatically"]
     L --> M["main is releasable"]
 
@@ -129,32 +130,75 @@ land.
 Nightly jobs are excluded on purpose — see
 [Branch Protection](BRANCHING_STRATEGY.md#branch-protection).
 
-## Approval requirements
+## Review authority
 
-Trustvian currently has **one maintainer**, and GitHub does not allow a pull
-request's author to approve their own pull request.
+At least one human approval is policy for every pull request into `main`.
 
-A requirement of one approval would therefore make every pull request
-unmergeable except through an administrator bypass. That is strictly worse
-than requiring zero: it trains the maintainer to reach for bypass on routine
-work, and a bypass habit does not stay confined to the rule that created it.
-Approvals are set to `0` for that reason, and only that reason.
+| Authority | Who holds it |
+|---|---|
+| Review and approval | An authorized human maintainer **or** an Organization Admin |
+| Final merge into `main` | A human Organization Admin **only** |
 
-`require_extra_approval_for_unattributed_changes` is likewise disabled. GitHub
-enables it by default; with a single maintainer it silently raises the
-effective requirement to one approval for any commit whose author cannot be
-linked to a GitHub account — including the `Co-Authored-By:` trailers this
-repository's history carries.
+One person may hold every role — Organization Admin, maintainer, reviewer, and
+final merger. The policy requires one valid human approval plus an admin
+merge; it does not require two separate people. A maintainer who is not an
+Organization Admin may approve but must not perform the merge.
 
-### Upgrade trigger
+Organization Admin status is an additional authorization to merge, never
+permission to bypass. An admin's merge must satisfy the same pull request,
+checks, approval, and conversation-resolution rules as anyone else's.
 
-When a second person with write access joins, in the same change:
+### Enforced value today: `0`
 
-| Setting | From | To |
-|---|---|---|
-| Required approving reviews | `0` | `1` |
-| Require last push approval | off | on |
-| Extra approval for unattributed changes | off | on |
+The policy above is `1`. The **enforced** setting is `0`, and the gap is
+deliberate and documented rather than hidden.
+
+Trustvian has exactly one human: a single Organization Admin who is also the
+only collaborator, with no other maintainers and no teams. GitHub does not
+permit a pull request's author to approve their own pull request. Setting the
+requirement to `1` today would make every pull request permanently unmergeable
+— including any that fixes the setting — because no second human exists to
+supply the approval.
+
+Raising it is therefore blocked on a reviewer existing, not on anyone's
+opinion. Until then the one-approval rule is **procedural, not enforced**, and
+this document does not claim otherwise.
+
+`require_extra_approval_for_unattributed_changes` is disabled for the same
+reason. GitHub enables it by default; with a single maintainer it silently
+raises the effective requirement to one approval for any commit whose author
+cannot be linked to a GitHub account — including the `Co-Authored-By:`
+trailers this repository's history carries.
+
+`require_last_push_approval` is likewise disabled. It is inert below one
+required approval, and when the requirement is raised it must be evaluated
+against the single-admin case rather than switched on reflexively: it demands
+that the most recent push be approved by someone *other than* the pusher,
+which is correct for agent-authored work and impossible for an admin's own
+branch.
+
+### Making it enforceable
+
+Two changes, in this order:
+
+1. **Give the agent its own identity.** A machine account with a
+   least-privilege token (see
+   [Agent Governance](AGENT_GOVERNANCE.md#credential-isolation)) makes
+   agent-authored pull requests arrive from a different login, so the
+   Organization Admin's approval becomes a genuine second-party review.
+2. **Then set required approvals to `1`.** Every agent-authored change is
+   gated behind human review from that point on.
+
+After step 2, a pull request the Organization Admin wrote *by hand* still has
+no eligible reviewer and is intentionally unmergeable. That is the correct
+outcome of a one-approval policy with one human, and it is resolved by adding
+a second maintainer — not by adding a bypass.
+
+| Setting | Today | After step 1 | With a second maintainer |
+|---|---|---|---|
+| Required approving reviews | `0` | `1` | `1` |
+| Require last push approval | off | off | on |
+| Extra approval for unattributed changes | off | off | on |
 
 At three or more maintainers, raise approvals to `2` for changes touching
 `internal/policy`, `internal/baseline`, `internal/trust`, or
@@ -162,6 +206,67 @@ At three or more maintainers, raise approvals to `2` for changes touching
 That is the point at which `CODEOWNERS` becomes worth adding; with one
 maintainer it would name the same person on every line and require an
 approval they cannot give.
+
+## Merge authority
+
+GitHub has **no native rule** that restricts who may perform a merge by
+organization role. This was investigated rather than assumed:
+
+| Mechanism | Can it express "only an Organization Admin may merge"? |
+|---|---|
+| Repository rulesets | No. Rulesets gate *what* may reach a ref, not *who* performs the merge. Their only actor concept is `bypass_actors`, which grants exemption from the rules — the opposite of what is wanted |
+| Organization rulesets | Same rule vocabulary; no merge-actor restriction |
+| Classic branch protection `restrictions` | Closest native mechanism: an allow-list of users/teams that may push to, and therefore merge into, the branch. It enumerates identities rather than expressing the *role*, and is unavailable to this organization's plan |
+| Custom repository roles | Not available on this organization's plan |
+| Required status checks | Cannot help: no check can know who will click merge, because the merger does not exist until the merge happens |
+| Merge queue | Actively harmful here — see below |
+
+So the merge boundary is enforced by **credentials**, not by a branch rule:
+whoever holds a credential with write access to the repository can merge a
+pull request that satisfies the rules. Restricting the set of humans and
+tokens holding that access *is* the enforcement mechanism.
+
+This is why the agent credential recommendation in
+[Agent Governance](AGENT_GOVERNANCE.md#credential-isolation) matters more than
+any document: an agent token without merge rights cannot merge, whatever it is
+instructed to do. Conversely, while an agent runs with the Organization
+Admin's own unrestricted credential, GitHub sees the admin's authority and the
+boundary is compliance rather than control.
+
+### Merge queue
+
+Not enabled, and it must not be. A merge queue makes GitHub's own automation
+perform the final merge: the admin approves entry to the queue, and a bot
+commits the result. That directly contradicts a policy whose point is that a
+named human performs a deliberate final action.
+
+### Auto-merge
+
+Disabled repository-wide (`allow_auto_merge: false`). Auto-merge converts the
+merge into a background event that fires whenever the last check goes green —
+exactly the deliberate human step this model reserves for an Organization
+Admin. An agent must never enable it.
+
+## Final-merge checklist
+
+For the Organization Admin performing the merge:
+
+```text
+[ ] PR targets main
+[ ] required CI passed
+[ ] branch is current where required
+[ ] >=1 valid human approval exists
+[ ] no stale approval remains
+[ ] conversations resolved
+[ ] no unexpected privileged workflow change
+[ ] squash commit/title acceptable
+[ ] I am intentionally performing the final merge as a Human Organization Admin
+```
+
+The seventh line is the one worth slowing down for: a change to
+`.github/workflows/`, a new `permissions:` block, or a new action reference
+deserves a second look, because it is the part of a diff that can alter what
+CI itself is allowed to do.
 
 ## Bypass
 
@@ -198,6 +303,12 @@ pipeline, is spent.
 | `ci.yml` | push / PR on `main` | `contents: read` |
 | `nightly.yml` | schedule, manual | `contents: read` |
 | `release.yml` | tag `v*` | `contents: read`; publish job `contents: write`; container job `packages: write` + `id-token: write` |
+
+No workflow merges pull requests or pushes to `main`: there is no `gh pr
+merge`, no `pulls.merge`, and no `git push origin main` anywhere in
+`.github/workflows/`. The only `contents: write` is the release job that
+creates a GitHub Release from a tag — and even that token cannot reach `main`,
+because `GITHUB_TOKEN` is not a bypass actor on the ruleset.
 
 Repository-wide, the default `GITHUB_TOKEN` is **read**, and **GitHub Actions
 may not approve pull requests**. That second setting matters more than it
@@ -239,7 +350,8 @@ organization-level policy.
 | Required signed commits | Worth adopting, but it must not land in the same change as everything else — a signing misconfiguration would block all work at once |
 | Organization-level rulesets | Requires organization administration scope; repository rulesets cover the repository that exists |
 | Restricting who may push tags | Covered by immutability; restricting creation would block the release workflow's trigger |
-| Auto-merge | With one maintainer there is nothing to wait for |
+| Auto-merge | It would remove the deliberate human merge action this model is built around |
+| Merge queue | GitHub's automation would become the effective final merger |
 
 ## Related
 

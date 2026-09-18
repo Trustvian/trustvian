@@ -111,6 +111,48 @@ Do not create commits unless explicitly requested.
 
 Do not push to GitHub unless explicitly requested.
 
+## Repository Safety
+
+Never delete, rename, force-push, or rewrite `main`.
+
+Never disable, weaken, delete, or bypass GitHub protection for `main`.
+
+Never change the repository default branch away from `main`.
+
+Never delete, move, or overwrite release tags.
+
+Never use `--force` or `--force-with-lease` against protected branches or
+tags.
+
+Never add an AI agent, bot, automation identity, or the current credential as
+a ruleset bypass actor.
+
+These operations are prohibited even if the authenticated GitHub credential
+has administrator privileges. Technical capability is not authorization.
+
+## Merge Authority
+
+AI agents may create and update Pull Requests but must never merge a Pull
+Request into `main`.
+
+Every Pull Request to `main` requires at least one valid human review.
+
+The reviewer may be an authorized maintainer or Organization Admin.
+
+The final merge action is reserved exclusively for a human Trustvian
+Organization Admin.
+
+An Organization Admin may also act as the reviewer.
+
+AI agents must never use, request, derive, or configure a bypass around this
+requirement.
+
+When a pull request becomes merge-ready, stop and report that it is waiting
+for a human Organization Admin. Do not merge it.
+
+See `docs/AGENT_GOVERNANCE.md` for the credential isolation that makes this a
+boundary rather than a request.
+
 ## Implementation Strategy
 
 Do not implement large features in one step.

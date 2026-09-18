@@ -369,7 +369,8 @@ repository today:
 | Allowed merge method | squash only | One commit per pull request, no exceptions |
 | Conversation resolution | yes | Review comments are not lost in a merge |
 | Stale approval dismissal | yes | An approval describes a diff, not a branch |
-| Required approvals | `0` today, `1` once a second maintainer exists | See below |
+| Required approvals | `0` today, `1` once a second reviewer exists | See below |
+| Final merge | human Organization Admin only | Not natively enforceable — see below |
 | Bypass actors | none — administrators included | A gate an admin can step around is a suggestion |
 
 Required check names, exactly as `ci.yml` reports them:
@@ -390,6 +391,31 @@ Nightly jobs (`PostgreSQL stress tier`, `Reference deployment smoke test`,
 scheduled tiers, and requiring them would block every pull request on work
 that is valuable as a trend. The release checklist consults them instead.
 
+### Who merges
+
+```text
+short-lived branch
+      |
+      v
+PR -> main
+      |
+      +-- CI
+      +-- >=1 human review (maintainer or Organization Admin)
+      |
+      v
+Organization Admin final merge
+      |
+      v
+main
+```
+
+The reviewer may be any authorized maintainer. The final merge is reserved for
+a human Organization Admin, who may be the same person who reviewed it — and
+who must still satisfy every rule above, because admin status authorizes the
+merge rather than exempting it. Details, and what GitHub can and cannot
+enforce natively, are in
+[Repository Governance](REPOSITORY_GOVERNANCE.md#merge-authority).
+
 ### Why required approvals is `0`
 
 GitHub does not permit a pull request's author to approve it. Trustvian has
@@ -403,7 +429,7 @@ request itself, the eight checks, strict-up-to-date, squash-only, linear
 history, conversation resolution, and no bypass for anyone.
 
 The upgrade trigger and the exact settings to change are in
-[Repository Governance](REPOSITORY_GOVERNANCE.md#approval-requirements).
+[Repository Governance](REPOSITORY_GOVERNANCE.md#review-authority).
 
 ### AI agents and automation
 

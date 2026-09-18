@@ -39,7 +39,7 @@ Human Maintainer
     │
     ├── review
     ├── approval
-    └── merge
+    └── (final merge only if also an Organization Admin)
 
 AI Agent
     │
@@ -56,7 +56,8 @@ AI Agent
 
 - Read repository contents, settings, rulesets, and CI configuration.
 - Create short-lived branches and push to them.
-- Open, update, and comment on pull requests.
+- Open, update, and comment on pull requests — then stop and hand them to a
+  human Organization Admin for the merge.
 - Read workflow runs, logs, and check results.
 - Prepare a release: validation, tests, release notes, a release pull
   request, artifact and signature verification.
@@ -76,8 +77,10 @@ AI Agent
   candidate's version number.
 - Deleting a GitHub Release, or repairing a failed release by mutating
   published history.
-- Approving or merging its own pull request, or otherwise routing around
-  required human review.
+- Approving or merging **any** pull request into `main` — its own or anyone
+  else's — or otherwise routing around required human review.
+- Enabling auto-merge, or any other mechanism that causes a merge to happen
+  without a deliberate human action.
 - Rotating, issuing, or altering credentials and secrets.
 
 If a task appears to require one of these, the correct response is to stop and
@@ -123,6 +126,11 @@ single scope covering code, settings, and — for a user who administers the
 repository — its rulesets. It cannot express "may push a branch, may not
 rewrite governance," which is precisely the line this policy needs.
 
+The same separation is what makes "only a human Organization Admin merges"
+real rather than aspirational: an agent credential without `Administration`
+and without a maintainer's merge rights cannot perform the merge, whatever it
+is asked to do.
+
 > **Known limitation.** When an agent runs with a human administrator's
 > unrestricted credential, GitHub cannot distinguish the agent's API calls
 > from the human's. Every restriction in this document then rests on the
@@ -160,21 +168,67 @@ flowchart TD
     A["AI agent"] --> B["Branch + tests + docs"]
     B --> C["Pull request into main"]
     C --> D["Required CI checks"]
-    D --> E["HUMAN REVIEW"]
-    E --> F["Approval by a human maintainer"]
-    F --> G["Squash merge"]
+    D --> E["HUMAN REVIEW<br/>maintainer or org admin"]
+    E --> F["Approval"]
+    F --> G["Squash merge by a<br/>HUMAN ORGANIZATION ADMIN"]
     G --> H["main"]
 
     A -.->|"no self-approval path"| F
+    A -.->|"no merge authority"| G
     A -.->|"no direct write"| H
 
     style E fill:#1a7f37,color:#fff
+    style G fill:#1a7f37,color:#fff
     style H fill:#1a7f37,color:#fff
 ```
 
 No agent self-approval path may be designed, configured, or relied upon.
 GitHub Actions is not permitted to approve pull requests in this repository,
 and that setting is part of the audited configuration.
+
+### The authority chain
+
+```text
+Agent
+  |
+  v
+PR
+  |
+  +-- CI
+  |
+  v
+Human Reviewer
+Maintainer OR Organization Admin
+  |
+  v
+Approval
+  |
+  v
+Human Organization Admin
+  |
+  v
+Final Merge
+  |
+  v
+main
+```
+
+Two distinct authorities, which may be held by the same person:
+
+| Authority | Who holds it | What it permits |
+|---|---|---|
+| Review | An authorized human maintainer, or an Organization Admin | Approving a pull request |
+| Final merge | A human Organization Admin **only** | Performing the merge into `main` |
+
+An Organization Admin who reviewed a pull request may also merge it — the
+policy requires one valid human approval and an admin merge, not two separate
+people. A maintainer who is not an Organization Admin may approve but must not
+merge.
+
+Organization Admin status is an *additional* authorization to merge. It is not
+permission to bypass anything: an admin's merge must still satisfy the pull
+request, the required checks, the approval, and conversation resolution, the
+same as anyone else's.
 
 ## Release Safety
 
