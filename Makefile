@@ -8,7 +8,8 @@ GO       := go
 
 .PHONY: help build run demo baseline-demo test test-race bench vet fmt fmt-check tidy coverage install clean check examples \
 	compose-up compose-down compose-smoke recovery-drill integration-postgres \
-	check-modules release-dry-run vulncheck container-build container-scan sbom
+	check-modules release-dry-run vulncheck container-build container-scan sbom \
+	pr-title
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -107,6 +108,9 @@ sbom: ## Build with an SPDX SBOM attestation and extract it to dist/ (needs a do
 
 check-modules: ## Verify module publication invariants (see docs/release-guide.md)
 	./scripts/check-modules.sh
+
+pr-title: ## Check a pull request title against docs/COMMIT_CONVENTION.md — make pr-title TITLE='feat(store): add persistence'
+	@./scripts/check-pr-title.sh "$(TITLE)"
 
 release-dry-run: ## Build the full release artifact matrix locally — no tag, no credentials, no upload
 	./scripts/release-build.sh

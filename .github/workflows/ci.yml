@@ -416,6 +416,36 @@ jobs:
         run: ./scripts/check-action-refs.sh
 
   # ---------------------------------------------------------------------
+  # Pull request title: the squash commit subject, and therefore the only
+  # subject line that reaches `main`. Branch commits are squashed away, so
+  # this is the one worth validating.
+  #
+  # Pull requests only: on a push there is no title to check. That is also
+  # why this job must never become a required status check — a required
+  # check that does not report on every event leaves pull requests waiting
+  # for a result that will never arrive.
+  # ---------------------------------------------------------------------
+  pr-title:
+    name: Pull request title
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Test the checker
+        run: ./scripts/test-check-pr-title.sh
+
+      - name: Validate the pull request title
+        env:
+          # Through the environment, never interpolated into the command:
+          # a title is untrusted text and ${{ }} would splice it into the
+          # shell.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: ./scripts/check-pr-title.sh
+
+  # ---------------------------------------------------------------------
   # Reference deployment: validate that the Compose configuration parses.
   # The full smoke test builds images and is scheduled nightly instead.
   # ---------------------------------------------------------------------

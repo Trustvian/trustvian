@@ -173,23 +173,19 @@ follow-up commit, not by a force push.
 
 ### Commit messages
 
-Trustvian uses short, imperative subjects describing the change — the
-convention the existing history already follows:
+Commit subjects and pull request titles follow Conventional Commits:
 
 ```text
-Add PostgreSQL backup restore upgrade path
-Fix release workflow refs and prereleases
-Verify workflow action refs via git ls-remote
+feat(store): add PostgreSQL baseline persistence
+fix(postgres): restore readiness after a reconnect
+docs(governance): define agent merge restrictions
 ```
 
-Conventional Commits (`feat:`, `fix:`) is **not** adopted. It earns its
-ceremony when a tool derives versions or changelogs from commit subjects;
-here the changelog is written deliberately and versions are chosen by a
-maintainer, so the prefix would add process without adding information. The
-branch prefix already carries the category.
-
-Keep the subject under ~72 characters, and use the body for why the change
-is shaped the way it is.
+Since a pull request is squash-merged, its title becomes the subject in
+`main`, and CI validates that title. The types, scopes, body and
+breaking-change rules are in
+[Commit Convention](COMMIT_CONVENTION.md); history predating its adoption
+keeps its unprefixed subjects and is not rewritten.
 
 ## Release Candidates
 

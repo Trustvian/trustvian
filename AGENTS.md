@@ -130,6 +130,21 @@ a ruleset bypass actor.
 These operations are prohibited even if the authenticated GitHub credential
 has administrator privileges. Technical capability is not authorization.
 
+## Commit Messages
+
+All commits and Pull Request titles must follow
+[Trustvian Commit Convention](docs/COMMIT_CONVENTION.md).
+
+Before creating a commit, inspect the staged diff and generate the message
+from the actual change.
+
+Use:
+
+`<type>(<scope>): <imperative summary>`
+
+Do not use vague messages such as `update`, `changes`, `fix stuff`, `WIP`, or
+`final`.
+
 ## Merge Authority
 
 AI agents may create and update Pull Requests but must never merge a Pull
