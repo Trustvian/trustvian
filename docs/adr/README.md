@@ -42,11 +42,13 @@ as long as its own decision holds.
 | [0016](0016-delegation-as-behavioral-evidence-not-provenance.md) | Delegation as behavioral evidence, not provenance | Accepted |
 | [0017](0017-public-anomaly-configuration-boundary.md) | Public anomaly configuration boundary | Accepted |
 | [0018](0018-production-store-boundary-and-postgresql-direction.md) | Production Store boundary and PostgreSQL direction | Accepted |
+| [0019](0019-bounded-fingerprint-admission.md) | Bounded fingerprint admission: refuse, never evict | Accepted |
 
 No ADR is currently Superseded or Deprecated. Several later ADRs build on
 earlier ones — 0006 and 0018 on 0004's narrow port, 0007/0008/0017 on 0002's
-public-API test, 0013 on 0011's minimum-support floor — and each cites the
-earlier decision as still governing rather than replacing it.
+public-API test, 0013 on 0011's minimum-support floor, 0019 on the bounded-state
+mandate 0010/0011/0012/0016 established — and each cites the earlier decision as
+still governing rather than replacing it.
 
 ## Writing one
 

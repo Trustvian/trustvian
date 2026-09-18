@@ -384,11 +384,17 @@ create a new, far more sensitive data asset than the one Trustvian needs.
 
 Both halves of that are tested: 200 actors × 10 observations produces
 exactly 200 rows and exactly 2 tables (row count tracks distinct keys,
-never observation volume), and a baseline driven well past every
-cardinality cap serializes to about **13 KB** and round-trips through a
-separate store with no truncation. A single row therefore has a
-predictable ceiling regardless of how long an actor lives or how hard
-someone tries to inflate it.
+never observation volume), and a baseline driven past its cardinality
+caps round-trips through a separate store with no truncation.
+
+A single row therefore has a structural ceiling regardless of how long
+an actor lives or how hard someone tries to inflate it: at most 512
+fingerprint identities per actor, each with independently capped inner
+maps. The one measured point is a 120-fingerprint baseline at roughly
+13 KB serialized, so a row at the 512 cap is on the order of tens of
+kilobytes — an order of magnitude for planning rather than a measured
+figure. See
+[Observability § in-memory store growth](observability.md#in-memory-store-growth).
 
 ### Corrupt or unreadable state
 

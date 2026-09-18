@@ -34,7 +34,7 @@ here, not moved or rewritten.
 | Policy bypass | `TestEvaluateFailsClosedOnZeroValuePolicy`, `TestEvaluateFailsClosedOnInvalidDefaultAction`, `TestEvaluateFailsClosedOnEmptyDefaultReason` in [`internal/policy/policy_test.go`](../internal/policy/policy_test.go) |
 | Malformed events / extreme input values | `TestValidateRejectsNonFiniteIdentityConfidence`, `TestValidateAcceptsVeryLongActorID` in [`event/event_test.go`](../event/event_test.go); `TestAnalyzeNegativeDurationDoesNotCorruptTrustScore`, `TestAnalyzeLargeAttributesMapDoesNotPanic` in [`engine_test.go`](../engine_test.go) |
 | Concurrency issues | `TestInMemoryObserveConcurrentSameKey`, `TestInMemoryObserveConcurrentDistinctKeys` in [`internal/store/store_test.go`](../internal/store/store_test.go); `TestFileStoreObserveConcurrentSameKey`, `TestFileStoreObserveConcurrentDistinctKeys` in [`internal/store/file_test.go`](../internal/store/file_test.go) |
-| Resource exhaustion | `TestAnalyzeLargeAttributesMapDoesNotPanic`, `TestObserveUnboundedFingerprintsDoesNotPanic` in [`engine_test.go`](../engine_test.go) |
+| Resource exhaustion | `TestAnalyzeLargeAttributesMapDoesNotPanic`, `TestFingerprintFloodStaysBoundedEndToEnd` in [`engine_test.go`](../engine_test.go); `TestAdversarialStreamStaysBounded`, `TestRejectsOneBeyondCapacity` in [`internal/baseline/admission_test.go`](../internal/baseline/admission_test.go) |
 | Explainability | `TestEvaluateAlwaysProducesNonEmptyExplanationReason` in [`internal/policy/policy_test.go`](../internal/policy/policy_test.go) |
 | Alert/notification delivery integrity | `TestSendSignsPayloadCorrectly`, `TestSendTamperedPayloadFailsVerification`, `TestSendDoesNotLeakSecret`, `TestNewWebhookSinkRejectsNonHTTPS`, `TestNewWebhookSinkRejectsLoopbackDestination`, `TestSendRespectsTimeout`, `TestSendPayloadTooLargeMakesNoNetworkCall` in [`alert/webhook_test.go`](../alert/webhook_test.go) |
 | Configuration-input validation | `TestValidateRejectsUnsupportedVersion`, `TestValidateRejectsInvalidDefaultDecision`, `TestValidateRejectsInvalidRuleDecision`, `TestValidateRejectsInvalidActorType`, `TestValidateRejectsInvalidOperationCategory`, `TestValidateRejectsInvalidRiskLevel`, `TestValidateRejectsDuplicateRuleName`, `TestValidateRejectsEmptyRuleName`, `TestValidateRejectsTooManyRules`, `TestValidateRejectsOverlongName` in [`config/validate_test.go`](../config/validate_test.go); `TestLoadRejectsUnknownTopLevelField`, `TestLoadRejectsUnknownNestedField`, `TestLoadRejectsDuplicateYAMLKeys`, `TestLoadFileRejectsOversizedFile`, `TestLoadRejectsEmptyInput`, `TestLoadDoesNotPanicOnArbitraryInput`, `FuzzLoad` in [`config/load_test.go`](../config/load_test.go)/[`config/fuzz_test.go`](../config/fuzz_test.go) |
@@ -791,7 +791,7 @@ is a test, not an intention.
 | **Connection exhaustion / denial of service** | With the pool exhausted, operations wait for capacity and then fail on the caller's deadline — bounded and reportable, never an unbounded hang. Measured: 2.0001 s against a 2 s deadline. A transaction waiting on a row lock is cancellable and returns promptly (5.4 ms). No connection is stranded on any success or failure path, verified against a single-connection pool where one leak would be immediately fatal. |
 | **Silent persistence downgrade** | Re-confirmed at three layers. There is no code path from "PostgreSQL is unavailable" to a working memory or file store — not at startup, not after a mid-operation connection loss. A lost connection yields an explicit error wrapping `ErrUnavailable`, and stored state is verified to equal exactly the set of acknowledged writes. |
 | **Credential leakage** | The existing redaction regression tests re-run unchanged, and schema-failure paths are additionally asserted not to echo the DSN. |
-| **Unbounded growth / event warehousing** | 200 actors × 10 observations yields exactly 200 rows and exactly 2 tables: row count tracks distinct keys, never observation volume. A baseline driven past every cardinality cap serializes to ~13 KB and round-trips without truncation. |
+| **Unbounded growth / event warehousing** | 200 actors × 10 observations yields exactly 200 rows and exactly 2 tables: row count tracks distinct keys, never observation volume. One row's size is bounded by the per-actor caps — at most 512 fingerprints, each with its own bounded inner maps — and a baseline at those caps round-trips without truncation. |
 | **Baseline poisoning through persistence** | The learning-eligibility gate lives in `Engine.Observe`, above the `Store`. Forty repetitions of a blocked action are verified to remain ineligible — and to leave `Anomaly.Confidence` at zero — on **all three backends**, so durable shared persistence cannot be used to normalize blocked behavior fleet-wide. |
 | **Storage-dependent security decisions** | InMemory, FileStore, and PostgreSQL are verified to produce identical learned state, identical `Anomaly`/`Trust` values, and identical `Decision`s for the same event stream. A backend that straddled a policy threshold differently would turn a BLOCK into an ALLOW; it cannot. |
 
@@ -900,50 +900,55 @@ its size — an unbounded `Attributes` map, or an actor generating an
 unbounded number of distinct fingerprints to grow `Baseline` without
 limit.
 
-**Status: safety property tested (no panic, no error); per-call cost
-characterized and flat; total heap footprint still unbounded by
-design.** There is no per-event size limit on `Attributes` today, and
-`store.InMemory` has no eviction policy.
-`TestAnalyzeLargeAttributesMapDoesNotPanic` in
-[`engine_test.go`](../engine_test.go) proves a 100,000-key `Attributes`
-map does not panic or error `Engine.Analyze` (only `duration_ms`/`error`
-are ever read out of it, so per-event cost is proportional to what's
-consumed, not to the map's total size).
-`TestObserveUnboundedFingerprintsDoesNotPanic` in
-[`engine_test.go`](../engine_test.go) proves a single actor producing
-5,000 distinct fingerprints does not panic or error `Engine.Observe`.
-Neither test bounds memory growth itself — that's a deliberate scope
-line from [task 012](archive/tasks/v0.1/012-security-tests.md): the *safety*
-property (no panic, no deadlock) is this task's concern, the *growth
-curve* was [task 011](archive/tasks/v0.1/011-performance.md)'s.
+**Status: bounded.** Fingerprint cardinality per actor is capped at 512
+by `internal/baseline`'s `maxFingerprints`, enforced in
+`Baseline.Observe` by refusing admission of a new fingerprint once the
+cap is reached. `Fingerprint.ID` is derived from `Event` fields the
+caller supplies, so this is an untrusted-input dimension; the cap makes
+it a bounded one. See
+[ADR 0019](adr/0019-bounded-fingerprint-admission.md).
 
-[Task 011](archive/tasks/v0.1/011-performance.md) has since run that
-characterization. `BenchmarkInMemoryMemoryGrowth` measures
-`store.InMemory.Observe` against stores pre-populated with 100, 1,000,
-and 10,000 distinct keys, and the *per-call* cost is flat: `B/op` and
-`allocs/op` are exactly identical (464 B, 3 allocs) at every key count,
-with only a ~15% `ns/op` drift attributable to map cache locality. So a
-store already holding 10,000 actors is not more expensive per event
-than one holding 100 — an attacker cannot degrade per-event throughput
-by inflating the key space. See
+The bound is admission control, not eviction. Nothing already learned is
+ever removed to make room, and that asymmetry is the security property:
+a fingerprint absent from `Baseline.Fingerprints` scores as maximally
+novel with `Confidence = 0`, and `trust.Compute` multiplies anomaly by
+confidence — so evicting learned entries under pressure would let a
+flood of manufactured fingerprints *suppress* detection for an actor
+rather than merely cost memory. Refusing admission preserves everything
+the actor has actually been observed doing.
+
+Evidence, asserting the bound rather than the absence of a panic:
+
+| Test | Proves |
+|---|---|
+| `TestAdversarialStreamStaysBounded`, `TestRejectsOneBeyondCapacity`, `TestAdmitsUpToCapacity` ([`internal/baseline/admission_test.go`](../internal/baseline/admission_test.go)) | 5,000 distinct fingerprints leave exactly 512; the 513th is refused; nothing below the cap is |
+| `TestKnownFingerprintKeepsLearningAtCapacity` (same file) | A full baseline is not a frozen one — known fingerprints keep accumulating evidence |
+| `TestRejectionDoesNotMoveTheHistoryWindow` (same file) | A refused fingerprint cannot re-enter through the predecessor path |
+| `TestFingerprintFloodStaysBoundedEndToEnd` ([`engine_test.go`](../engine_test.go)) | The bound holds through the real gated `Analyze`/`Observe` loop, and the pipeline keeps deciding normally while admission is refused |
+| `TestInMemoryStoreStaysBoundedUnderFingerprintFlood`, `TestFileStoreRoundTripsOversizedLegacyBaseline` ([`internal/store/admission_persistence_test.go`](../internal/store/admission_persistence_test.go)) | The bound survives persistence, and a pre-`v1.0` baseline holding more than 512 is loaded whole rather than truncated |
+
+`TestAnalyzeLargeAttributesMapDoesNotPanic` in
+[`engine_test.go`](../engine_test.go) still covers the other half of
+this threat: a 100,000-key `Attributes` map does not panic or error
+`Engine.Analyze` (only `duration_ms`/`error` are ever read out of it,
+so per-event cost is proportional to what is consumed, not to the map's
+size). **There is still no per-event size limit on `Attributes`**, and
+that remains a deliberate open decision rather than a shipped control.
+
+`BenchmarkInMemoryMemoryGrowth` measures `store.InMemory.Observe`
+against stores pre-populated with 100, 1,000, and 10,000 distinct keys;
+per-call cost is flat (464 B, 3 allocs at every key count), so an
+attacker cannot degrade per-event throughput by inflating the key
+space. See
 [PERFORMANCE.md § measured results](PERFORMANCE.md#measured-results).
 
-What that measurement does *not* answer, and what remains genuinely
-open, is the **total** heap footprint: per-call cost being flat says
-nothing about the aggregate size of a `Baseline` map that only ever
-grows, since neither `InMemory` nor `FileStore` evicts anything. An
-actor generating unbounded distinct fingerprints still grows resident
-memory without limit; measuring that would need `runtime.MemStats`
-sampled across a long run rather than `go test -bench`, and is named as
-still-open in
-[PERFORMANCE.md § what's not benchmarked (yet)](PERFORMANCE.md#whats-not-benchmarked-yet).
-**Future mitigation:** an enforced limit
-(per-event `Attributes` size, `Baseline` eviction, or a
-`FingerprintStats.IsStale`-driven pruning pass — the staleness signal
-task 003 shipped is the natural input to one) remains a decision to
-make when a concrete deployment shows it's needed, not preemptively.
-The distinction matters for prioritization: this is a capacity-planning
-question, not a per-request denial-of-service one.
+**What remains unbounded, stated plainly:** the number of distinct
+*actors* a store holds. One entry per `{ActorID, Environment}`, with no
+TTL and no eviction — a deliberate property, since evicting an actor's
+baseline silently resets it to "never seen". That is a capacity-planning
+dimension owned by whoever provisions the deployment, not a per-request
+denial-of-service one, and behavioral-state lifecycle is tracked as
+separate work rather than solved here.
 
 `v0.6`'s new `FingerprintStats.PredecessorCounts` (see [Sequence
 state](#sequence-state) above) is a deliberate exception to "unbounded

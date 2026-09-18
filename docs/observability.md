@@ -354,33 +354,43 @@ pgx's tuning surface would create two places to set one value — see
 ### In-memory store growth
 
 The in-memory store holds one entry per distinct `{ActorID,
-Environment}`. There is **no TTL, no eviction, and no maximum.**
+Environment}`. Growth has two dimensions, and they are bounded
+differently.
 
-That is a deliberate property, not a missing feature. A behavioral
-baseline exists to accumulate what normal looks like for an actor;
-evicting one silently resets that actor to "never seen," so the next
-legitimate action looks novel and may be challenged or blocked. Eviction
-would be a change to behavioral semantics wearing the costume of a
-memory optimization.
+**Within one actor: bounded.** A baseline learns at most 512 distinct
+fingerprint identities (`internal/baseline`'s `maxFingerprints`), and
+every map inside a fingerprint's statistics is independently capped at
+64. Once a baseline reaches 512 identities, a new one is refused
+admission — nothing is evicted, and everything already learned keeps
+updating. See
+[ADR 0019](adr/0019-bounded-fingerprint-admission.md) for why refusal
+rather than eviction.
 
-Growth is bounded *per actor* — a baseline driven past every cardinality
-cap measures ~13 KB — so total memory is approximately:
+That makes a single baseline's worst case structurally bounded. The one
+size measurement this repository has is
+`TestLargeBoundedBaselineRoundTrips`, which serializes a baseline
+holding 120 fingerprints with the inner caps filled to roughly 13 KB —
+about 110 bytes of serialized state per fingerprint. Extrapolating
+gives a baseline at the 512 cap on the order of 50–60 KB serialized.
+Treat that as an order of magnitude for planning, not a measurement:
+it is arithmetic from a smaller case, resident heap is not serialized
+size, and a directly measured figure at the cap is still outstanding
+work.
 
-| Distinct actors | Approximate memory |
-|---|---|
-| 1,000 | ~13 MB |
-| 10,000 | ~130 MB |
-| 100,000 | ~1.3 GB |
+**Across actors: not bounded.** There is **no TTL, no eviction, and no
+maximum** on the number of distinct `{ActorID, Environment}` entries.
+That is a deliberate property. A behavioral baseline exists to
+accumulate what normal looks like for an actor; evicting one silently
+resets that actor to "never seen", so the next legitimate action looks
+novel and may be challenged or blocked. Eviction across actors would be
+a change to behavioral semantics wearing the costume of a memory
+optimization.
 
-Those figures are arithmetic from a measured per-actor cap, not a
-measured long-run heap — see [Performance § what's not benchmarked
-(yet)](PERFORMANCE.md#whats-not-benchmarked-yet), which names sampling
-total process footprint over time as still-open work. Plan with them;
-don't quote them as measurements.
-
-Long-lived deployments with many actors should use PostgreSQL, which is
-what it is for. This is an operational characteristic to plan around, not
-a defect to work around.
+So total footprint scales with the number of distinct actors ever
+observed, with each actor's contribution capped. Long-lived deployments
+with many actors should use PostgreSQL, which is what it is for. This is
+an operational characteristic to plan around, not a defect to work
+around.
 
 ## See also
 

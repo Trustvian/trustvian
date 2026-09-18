@@ -8,7 +8,45 @@ actually depend on.
 
 ## Unreleased
 
-_Nothing yet._
+### Security
+
+- **Per-actor fingerprint state is now bounded.** `Baseline.Fingerprints`
+  had no upper limit, and `Fingerprint.ID` is derived from `Event` fields
+  the caller supplies — so one actor emitting a distinct operation name
+  per call could grow its baseline, and its PostgreSQL row, without
+  limit. `internal/baseline` now caps a baseline at 512 fingerprint
+  identities and refuses admission of new ones beyond it.
+
+  The bound refuses rather than evicts. Nothing already learned is
+  removed to make room, because an absent fingerprint scores as
+  maximally novel with zero confidence and therefore contributes nothing
+  to trust — evicting learned entries under pressure would let a flood of
+  manufactured fingerprints suppress detection for an actor rather than
+  merely cost memory. See
+  [ADR 0019](docs/adr/0019-bounded-fingerprint-admission.md).
+
+  A baseline already holding more than 512 identities, learned before
+  this bound existed, keeps every one of them and keeps updating them; it
+  admits nothing new and is never truncated. Upgrading from `v0.9`
+  requires no migration and loses no learned state.
+
+  Behavioral change, confined to actors past the cap: a new fingerprint
+  observed by an actor already holding 512 is analyzed and decided
+  normally but is not learned, so it continues to score as unknown.
+  Known fingerprints keep learning regardless of how full the baseline
+  is.
+
+  No public API, configuration, CLI, Collector, or storage schema change.
+
+### Fixed
+
+- Documentation stated a per-actor memory bound the implementation did
+  not enforce: `docs/observability.md`'s growth table extrapolated from a
+  120-fingerprint measurement as though fingerprint count were capped.
+  `observability.md`, `SECURITY.md`, `storage-guide.md`, and
+  `PERFORMANCE.md` now distinguish the structural cap from the one size
+  figure actually measured, and separate per-actor growth (bounded) from
+  actor-count growth (deliberately not).
 
 ## v0.9.0 — Operational Readiness
 
