@@ -810,9 +810,8 @@ func TestBaselineObserveOutgoingTransitionTotalIsImmutable(t *testing.T) {
 }
 
 // TestBaselineObserveManyDistinctTransitionsStayBounded is task 026's
-// own large-cardinality proof, mirroring
-// TestObserveUnboundedFingerprintsDoesNotPanic's shape (engine_test.go)
-// for the new counters specifically: 10,000 distinct predecessors, all
+// own large-cardinality proof for the transition counters specifically:
+// many distinct predecessors, all
 // transitioning to one shared destination, must not panic, and the
 // destination's own PredecessorCounts must stay at exactly
 // maxPredecessors (64) — the bound established by task 025 is
@@ -834,6 +833,7 @@ func TestBaselineObserveManyDistinctTransitionsStayBounded(t *testing.T) {
 	// that was illustrative in task 026's own brief, not a hard
 	// requirement.
 	const distinctPredecessors = 5000
+	admittedAll := true
 	for i := range distinctPredecessors {
 		pred := fingerprint.Compute(features.StableFeatures{
 			ActorType: event.ActorTypeService, OperationCategory: event.OperationCategoryHTTP,
@@ -842,21 +842,32 @@ func TestBaselineObserveManyDistinctTransitionsStayBounded(t *testing.T) {
 		b = b.Observe(pred, features.VolatileFeatures{}, now.Add(time.Duration(i)*time.Second))
 		b = b.Observe(fpDest, features.VolatileFeatures{}, now.Add(time.Duration(i)*time.Second+time.Millisecond))
 
-		// Every distinct predecessor's own OutgoingTransitionTotal is
-		// exactly 1, regardless of whether the destination's
-		// PredecessorCounts had room to track it — the destination-side
-		// cap (maxPredecessors) never suppresses the predecessor-side
-		// counter.
-		if got := b.Fingerprints[pred.ID].OutgoingTransitionTotal; got != 1 {
-			t.Fatalf("predecessor %d: OutgoingTransitionTotal = %d, want 1", i, got)
+		// Every predecessor this baseline actually admitted has
+		// OutgoingTransitionTotal exactly 1, regardless of whether the
+		// destination's PredecessorCounts had room to track it — the
+		// destination-side cap (maxPredecessors) never suppresses the
+		// predecessor-side counter. Predecessors beyond the fingerprint
+		// admission bound (task 046) are not learned at all, which is a
+		// different mechanism and is asserted separately below.
+		stats, admitted := b.Fingerprints[pred.ID]
+		if admitted && stats.OutgoingTransitionTotal != 1 {
+			t.Fatalf("predecessor %d: OutgoingTransitionTotal = %d, want 1", i, stats.OutgoingTransitionTotal)
+		}
+		if !admitted {
+			admittedAll = false
 		}
 	}
 
 	if got := len(b.Fingerprints[fpDest.ID].PredecessorCounts); got != 64 {
 		t.Fatalf("len(PredecessorCounts) = %d, want 64 (bounded even at %d distinct predecessors)", got, distinctPredecessors)
 	}
-	if got := len(b.Fingerprints); got != distinctPredecessors+1 {
-		t.Fatalf("len(Fingerprints) = %d, want %d (unaffected by this task — Baseline.Fingerprints was already unbounded before it)", got, distinctPredecessors+1)
+	// Fingerprints is itself bounded as of task 046: this stream is far
+	// past that bound, so admission stopped long before the loop ended.
+	if admittedAll {
+		t.Fatalf("every one of %d distinct predecessors was admitted; fingerprint admission is supposed to be bounded", distinctPredecessors)
+	}
+	if got := len(b.Fingerprints); got != 512 {
+		t.Fatalf("len(Fingerprints) = %d, want 512 (bounded at %d distinct predecessors)", got, distinctPredecessors)
 	}
 }
 

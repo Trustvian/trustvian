@@ -534,18 +534,29 @@ func TestAnalyzeLargeAttributesMapDoesNotPanic(t *testing.T) {
 	}
 }
 
-// TestObserveUnboundedFingerprintsDoesNotPanic is a resource-exhaustion
-// smoke test (docs/tasks/012-security-tests.md): a single actor
-// generating thousands of distinct fingerprints (e.g. a unique operation
-// name per call) must not panic or error Engine.Observe. store.InMemory
-// has no eviction policy today — see docs/SECURITY.md's "Resource
-// exhaustion" entry — so this test only asserts the safety property (no
-// panic, no error), not a bound on memory growth; the growth curve itself
-// is docs/tasks/011-performance.md's concern.
-func TestObserveUnboundedFingerprintsDoesNotPanic(t *testing.T) {
+// TestFingerprintFloodStaysBoundedEndToEnd replaces this file's former
+// TestObserveUnboundedFingerprintsDoesNotPanic, whose name and assertion
+// both described the defect task 046 fixed: it drove 5,000 distinct
+// fingerprints through the engine and asserted only that nothing panicked,
+// which an unbounded implementation satisfies exactly as well as a bounded
+// one.
+//
+// The scenario is the one that matters in production: a single actor whose
+// operation name varies on every call — trivially arranged by anything that
+// puts an identifier in a route — cannot grow its learned state without
+// limit. This asserts the bound itself, through the real gated
+// Analyze+Observe loop rather than against internal/baseline directly, so
+// it also proves the pipeline keeps working while admission is refused:
+// every event is still analyzed, still decided, and never errors.
+func TestFingerprintFloodStaysBoundedEndToEnd(t *testing.T) {
 	ctx := context.Background()
-	e := trustvian.NewEngine()
-	for i := range 5000 {
+	st := store.NewInMemory()
+	e := trustvian.NewEngine(trustvian.WithStore(st))
+
+	key := baseline.Key{ActorID: "actor-flood", Environment: "prod"}
+
+	const flood = 5000
+	for i := range flood {
 		ev := event.Event{
 			ID: fmt.Sprintf("evt-%d", i), Timestamp: time.Now(),
 			Actor:     event.Actor{ID: "actor-flood", Type: event.ActorTypeService, IdentityConfidence: 1},
@@ -556,9 +567,23 @@ func TestObserveUnboundedFingerprintsDoesNotPanic(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Analyze() at i=%d: %v", i, err)
 		}
+		if r.Decision == "" {
+			t.Fatalf("Analyze() at i=%d produced no decision", i)
+		}
 		if _, err := e.Observe(ctx, r); err != nil {
 			t.Fatalf("Observe() at i=%d: %v", i, err)
 		}
+	}
+
+	bl, ok := st.Get(ctx, key)
+	if !ok {
+		t.Fatal("no baseline was learned at all")
+	}
+	// 512 is internal/baseline's maxFingerprints. Stated as a literal here
+	// on purpose: this is the externally observable guarantee, and a change
+	// to it should fail a test that reads like the promise being made.
+	if got := len(bl.Fingerprints); got != 512 {
+		t.Fatalf("len(Fingerprints) = %d after %d distinct fingerprints, want 512", got, flood)
 	}
 }
 

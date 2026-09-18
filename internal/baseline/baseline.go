@@ -130,6 +130,42 @@ const maxTrigramPredecessors = 64
 // imply another.
 const maxDelegators = 64
 
+// maxFingerprints bounds Baseline.Fingerprints: the number of distinct
+// fingerprint identities one actor's baseline will ever learn. Unlike
+// the three bounds above — which cap a map *inside* one FingerprintStats
+// entry — this caps the outer map, and it is the bound whose absence
+// made every figure derived from the others incomplete: a baseline with
+// unbounded fingerprints has unbounded size no matter how tightly each
+// entry is capped.
+//
+// Fingerprint.ID is derived from Event fields the caller supplies, so
+// fingerprint cardinality is an untrusted-input dimension exactly like
+// PredecessorCounts's keys are. Without this bound, one actor emitting a
+// distinct operation name per call grows its baseline — and, through
+// internal/store/postgres's one-jsonb-row-per-actor layout, its database
+// row — without limit.
+//
+// 512, from the one measurement this repository actually has: a baseline
+// driven past every other cap with 120 distinct fingerprints serializes
+// to ~13 KB (TestLargeBoundedBaselineRoundTrips), which is ~110 bytes of
+// serialized state per fingerprint. 512 therefore bounds a baseline at
+// roughly 56 KB — large enough for a service with a genuinely wide route
+// surface to be learned in full, small enough that even a pathological
+// actor population stays predictable. It is deliberately much larger
+// than the 64 above: those bound an actor's *repertoire relative to one
+// other action*, while this bounds its entire distinct behavior set, and
+// a real API service has far more distinct routes than it has distinct
+// predecessors for any single one of them.
+//
+// Admission, not eviction: see Observe. Nothing learned is ever removed
+// to make room, because a fingerprint absent from Fingerprints scores as
+// maximally novel with zero Confidence (internal/anomaly.Score), which
+// contributes nothing to Trust — so evicting learned state would let a
+// flood of manufactured fingerprints *suppress* detection for an actor
+// rather than merely cost memory. See
+// docs/adr/0019-bounded-fingerprint-admission.md.
+const maxFingerprints = 512
+
 // TrigramKey identifies the two-fingerprint predecessor pair leading
 // into one destination FingerprintStats' TrigramCounts entry — the
 // destination itself is implicit (whichever FingerprintStats.TrigramCounts
@@ -670,6 +706,17 @@ func New(key Key) Baseline {
 // not a misleading data point" stance FingerprintStats.observe's own
 // interval guard takes, now extended coherently one step further back.
 //
+// Fingerprint admission is bounded by maxFingerprints. A fingerprint
+// already present keeps learning normally however full the baseline is;
+// an unknown one is learned only while the baseline holds fewer than
+// maxFingerprints identities. At capacity the observation still returns
+// a valid Baseline and still advances LastObserved and DelegatorCounts —
+// it simply does not create a new FingerprintStats entry, does not
+// evict an existing one, and does not move the sequence history window
+// to a fingerprint it did not learn. A baseline that already holds more
+// than maxFingerprints entries (learned before this bound existed) keeps
+// every one of them and keeps updating them; it just admits no more.
+//
 // vol.DelegatedFrom, when non-empty, updates DelegatorCounts
 // unconditionally — unlike the sequence state above, delegation
 // provenance carries no ordering dependency, so it is not subject to
@@ -684,9 +731,21 @@ func (b Baseline) Observe(fp fingerprint.Fingerprint, vol features.VolatileFeatu
 		grandparent = b.PreviousFingerprintID
 	}
 
+	// Admission control. A fingerprint this baseline already knows always
+	// keeps learning; an unknown one is admitted only while there is room
+	// under maxFingerprints. At capacity the observation is not an error
+	// and does not stop the pipeline — it simply teaches this baseline
+	// nothing about a fingerprint identity it has no room to hold, which
+	// leaves anomaly scoring to treat that fingerprint as unknown through
+	// the ordinary path rather than through a special case.
+	_, known := b.Fingerprints[fp.ID]
+	admit := known || len(b.Fingerprints) < maxFingerprints
+
 	next := make(map[string]FingerprintStats, len(b.Fingerprints)+1)
 	maps.Copy(next, b.Fingerprints)
-	next[fp.ID] = next[fp.ID].observe(fp.Stable, vol, now, predecessor, grandparent)
+	if admit {
+		next[fp.ID] = next[fp.ID].observe(fp.Stable, vol, now, predecessor, grandparent)
+	}
 
 	// The predecessor's own OutgoingTransitionTotal (and, when a
 	// grandparent exists, TrigramContinuationTotal) advance separately
@@ -698,17 +757,32 @@ func (b Baseline) Observe(fp fingerprint.Fingerprint, vol features.VolatileFeatu
 	// docs/adr/0012-bounded-trigram-behavioral-context.md for why these
 	// counters exist and live on the predecessor's stats, not the
 	// destination's.
+	//
+	// The `tracked` guard is what keeps maxFingerprints airtight: this is
+	// the one other place an entry can enter the map, and writing to
+	// next[predecessor] for an untracked ID would admit a fingerprint
+	// through the side door. It cannot normally fire — the history window
+	// below only advances to an admitted fingerprint — but it costs one
+	// lookup and removes the possibility entirely, including for a
+	// baseline deserialized with inconsistent state.
 	if predecessor != "" {
-		next[predecessor] = next[predecessor].observeOutgoingTransition()
-		if grandparent != "" {
-			next[predecessor] = next[predecessor].observeTrigramContinuation(grandparent)
+		if _, tracked := next[predecessor]; tracked {
+			next[predecessor] = next[predecessor].observeOutgoingTransition()
+			if grandparent != "" {
+				next[predecessor] = next[predecessor].observeTrigramContinuation(grandparent)
+			}
 		}
 	}
 
 	lastFingerprintID := b.LastFingerprintID
 	lastFingerprintTime := b.LastFingerprintTime
 	previousFingerprintID := b.PreviousFingerprintID
-	if advances {
+	// `admit` joins the ordering guard here on purpose: a fingerprint that
+	// was not learned must not become the predecessor a later observation
+	// records a transition from, because that ID has no FingerprintStats
+	// to carry the transition's other half. Rejection leaves the window
+	// pointing at the last fingerprint this baseline actually knows.
+	if advances && admit {
 		previousFingerprintID = b.LastFingerprintID // "" on the actor's first-ever observation — correct
 		lastFingerprintID = fp.ID
 		lastFingerprintTime = now

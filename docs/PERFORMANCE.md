@@ -1167,10 +1167,12 @@ characterizes *per-call* cost (`ns/op`/`B/op`/`allocs/op`) at three
 fixed store sizes — it does not measure a long-running process's
 *total* heap footprint as an unbounded number of distinct actors
 accumulate over time, which would need a different technique
-(`runtime.MemStats` sampled across a run, not `go test -bench`). Since
-`InMemory` has no eviction/expiration policy (see
-[ROADMAP.md](ROADMAP.md)), that total footprint is expected to grow
-roughly linearly with the number of distinct actors ever observed —
+(`runtime.MemStats` sampled across a run, not `go test -bench`). Since `InMemory` has no eviction or expiration policy *across actors*,
+that total footprint is expected to grow roughly linearly with the
+number of distinct actors ever observed — each actor's own contribution
+is now structurally bounded (at most 512 fingerprint identities, see
+[ADR 0019](adr/0019-bounded-fingerprint-admission.md)), but the number
+of actors is not —
 this is a known, named design gap already, not a new discovery — but
 it hasn't been directly measured, and doing so is future work, not
 part of this task's scope (see its Non-Goals).
