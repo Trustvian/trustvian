@@ -88,7 +88,7 @@ Not every test runs on every commit:
 
 | Tier | Runs | What it covers |
 |---|---|---|
-| **Pull request / push** | `main` (and `develop` while it is being retired) | Format, vet, build, tests, race, and `govulncheck` — all three modules. PostgreSQL integration with `-short`. Backup, restore, and upgrade from the previous release against PostgreSQL 17. Release-matrix dry run, container build (amd64), module consistency, workflow action references, Compose config validation. |
+| **Pull request / push** | `main` | Format, vet, build, tests, race, and `govulncheck` — all three modules. PostgreSQL integration with `-short`. Backup, restore, and upgrade from the previous release against PostgreSQL 17. Release-matrix dry run, container build (amd64), module consistency, workflow action references, Compose config validation. |
 | **Nightly** | Scheduled, or on demand | The full PostgreSQL stress tier (high-contention writes, concurrent first-writes, bounded row counts), database-restart durability, the reference deployment's end-to-end smoke test, and its recovery drill. |
 
 The split is by cost, not by importance. Correctness gates belong on pull
@@ -157,7 +157,7 @@ shows how.
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
-| `.github/workflows/ci.yml` | push / PR on `main` (and `develop` while it is being retired) | Quality gates |
+| `.github/workflows/ci.yml` | push / PR on `main` | Quality gates |
 | `.github/workflows/nightly.yml` | schedule, manual | Expensive tiers |
 | `.github/workflows/release.yml` | version tag only | Release artifacts, container image, signing |
 

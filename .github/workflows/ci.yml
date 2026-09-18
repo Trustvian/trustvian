@@ -14,13 +14,13 @@ name: CI
 
 on:
   push:
-    # `main` is the trunk every change reaches by pull request, so gating
-    # pull requests into it is what keeps it releasable. `develop` is kept
-    # here only so the retiring branch stays covered while it exists; it can
-    # be dropped once that branch is gone (docs/BRANCHING_STRATEGY.md).
-    branches: [main, develop]
+    # `main` is the only long-lived branch: every change reaches it by pull
+    # request, so gating those pull requests is what keeps it releasable.
+    # The push trigger covers the merge itself and anything a maintainer
+    # lands directly. See docs/BRANCHING_STRATEGY.md.
+    branches: [main]
   pull_request:
-    branches: [main, develop]
+    branches: [main]
 
 # Read-only. This workflow publishes nothing, so it needs no write scope
 # anywhere. A fork pull request therefore cannot obtain credentials,
