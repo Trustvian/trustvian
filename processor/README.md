@@ -309,5 +309,5 @@ Grafana packaging, or vendor metrics client — the Collector's exporters
 already reach every backend. No Alert configuration (`alerts:`/`sinks:`/`webhook:` in Collector
 config) — a separate, future task. These match the scope boundaries in
 the core repository's
-[`docs/tasks/009-otel-collector.md`](../docs/archive/tasks/v0.2/009-otel-collector.md)
-and [`docs/tasks/022-collector-config-integration.md`](../docs/archive/tasks/v0.5/022-collector-config-integration.md).
+[`docs/archive/tasks/v0.2/009-otel-collector.md`](../docs/archive/tasks/v0.2/009-otel-collector.md)
+and [`docs/archive/tasks/v0.5/022-collector-config-integration.md`](../docs/archive/tasks/v0.5/022-collector-config-integration.md).

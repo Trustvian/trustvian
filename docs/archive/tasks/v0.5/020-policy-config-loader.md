@@ -68,7 +68,7 @@ Engine
   section — `config.PolicyConfig` is the only thing this loader
   produces.
 - **No JSON support.** YAML only, per this milestone's own "keep v1
-  small" principle — see [ROADMAP.md § v0.5](../../../../CHANGELOG.md#v050--policy--configuration).
+  small" principle — see [CHANGELOG.md § v0.5](../../../../CHANGELOG.md#v050--policy--configuration).
 - **No environment-variable interpolation** (`${VAR}` or similar) —
   secret/environment resolution is a separate, deliberately deferred
   design decision, not folded into this loader.

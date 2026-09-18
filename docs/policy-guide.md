@@ -244,7 +244,7 @@ equality per key (event attribute values are stringified with
 `fmt.Sprint`) — there is deliberately no `>`/`<`/regex matching, and no
 AND/OR/NOT composition between `Condition`s. That would be a real
 policy language, which this project's roadmap explicitly defers (see
-[`docs/tasks/006-policy.md`](archive/tasks/v0.1/006-policy.md#non-goals)).
+[`docs/archive/tasks/v0.1/006-policy.md`](archive/tasks/v0.1/006-policy.md#non-goals)).
 
 ## Testing a policy
 

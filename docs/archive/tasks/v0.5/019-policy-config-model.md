@@ -13,7 +13,7 @@ or any standalone deployment — a way to construct a meaningful,
 custom `Policy` without writing code inside this module or importing
 `internal/policy`, closing the gap [ADR 0002](../../../adr/0002-public-api-boundary.md)
 named. This is the first, narrowest vertical slice of
-[ROADMAP.md § v0.5](../../../../CHANGELOG.md#v050--policy--configuration): the
+[CHANGELOG.md § v0.5](../../../../CHANGELOG.md#v050--policy--configuration): the
 public configuration *model* and its *compiler* into a real
 `policy.Policy`, entirely in Go — no file parsing, no CLI flag, no
 Collector integration yet (each is its own later task).
@@ -74,7 +74,7 @@ foundation first.
 - **No file parsing (YAML/JSON) of any kind.** `PolicyConfig` values
   are constructed directly in Go in this task; a loader (task
   scoped separately, once this model is stable — see
-  [ROADMAP.md § v0.5](../../../../CHANGELOG.md#v050--policy--configuration)) reads
+  [CHANGELOG.md § v0.5](../../../../CHANGELOG.md#v050--policy--configuration)) reads
   a file and produces the same `PolicyConfig` struct this task defines.
 - **No CLI integration.** `cmd/trustvian` is not touched.
 - **No OTel Collector processor integration.** `processor/` is not
@@ -87,7 +87,7 @@ foundation first.
   touched; `PolicyConfig` and any future `AlertConfig` remain separate
   Go types compiled independently, even if a later task's file format
   nests both under one document — see
-  [ROADMAP.md § v0.5](../../../../CHANGELOG.md#v050--policy--configuration)'s own
+  [CHANGELOG.md § v0.5](../../../../CHANGELOG.md#v050--policy--configuration)'s own
   explicit note that `Policy → Decision` and `Decision/Result → Alert
   Evaluation` stay structurally independent.
 - **No general expression language, no boolean combinators beyond

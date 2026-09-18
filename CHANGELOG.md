@@ -1064,8 +1064,7 @@ release.
   Foundation stage; the Reliability and Additional-sinks-and-governance
   stages (retry, deduplication, cooldown, Slack/Teams/PagerDuty) remain
   explicitly deferred — see
-  [ROADMAP.md § Alert & Notification
-  phase](CHANGELOG.md#v040--alert--notification-foundation).
+  [§ v0.4.0](#v040--alert--notification-foundation).
 
 ### Changed
 

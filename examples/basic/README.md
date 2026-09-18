@@ -5,7 +5,7 @@ options, analyze one well-formed HTTP event, print the `Result` via
 `Result.Explain()`, then `Observe` it so it would count toward a future
 baseline.
 
-This corresponds to Example 1 in [docs/tasks/010-examples.md](../../docs/archive/tasks/v0.1/010-examples.md)
+This corresponds to Example 1 in [docs/archive/tasks/v0.1/010-examples.md](../../docs/archive/tasks/v0.1/010-examples.md)
 and mirrors the exact program shown in
 [docs/sdk-guide.md § Analyze](../../docs/sdk-guide.md#analyze).
 

@@ -4,7 +4,7 @@
 
 ## Context
 
-[docs/ROADMAP.md § v0.8](../../CHANGELOG.md#v080--production-runtime--storage)
+[CHANGELOG.md § v0.8](../../CHANGELOG.md#v080--production-runtime--storage)
 opens with the objective "Trustvian OSS should be deployable as a real
 production system, not only a library and CLI against a local file," and
 names PostgreSQL as the preferred persistent `Store` candidate. Starting

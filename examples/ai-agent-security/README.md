@@ -1,6 +1,6 @@
 # ai-agent-security
 
-Ports [docs/tasks/032-agent-security-scenario-validation.md](../../docs/archive/tasks/v0.7/032-agent-security-scenario-validation.md)'s
+Ports [docs/archive/tasks/v0.7/032-agent-security-scenario-validation.md](../../docs/archive/tasks/v0.7/032-agent-security-scenario-validation.md)'s
 combined scenario — delegation, sequence, and approval evidence,
 together — through the real, declarative configuration path an OSS
 user would actually use: `config.PolicyConfig` (approval, since `v0.5`)
