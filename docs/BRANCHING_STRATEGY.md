@@ -354,17 +354,23 @@ release. That permission is not a license to break users:
 
 ## Branch Protection
 
-`main` should be protected by a repository ruleset requiring:
+`main` is protected by a repository ruleset named **`Protect main`**. This is
+enforced configuration, not a recommendation — every row below is live on the
+repository today:
 
-| Setting | Value | Why |
+| Setting | Enforced value | Why |
 |---|---|---|
 | Pull request required | yes | No direct pushes to the trunk |
 | Required status checks | the `ci.yml` jobs below | "`main` is releasable" must be enforced, not assumed |
 | Strict (branch up to date) | yes | A check that passed against stale trunk proves less |
 | Block force pushes | yes | Published history is never rewritten |
 | Block deletion | yes | — |
-| Required approvals | 1 once a second maintainer exists | Self-approval is theatre with a single maintainer |
+| Linear history | yes | The squash rule above, enforced rather than trusted |
+| Allowed merge method | squash only | One commit per pull request, no exceptions |
 | Conversation resolution | yes | Review comments are not lost in a merge |
+| Stale approval dismissal | yes | An approval describes a diff, not a branch |
+| Required approvals | `0` today, `1` once a second maintainer exists | See below |
+| Bypass actors | none — administrators included | A gate an admin can step around is a suggestion |
 
 Required check names, exactly as `ci.yml` reports them:
 
@@ -384,8 +390,32 @@ Nightly jobs (`PostgreSQL stress tier`, `Reference deployment smoke test`,
 scheduled tiers, and requiring them would block every pull request on work
 that is valuable as a trend. The release checklist consults them instead.
 
-Tags carry no protection rule: immutability is a process commitment, and the
-release workflow refuses to publish a tag whose commit does not match.
+### Why required approvals is `0`
+
+GitHub does not permit a pull request's author to approve it. Trustvian has
+one maintainer, so a requirement of one approval would make every pull
+request unmergeable except by an administrator bypass — turning bypass into
+the routine path and hollowing out every other rule in the table. The
+requirement is therefore `0` until the reviewer pool can satisfy it.
+
+Everything that does not depend on a second person is enforced now: the pull
+request itself, the eight checks, strict-up-to-date, squash-only, linear
+history, conversation resolution, and no bypass for anyone.
+
+The upgrade trigger and the exact settings to change are in
+[Repository Governance](REPOSITORY_GOVERNANCE.md#approval-requirements).
+
+### Release tags
+
+Tags matching `v*` are protected by a ruleset named **`Protect release tags`**:
+they cannot be deleted, updated, or force-moved by anyone. Creating a tag is
+still permitted, because `release.yml` is *triggered* by a maintainer-pushed
+tag rather than creating one.
+
+Immutability was previously a process commitment. It is now a server-side
+rule, which is what `v0.9.0-rc.1` and `rc.2` deserve: failed release
+candidates stay in the history as evidence, and no one can quietly recycle a
+version number.
 
 ## Automation
 
@@ -494,4 +524,5 @@ commitment exists, the branch would be pure overhead.
 - [Release Guide](release-guide.md) — producing and verifying a release
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — the local gates and module layout
 - [.github/SECURITY.md](../.github/SECURITY.md) — reporting vulnerabilities
+- [Repository Governance](REPOSITORY_GOVERNANCE.md) — the enforced GitHub configuration
 - [Operations](operations.md) — upgrade and compatibility contracts
