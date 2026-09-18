@@ -26,6 +26,11 @@ Keep a branch to one reviewable change, and delete it once it merges. The
 full model — naming, release candidates, hotfixes, maintenance lines — is
 [docs/BRANCHING_STRATEGY.md](docs/BRANCHING_STRATEGY.md).
 
+`main` enforces this: direct pushes are rejected, the checks below are
+required, every review thread must be resolved, and merges are squash-only.
+The rules and the reasoning behind each are in
+[docs/REPOSITORY_GOVERNANCE.md](docs/REPOSITORY_GOVERNANCE.md).
+
 ## Before opening a pull request
 
 ```bash
