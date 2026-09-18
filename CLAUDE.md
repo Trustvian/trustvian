@@ -140,6 +140,22 @@ request explicit human intervention instead.
 This section is a reminder, not a security boundary — see
 `docs/AGENT_GOVERNANCE.md` for the credential isolation that is.
 
+## Commit Messages
+
+Before every commit:
+
+1. inspect `git diff --cached`;
+2. determine type and optional scope;
+3. generate the commit message according to `docs/COMMIT_CONVENTION.md`;
+4. ensure the message describes the actual staged change.
+
+Show the message before committing, and commit exactly that message. Never
+reuse a task title as the subject — the task says what was asked, the diff
+says what changed.
+
+Pull Request titles must follow the same summary format; `make pr-title
+TITLE='...'` checks one, and CI checks it on every pull request.
+
 ## Merge Authority
 
 Claude may prepare a pull request. Claude may never merge one into `main`.

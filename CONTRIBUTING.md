@@ -197,10 +197,24 @@ fallback.
 
 ## Commits and releases
 
-Commit subjects are short and imperative — `Add PostgreSQL backup restore
-upgrade path`, `Fix release workflow refs and prereleases`. Conventional
-Commits prefixes are not used; see
-[docs/BRANCHING_STRATEGY.md](docs/BRANCHING_STRATEGY.md#commit-messages).
+Trustvian uses Conventional Commits for commit subjects and pull request
+titles:
+
+```text
+<type>(<scope>): <imperative summary>
+```
+
+```text
+feat(store): add PostgreSQL baseline persistence
+fix(postgres): restore readiness after a reconnect
+docs: clarify the collector configuration
+```
+
+Because pull requests are squash-merged, the pull request title becomes the
+commit subject in `main` — CI validates it with
+`./scripts/check-pr-title.sh`. See
+[docs/COMMIT_CONVENTION.md](docs/COMMIT_CONVENTION.md) for the types, scopes,
+and breaking-change format.
 
 Release tags are cut from `main` and are immutable, including failed release
 candidates. Release history lives in
