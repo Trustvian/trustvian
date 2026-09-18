@@ -12,7 +12,7 @@ module — see [the examples index](../README.md#a-note-on-decision)).
 One `alert.Rule` matches on anomaly score, not `Decision` — the point
 this example exists to make concrete: `Decision` and `Alert` are
 different questions
-([spec § 18.1](../../trustvian-project-spec.md#181-why-alert-is-not-decision)).
+([spec § 18.1](../../docs/archive/project-spec.md#181-why-alert-is-not-decision)).
 A routine `OBSERVE_ONLY` decision on a highly novel action can still be
 worth an operator's attention, and Alert Evaluation says so
 independently of what Decision already decided.

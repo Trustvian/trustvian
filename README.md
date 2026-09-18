@@ -1,6 +1,6 @@
 # Trustvian
 
-**Behavioral Security & Trust Engine**
+**Behavioral Security & Trust Engine** — *Trust the Behavior.*
 
 > OpenTelemetry observes behavior. Trustvian evaluates whether that
 > behavior should be trusted.
@@ -464,7 +464,7 @@ Trustvian is under active development.
 - **Release history** — [CHANGELOG.md](CHANGELOG.md)
 - **Milestone status and planned work** — [docs/ROADMAP.md](docs/ROADMAP.md)
 - **Published releases** — [GitHub Releases](https://github.com/trustvian/trustvian/releases)
-- **Product and technical vision** — [trustvian-project-spec.md](trustvian-project-spec.md)
+- **Early design history** — [docs/archive/project-spec.md](docs/archive/project-spec.md) (historical, not maintained)
 
 ## Contributing
 

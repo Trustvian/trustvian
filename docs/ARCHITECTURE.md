@@ -555,7 +555,7 @@ argued: `go list -deps` confirms none of `event`, `internal/features`
 through `internal/policy`, or the root `Engine` import `net/http` or
 the `alert` package itself — the core detection engine has zero
 awareness this layer exists. See
-[`trustvian-project-spec.md` § 18](../trustvian-project-spec.md#18-alert--notification-system)
+[`docs/archive/project-spec.md` § 18](archive/project-spec.md#18-alert--notification-system)
 for the full architecture, [DOMAIN.md § Alert](DOMAIN.md#alert) for the
 domain model, and [ROADMAP.md § Alert & Notification
 phase](ROADMAP.md#alert--notification-phase) for what's shipped versus

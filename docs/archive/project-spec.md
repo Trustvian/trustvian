@@ -1,29 +1,47 @@
-# Trustvian — Open Source Behavioral Security & Trust Engine
+# Historical Project Specification
 
-**Category:** Behavioral Security & Trust Engine  
-**Primary tagline:** **Trust the Behavior.**  
-**Secondary tagline:** **From Behavior to Trust.**  
-**AI-agent positioning:** **Don't just authenticate your agents. Trust their behavior.**
+> **This document is retained for historical context only.**
+>
+> It is not the current source of truth for Trustvian's architecture,
+> features, roadmap, governance, or release behavior, and it is not
+> maintained. Statements here were written at various points during early
+> design and may describe things that were never built, were built
+> differently, or have since changed.
+>
+> For current documentation start at the [documentation index](../README.md)
+> or the [project README](../../README.md). Architecture is
+> [ARCHITECTURE.md](../ARCHITECTURE.md), the domain model is
+> [DOMAIN.md](../DOMAIN.md), planned work is [ROADMAP.md](../ROADMAP.md),
+> and decisions are recorded in [adr/](../adr/).
 
-## Current Implementation Status
+## What this document is, and what was removed
 
-This document is Trustvian's long-term product vision. It is not a
-description of what's built today — for that, see
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (system architecture,
-package structure, dependency direction), [`docs/DOMAIN.md`](docs/DOMAIN.md)
-(the actual domain model), [`docs/SECURITY.md`](docs/SECURITY.md),
-[`docs/PERFORMANCE.md`](docs/PERFORMANCE.md), and
-[`docs/ROADMAP.md`](docs/ROADMAP.md) (what's implemented vs. planned vs.
-future). Where this document's architecture sketches (repository
-layout, package names) differ from those docs, the `docs/` set is
-authoritative — it describes the real, tested implementation; sections
-below are retained as directional/aspirational context for where the
-product is headed. Notably: the core engine follows a **hexagonal
-architecture with no `pkg/` layer** (public API = root package +
-`event`; everything else under `internal/`) rather than the `pkg/` +
-`internal/` split sketched in §9 below — see
-[ADR 0001](docs/adr/0001-hexagonal-core-and-pipeline-shape.md) and
-[ADR 0002](docs/adr/0002-public-api-boundary.md) for why.
+This is the curated remainder of `trustvian-project-spec.md`, which lived at
+the repository root until the v1.0 documentation cleanup. It grew during
+early design and mixed product vision, architecture sketches, implementation
+notes, and commercial planning in one file — which made it an ambiguous
+second source of truth beside `docs/`.
+
+What remains below is the durable part: the original product vision, the
+detection and trust concepts, and the design reasoning behind the policy and
+alert systems, including the annotations added as each capability shipped.
+
+Removed rather than archived, because the repository answers these better or
+because they were never documentation:
+
+- the repository-structure, CLI, SDK, and Collector-configuration sketches —
+  superseded by [ARCHITECTURE.md](../ARCHITECTURE.md) and the guides, and in
+  places describing commands that were never built;
+- the roadmap and phase plans — superseded by [ROADMAP.md](../ROADMAP.md),
+  [CHANGELOG.md](../../CHANGELOG.md), and the task files;
+- the Control dashboard mock-up, an illustration of a product that does not
+  exist in this repository;
+- business-model, brand-architecture, and brand-messaging material, which is
+  not project documentation;
+- AI-agent implementation instructions and the initial MVP acceptance
+  criteria, both working notes for work long since completed.
+
+---
 
 ## 1. Vision
 
@@ -200,7 +218,7 @@ Order matters. Trustvian should support sequence-based anomaly detection.
 
 **Status: foundation implemented, as of the in-progress `v0.6`
 milestone** (see [`docs/ROADMAP.md` §
-v0.6](docs/ROADMAP.md#v06--behavioral-detection-depth) for the current,
+v0.6](../ROADMAP.md#v06--behavioral-detection-depth) for the current,
 accurate state — this is not yet a release, only implementation
 progress). `internal/anomaly` has two signals here, deliberately kept
 distinct rather than collapsed into one: `transition_deviation`
@@ -216,11 +234,11 @@ minimum-support threshold so a tiny sample is never mistaken for
 genuine rarity. The two never fire on the same transition — a
 transition is either novel (never seen) or, if seen, has a rarity
 reading; it is never both. See
-[`docs/sequence-analysis.md`](docs/sequence-analysis.md) for the full
+[`docs/sequence-analysis.md`](../sequence-analysis.md) for the full
 design, [ADR
-0010](docs/adr/0010-bounded-process-local-sequence-state.md) for why
+0010](../adr/0010-bounded-process-local-sequence-state.md) for why
 this needed no new public type or storage abstraction, and [ADR
-0011](docs/adr/0011-transition-rarity-statistic-and-orientation.md) for
+0011](../adr/0011-transition-rarity-statistic-and-orientation.md) for
 the rarity statistic's exact definition and orientation.
 
 A third, higher-order pair — `ngram_deviation`/`ngram_rarity` — extends
@@ -231,7 +249,7 @@ This is genuinely new information the two pairwise signals above
 cannot express on their own: `A -> B` and `B -> C` can each be
 independently familiar while the complete sequence has never occurred.
 A fixed 3-gram only — no configurable sequence length, no Markov model
-— see [ADR 0012](docs/adr/0012-bounded-trigram-behavioral-context.md)
+— see [ADR 0012](../adr/0012-bounded-trigram-behavioral-context.md)
 for the design and for why a 3-gram's statistical denominator needed
 its own new bounded state, not a reuse of the pairwise case's.
 
@@ -243,7 +261,7 @@ above?) and found that the textbook Markov "surprisal" statistic,
 frequency `transition_rarity` already reads. `markov_surprisal` is
 therefore an alternative, bounded severity curve over that same
 evidence — not independently weighted alongside it — see [ADR
-0013](docs/adr/0013-first-order-markov-surprisal-without-duplicate-evidence.md)
+0013](../adr/0013-first-order-markov-surprisal-without-duplicate-evidence.md)
 for the full analysis.
 
 Beyond the fixed 3-gram and first-order surprisal above, arbitrary-length
@@ -253,7 +271,7 @@ unscoped future work — see ADR 0012's own "Future extension" section
 and ADR 0011's "Why Markov still waits" (revisited, not superseded, by
 the first-order surprisal signal above) for what specifically remains
 missing; graph-based analysis and ML-based sequence models remain
-research only, and — per [`docs/ROADMAP.md`](docs/ROADMAP.md)'s
+research only, and — per [`docs/ROADMAP.md`](../ROADMAP.md)'s
 explicit product boundary — ML must never become a dependency of the
 core detection path.
 
@@ -315,148 +333,11 @@ internal/signal/
   correlation/
 ```
 
-## 9. Repository Structure
-
-As built (see [Current Implementation Status](#current-implementation-status)
-above and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the
-authoritative, current version of this diagram): no `pkg/` layer —
-`internal/` is Go's own encapsulation mechanism, and only the root
-package plus `event/` and, as of `v0.4.0`, `alert/` are public (see
-[ADR 0007](docs/adr/0007-alert-package-is-public.md) for why `alert`
-specifically breaks the "public only if a real external consumer needs
-to construct one" precedent `event` set and `policy`/`Config` still
-follow).
-
-```text
-trustvian/
-├── trustvian.go, engine.go, options.go, result.go   # public API (root package)
-├── event/                                              # public: Event, Actor, Operation, Target, Context
-├── alert/                                              # public: Alert, Severity, Condition/Rule/Evaluate, Sink, WebhookSink
-├── cmd/
-│   └── trustvian/                                       # CLI
-├── internal/
-│   ├── features/
-│   ├── fingerprint/
-│   ├── baseline/
-│   ├── store/
-│   ├── anomaly/
-│   ├── trust/
-│   ├── policy/
-│   └── otel/                                            # the only package depending on OpenTelemetry
-├── examples/                                            # runnable, genuinely-external-module demos (implemented)
-├── processor/                                           # standalone OTel Collector processor, separate module (implemented)
-├── docs/
-│   └── adr/
-├── go.mod
-├── LICENSE
-├── README.md
-└── Makefile
-```
-
-`internal/signal/{fft,complex,spectral}` (§8, the optional
-signal-processing layer) and a dedicated `internal/sequence` package
-(see [`docs/ROADMAP.md` §
-v0.6](docs/ROADMAP.md#v06--behavioral-detection-depth)) remain future
-work. `examples/` and `processor/` are implemented, not merely
-planned — corrected from this section's original text, which predated
-both; a `Dockerfile` and `CONTRIBUTING.md` remain planned (see
-[`docs/ROADMAP.md` §
-v0.8](docs/ROADMAP.md#v08--production-runtime--storage)/[v0.9](docs/ROADMAP.md#v09--operational-readiness)).
-
-## 10. CLI
-
-The CLI should be developer-friendly:
-
-```bash
-trustvian analyze trace.json
-trustvian fingerprint service payment-service
-trustvian baseline build
-trustvian policy test
-trustvian agent start
-trustvian version
-```
-
-Example output:
-
-```text
-Trustvian Behavioral Analysis
-
-Service: payment-service
-Anomaly: 0.91
-Trust:   0.32
-Risk:    HIGH
-
-Detected:
-  ! Unexpected dependency: secrets-manager
-  ! External destination not in baseline
-  ! Sequence deviation: 3 events
-
-Decision: BLOCK
-```
-
-## 11. Go SDK
-
-Keep the public API small and composable.
-
-Conceptual API:
-
-```go
-engine := trustvian.NewEngine(
-    trustvian.WithBaseline(baseline),
-)
-
-result := engine.Analyze(event)
-
-fmt.Println(result.TrustScore)
-fmt.Println(result.Decision)
-```
-
-Prioritize:
-
-- Small interfaces
-- Low allocations where practical
-- Clear ownership of data
-- Context-aware APIs
-- Deterministic behavior
-- Testability
-
-## 12. OpenTelemetry Collector Processor
-
-This should be one of the primary open-source deliverables.
-
-Example:
-
-```yaml
-receivers:
-  otlp:
-    protocols:
-      grpc:
-      http:
-
-processors:
-  trustvian:
-    anomaly_threshold: 0.85
-    trust_threshold: 0.40
-
-exporters:
-  otlp:
-    endpoint: "otel-backend:4317"
-
-service:
-  pipelines:
-    traces:
-      receivers: [otlp]
-      processors: [trustvian]
-      exporters: [otlp]
-```
-
-The processor should enrich telemetry and optionally emit security decisions.
-
 ## 13. Free / Open Source Edition
 
 The OSS edition should provide real value — and, per
 [`docs/ROADMAP.md` § The OSS / Enterprise product
-boundary](docs/ROADMAP.md#the-oss--enterprise-product-boundary), the
+boundary](../ROADMAP.md#the-oss--enterprise-product-boundary), the
 *complete* behavioral-security vertical (detect, score, decide, alert,
 integrate, run), not a deliberately incomplete preview of it:
 
@@ -485,7 +366,7 @@ A developer should be able to install Trustvian locally and analyze real telemet
 ### Trustvian Control
 
 **Correction (see [`docs/ROADMAP.md` § The OSS / Enterprise product
-boundary](docs/ROADMAP.md#the-oss--enterprise-product-boundary)):**
+boundary](../ROADMAP.md#the-oss--enterprise-product-boundary)):**
 this section's original list named "Alerting" as a potential
 Enterprise feature. That is no longer the product direction and was
 never correct once alerting was scoped — Trustvian OSS ships alert
@@ -516,49 +397,12 @@ Potential enterprise features:
 - Horizontal scaling
 - Enterprise support
 
-## 15. Control Dashboard
-
-Example:
-
-```text
-TRUSTVIAN CONTROL
-
-Services
-------------------------------------------------
-payment-service          TRUST 94%
-customer-service         TRUST 91%
-order-service            TRUST 88%
-support-agent            TRUST 43%   HIGH RISK
-
-Recent Anomalies
-------------------------------------------------
-12:41  support-agent
-       Unexpected tool sequence
-
-12:38  payment-service
-       Abnormal database access
-
-12:21  api-gateway
-       Behavioral deviation
-```
-
-An anomaly should link to its relevant OpenTelemetry trace and span so investigators can move from:
-
-```text
-Anomaly
-  -> Why?
-  -> Behavior difference
-  -> Related trace
-  -> Relevant span
-  -> API / Tool / DB / External call
-```
-
 ## 16. AI-Agent Roadmap
 
 **`v0.7` — AI Agent Behavioral Security is shipped (`v0.7.0`):**
 [`docs/ROADMAP.md` §
-v0.7](docs/ROADMAP.md#v07--ai-agent-behavioral-security)
-([task 014](docs/tasks/014-ai-agent.md) onward) was the pre-`v1.0` OSS
+v0.7](../ROADMAP.md#v07--ai-agent-behavioral-security)
+([task 014](../tasks/014-ai-agent.md) onward) was the pre-`v1.0` OSS
 milestone for this. **AI agents are behavioral actors analyzed by the
 same Trustvian engine** — not a second product, not a second security
 engine. Agent identity, tool calls, external
@@ -572,7 +416,7 @@ missing correlation dimensions as optional `Context` fields —
 recorded human-approval fact, not a workflow engine) — and proved,
 with integration tests through the real engine, that tool-*sequence*
 analysis needs no agent-specific algorithm: [§ v0.6 — Behavioral
-Detection Depth](docs/ROADMAP.md#v06--behavioral-detection-depth)'s
+Detection Depth](../ROADMAP.md#v06--behavioral-detection-depth)'s
 existing bounded 3-gram signal already detects a novel tool sequence
 (e.g. a sensitive read immediately followed by an external post) even
 when both individual steps are independently familiar. Agents remain
@@ -586,7 +430,7 @@ A field affects `Fingerprint`/behavioral identity only if it describes
 *what the actor typically does* — session, delegation, and approval
 context describe one specific event, not a stable behavioral
 dimension, so none of them enter `Fingerprint` identity (see
-[ADR 0014](docs/adr/0014-ai-agents-as-first-class-behavioral-actors.md)
+[ADR 0014](../adr/0014-ai-agents-as-first-class-behavioral-actors.md)
 for the full reasoning and the cardinality proof this distinction
 protects against).
 
@@ -605,7 +449,7 @@ Trustvian understands, as of task 014:
   a single hop)
 
 **Task 030 — Approval-Aware Policy Semantics — is also done.**
-[ADR 0015](docs/adr/0015-approval-as-policy-evidence-not-behavioral-anomaly.md)
+[ADR 0015](../adr/0015-approval-as-policy-evidence-not-behavioral-anomaly.md)
 gave `ApprovalStatus` its first real consumer, entirely inside
 `internal/policy`: a `Policy` rule can now require approval for a
 given operation (`Unless: &Condition{ApprovalStatus: Approved}`),
@@ -628,7 +472,7 @@ previously left open:
   authenticate where that evidence came from.
 
 **Task 031 — Delegation Behavioral Semantics — is also done.**
-[ADR 0016](docs/adr/0016-delegation-as-behavioral-evidence-not-provenance.md)
+[ADR 0016](../adr/0016-delegation-as-behavioral-evidence-not-provenance.md)
 gave `DelegatedFrom` its first real consumer: a new, opt-in
 `internal/anomaly` signal (`delegation_deviation`) that flags a
 delegator this actor has never received delegation from before,
@@ -670,13 +514,13 @@ delegation/sequence signals through public API alone.
 
 **Task 033 — v0.7 Stabilization & Release Gate — closed that gap and
 is done.** `config.AnomalyConfig`/`config.CompileAnomaly` (see [ADR
-0017](docs/adr/0017-public-anomaly-configuration-boundary.md)) give an
+0017](../adr/0017-public-anomaly-configuration-boundary.md)) give an
 OSS consumer the identical public path to anomaly scoring that Policy
 already had — every existing `anomaly.Config` field, none newly
 invented — with existing callers who configure nothing seeing
 byte-for-byte unchanged behavior, proven by test, and the CLI gaining a
 matching `--anomaly-config` flag.
-[examples/ai-agent-security](examples/ai-agent-security/) now
+[examples/ai-agent-security](../../examples/ai-agent-security/) now
 demonstrates the full combined scenario (delegation + sequence +
 approval) through public config alone. **`v0.7.0` is shipped**: all five
 tasks (014, 030, 031, 032, 033) are done, the one blocker task 032 found
@@ -693,8 +537,8 @@ project has not designed, only identified.
 **MCP.** Trustvian's read/query surface may eventually be exposed to AI
 agents and developer tooling via MCP
 ([`docs/ROADMAP.md` §
-Trustvian MCP](docs/ROADMAP.md#trustvian-mcp), [task
-015](docs/tasks/015-trustvian-mcp.md)) — an adapter that wraps and
+Trustvian MCP](../ROADMAP.md#trustvian-mcp), [task
+015](../tasks/015-trustvian-mcp.md)) — an adapter that wraps and
 queries the existing public API, never the reverse:
 
 ```text
@@ -709,7 +553,7 @@ v1.0](#product-evolution-toward-v10) below.
 ## 17. Policy Engine
 
 **Status: implemented, as of `v0.5.0` (not yet released — see
-[`docs/ROADMAP.md`](docs/ROADMAP.md) § v0.5 for the current, accurate
+[`docs/ROADMAP.md`](../ROADMAP.md) § v0.5 for the current, accurate
 state)** — a public `config` package (`PolicyConfig`/`PolicyRule`/
 `PolicyCondition`, `Validate`, `CompilePolicy`, `Load`/`LoadFile`),
 consumed identically by the Go SDK, the CLI (`--config`), and (in
@@ -719,28 +563,28 @@ sketch was evaluated against the real, released schema v1 and
 deliberately **not** taken: Alert configuration ended up as its own
 separate document and type (`AlertConfig`/`CompileAlerts`), not a
 `policies:`/`alerts:` combined schema — see [ADR
-0009](docs/adr/0009-alert-config-is-a-separate-document.md) for why.
+0009](../adr/0009-alert-config-is-a-separate-document.md) for why.
 See [Current Implementation Status](#current-implementation-status)
 above for the caveat this whole document carries.
 
 `internal/policy.Policy.Evaluate` already exists and works today: an
 ordered `[]Rule`, first-match-wins, fail-closed to `BLOCK` on
-misconfiguration (see [`docs/policy-guide.md`](docs/policy-guide.md)).
+misconfiguration (see [`docs/policy-guide.md`](../policy-guide.md)).
 What's missing is a way to *configure* that engine without writing Go
 code inside this module — the problem [`docs/ROADMAP.md` §
-v0.5](docs/ROADMAP.md#v05--policy--configuration) exists to close.
+v0.5](../ROADMAP.md#v05--policy--configuration) exists to close.
 
 ### 17.1 The problem
 
 `Anomaly → Trust → Policy → Decision` already works; a `Policy` value
 just can't be *constructed* by anything outside this module today
-([ADR 0002](docs/adr/0002-public-api-boundary.md)). Concretely, this is
+([ADR 0002](../adr/0002-public-api-boundary.md)). Concretely, this is
 why `processor/` (the standalone OTel Collector processor) resolves
 every span to `trustvian.decision = "observe_only"` regardless of how
 anomalous the underlying behavior is — it runs Trustvian's
 zero-configuration default `Policy` because it has no way to supply its
 own (see [`processor/README.md` §
-Configuration](processor/README.md#configuration)). A CLI flag, a
+Configuration](../../processor/README.md#configuration)). A CLI flag, a
 config file, and a Collector-pipeline setting should all be able to
 express the same policy, but none of them can today.
 
@@ -775,7 +619,7 @@ the minimum types an external loader needs to *construct* a `Policy`
 (and, since it converges on the same semantics, an `alert.Rule` set —
 see [§ 17.4](#174-relationship-to-alert-configuration)) — not
 `internal/policy` exposed wholesale. This is the same resolution
-[ADR 0007](docs/adr/0007-alert-package-is-public.md) already applied
+[ADR 0007](../adr/0007-alert-package-is-public.md) already applied
 to `alert`: promote exactly what a real external consumer needs to
 construct, nothing more.
 
@@ -902,7 +746,7 @@ BLOCK
 stages this section describes (§ 18.11 delivery reliability, § 18.12
 deduplication/cooldown, provider-specific sinks beyond the generic
 webhook) are still architectural target, not implemented. See
-[`docs/ROADMAP.md`](docs/ROADMAP.md) for what's actually scheduled and
+[`docs/ROADMAP.md`](../ROADMAP.md) for what's actually scheduled and
 in what order, and [Current Implementation Status](#current-implementation-status)
 above for the same caveat this whole document carries.
 
@@ -980,7 +824,7 @@ alerting exists.
 ### 18.2 Alert domain concept
 
 **Implemented as of `v0.4.0`**, as `alert.Alert` — see
-[DOMAIN.md § Alert](docs/DOMAIN.md#alert) for the exact, current field
+[DOMAIN.md § Alert](../DOMAIN.md#alert) for the exact, current field
 list. An `Alert` is the notification-worthy summary of one behavioral
 decision. Its domain semantics — described here as concepts this
 section originally fixed ahead of implementation, now realized in the
@@ -1003,9 +847,9 @@ real Go type — are:
 (the actor's behavioral history this event belongs to) — this list
 originally named one, but every plausible meaning collapses into
 `Fingerprint.ID`, exactly the same finding [task
-008](docs/tasks/008-otel.md) already reached for
+008](../tasks/008-otel.md) already reached for
 `trustvian.behavior.id` in the OTel attribute set (see
-[OPENTELEMETRY.md](docs/OPENTELEMETRY.md#trustvian-output-attributes)).
+[OPENTELEMETRY.md](../OPENTELEMETRY.md#trustvian-output-attributes)).
 `Alert.FingerprintID` is the one identifier that concept resolves to;
 no second, distinct behavior-level identity exists anywhere in this
 codebase.
@@ -1055,7 +899,7 @@ ships, matching the implementation exactly.
 (`alert.Condition`/`alert.Rule`/`alert.Evaluate` — first-match-wins,
 flat AND-of-optional-fields), **and the declarative YAML surface is
 now implemented too, as of `v0.5.0`** (not yet released — see
-[`docs/ROADMAP.md`](docs/ROADMAP.md) § v0.5): `config.AlertConfig`/
+[`docs/ROADMAP.md`](../ROADMAP.md) § v0.5): `config.AlertConfig`/
 `AlertRuleConfig`/`AlertConditionConfig`, `CompileAlerts`,
 `LoadAlerts`/`LoadAlertsFile`. It matches on the exact six concepts
 listed just below, no more — `severity` is not matchable, exactly as
@@ -1063,8 +907,8 @@ this section already specified, since it's the rule's *output*, not an
 input. It does not use this section's illustrative `alerts:`
 list-of-`when:` shape or its `">0.90"` comparison-operator-in-string
 syntax verbatim (see the real, current shape in [ADR
-0009](docs/adr/0009-alert-config-is-a-separate-document.md) and
-[`docs/tasks/023`](docs/tasks/023-declarative-alert-configuration.md)):
+0009](../adr/0009-alert-config-is-a-separate-document.md) and
+[`docs/tasks/023`](../tasks/023-declarative-alert-configuration.md)):
 numeric thresholds are typed `float64` fields
 (`min_anomaly_score`/`max_trust_score`), not an embedded operator
 string, matching `PolicyCondition`'s own established convention of
@@ -1130,7 +974,7 @@ component, as described below, is future work — most naturally
 alongside `v0.5`'s configuration format (an `alerts:` rule's
 `notify:` list is exactly this dispatcher's input) or the
 provider-sinks/governance stage named in
-[`docs/ROADMAP.md`](docs/ROADMAP.md#alert--notification-phase).
+[`docs/ROADMAP.md`](../ROADMAP.md#alert--notification-phase).
 
 The Notification Dispatcher's one job, once built:
 
@@ -1176,7 +1020,7 @@ changing (there is no Notification Dispatcher yet to keep unchanged —
 see [§18.5](#185-notification-dispatcher)). Where this interface lives
 was a real, deliberately-surfaced open question at the `v0.4.0` task's
 own planning stage — resolved as *public*, not `internal/`, and
-recorded in [ADR 0007](docs/adr/0007-alert-package-is-public.md): a
+recorded in [ADR 0007](../adr/0007-alert-package-is-public.md): a
 third-party `Sink` implementation is the entire reason this interface
 exists, which Go's `internal/` visibility rule would make impossible
 if `Alert`/`Sink` lived under `internal/`.
@@ -1208,7 +1052,7 @@ same `Sink` abstraction as the webhook — not as Trustvian Core
 dependencies. The generic webhook (§18.7) shipped first, as planned;
 Slack and Teams (and PagerDuty, and anything else) remain unbuilt —
 see [`docs/ROADMAP.md` § Alert & Notification
-phase](docs/ROADMAP.md#alert--notification-phase), which also corrects
+phase](../ROADMAP.md#alert--notification-phase), which also corrects
 this document's own earlier framing: a provider-specific `Sink` is OSS
 scope if architecturally clean, same as the webhook, not automatically
 Enterprise territory. Trustvian Core must never import a Slack or Teams
@@ -1233,7 +1077,7 @@ construction or on every `Send`:
 - a basic literal-IP loopback/link-local destination check (not a full
   DNS-resolution-based SSRF defense — see
   [`docs/SECURITY.md` § Alert/notification delivery
-  integrity](docs/SECURITY.md#alertnotification-delivery-integrity)
+  integrity](../SECURITY.md#alertnotification-delivery-integrity)
   for the documented limitation)
 
 Real request headers, matching exactly:
@@ -1366,7 +1210,7 @@ The Alert system must never depend on OpenTelemetry, and notification
 delivery must work identically whether or not the deployment uses OTel
 at all — exactly the same independence `internal/otel` already
 maintains from the core engine (see
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)).
+[`docs/ARCHITECTURE.md`](../ARCHITECTURE.md)).
 
 ### 18.15 Core architecture constraint
 
@@ -1390,7 +1234,7 @@ dependency of exactly one package, `internal/store/postgres`, which only
 a port is permitted; a core that imports a database is not. (The driver
 does reach anything importing the public `config` package, since
 `CompileStorage` lives there beside `CompilePolicy`; see
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for why that is a boundary
+[`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) for why that is a boundary
 cost rather than a core dependency.)
 
 Trustvian Core stays:
@@ -1402,7 +1246,7 @@ Trustvian Core -> domain logic -> decision
 with every external notification integration living behind the `Sink`
 boundary (§18.6), the same philosophy `internal/otel` already enforces
 for OpenTelemetry — see
-[`docs/ARCHITECTURE.md` § package boundaries](docs/ARCHITECTURE.md#package-boundaries).
+[`docs/ARCHITECTURE.md` § package boundaries](../ARCHITECTURE.md#package-boundaries).
 **Verified as implemented**, not just argued: `go list -deps` on
 `event` through `internal/policy` and the root package shows no
 `net/http`, no `alert` import, and no provider SDK — `alert` (which
@@ -1457,9 +1301,9 @@ code to implement it against a stable `Alert` type, which Go's
 therefore lives as a **public** top-level package
 (`github.com/trustvian/trustvian/alert`, a sibling to `event`), not
 under `internal/` — decided deliberately and recorded in
-[ADR 0007](docs/adr/0007-alert-package-is-public.md), following the
+[ADR 0007](../adr/0007-alert-package-is-public.md), following the
 exact "prove the interface is needed, then place it" discipline
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) applies to every package
+[`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) applies to every package
 boundary in this codebase — this was not a default reached by habit.
 
 What remains genuinely undecided, illustrative only: where a future
@@ -1481,348 +1325,6 @@ requirement; the "internal by default, public is deliberate" reasoning
 ADR 0007 applied to `alert` doesn't create the same tension there. This
 is still not created now, and this exact structure is still not a
 commitment.
-
-## 19. Roadmap
-
-[`docs/ROADMAP.md`](docs/ROADMAP.md) is the authoritative, current
-roadmap — organized by shippable milestone
-(`v0.1`→`v0.9.0`, shipped;
-`v1.0`, the production-readiness gate), reconciled against what's
-actually implemented today, with a detailed, independently-scoped task
-breakdown under [`docs/tasks/`](docs/tasks/). This section does not
-duplicate that task-level detail — it explains *why* each milestone
-exists and how it fits the product's architecture; see
-`docs/ROADMAP.md` for exact scope, dependencies, and acceptance
-criteria per milestone.
-
-### Product Evolution Toward v1.0
-
-```text
-v0.1  Core Behavioral Engine            SHIPPED
-        ↓
-v0.2  OpenTelemetry                     SHIPPED
-        ↓
-v0.3  Baseline & Anomaly Depth          SHIPPED
-        ↓
-v0.4  Alert & Notification Foundation   SHIPPED (v0.4.0)
-        ↓
-v0.5  Policy & Configuration            SHIPPED (v0.5.0)
-        ↓
-v0.6  Behavioral Detection Depth        SHIPPED (v0.6.0)
-        ↓
-v0.7  AI Agent Behavioral Security      SHIPPED (v0.7.0)
-        ↓
-v0.8  Production Runtime & Storage      SHIPPED (v0.8.0)
-        ↓
-v0.9  Operational Readiness             SHIPPED (v0.9.0)
-        ↓
-v1.0  Production-Ready OSS              TARGET — release gate, not a version bump
-```
-
-Why each step exists, not merely what it contains:
-
-- **`v0.1`–`v0.3`** built and hardened the deterministic core this
-  entire document assumes: `Event → Features → Fingerprint → Baseline
-  → Anomaly → Trust → Policy → Decision`, plus the OpenTelemetry input
-  path and the first depth signal (hour-of-day). Nothing downstream of
-  this milestone changes that pipeline's shape.
-- **`v0.4`** answered a question the pipeline structurally cannot
-  answer itself: not "what should Trustvian do" but "should this be
-  communicated externally" (§18.1). It had to come after `v0.1`
-  specifically because Alert Evaluation reads a stable `Result`
-  shape — a still-moving `Result` would mean redesigning the `Alert`
-  view underneath it.
-- **`v0.5`** exists because everything built so far is only
-  configurable by writing Go code inside this module
-  ([ADR 0002](docs/adr/0002-public-api-boundary.md)) — a real
-  adoption blocker for a "standalone, production-usable" product. It
-  is sequenced right after `v0.4` because it configures *both* `Policy`
-  and `alert.Rule`, and both must already be stable to design a single
-  config format against them (§17).
-- **`v0.6`** exists because the current anomaly signals all score one
-  event in isolation — order is information no per-event signal can
-  see. It is independent of `v0.5`/`v0.7`, sequenced here because
-  sequence-aware detection is itself a prerequisite a production
-  behavioral-security product needs before `v1.0`, not because
-  anything else structurally depends on it first.
-- **`v0.7`** exists because AI agents are already a first-class actor
-  type but lacked three correlation dimensions (session, delegation,
-  approval) that a real agent deployment needs — and because this is
-  where this document repeatedly insists the boundary matters most:
-  reuse the existing engine, never build a second one. All five `v0.7`
-  slices (foundation, approval-aware policy, delegation behavioral
-  semantics, combined scenario validation, and the public
-  configuration/stabilization gate) are done — see `docs/ROADMAP.md` §
-  v0.7.
-- **`v0.8`–`v0.9`** exist because a complete OSS product is not just a
-  correct algorithm — it is something an operator can actually run,
-  persist state for, upgrade, and trust operationally. `v0.8`'s first
-  slice made a sharper point than "add a database": persistence was
-  **unreachable**, not merely limited. A
-  durable `FileStore` had shipped since `v0.1`, but `store.Store` lives
-  under `internal/` with methods referencing internal types, so no
-  external consumer could select it — nor could the CLI, which never
-  called `WithStore` at all. Every deployment silently ran in memory.
-  `config.StorageConfig`/`CompileStorage` fixed that (**IMPLEMENTED**),
-  and the `Store` contract a production backend must satisfy is now
-  executable. The **PostgreSQL backend is IMPLEMENTED** (second slice),
-  passing all nine of those contract guarantees unmodified: shared,
-  transactional persistence with lost-update-free `Observe`, SQL-queryable
-  learned state, and fail-closed behavior with no fallback to non-durable
-  storage when the database is unavailable. That backend is now also
-  **HARDENED** (third slice): durability across a real database restart,
-  no lost updates under heavy contention, cancellable lock waits, bounded
-  behavior on an exhausted connection pool, atomic and
-  concurrent-startup-safe migration, fail-closed handling of unknown or
-  ambiguous schema metadata, and verified behavioral equivalence across
-  all three backends. The **reference Docker Compose deployment is
-  IMPLEMENTED** (fourth slice): an OpenTelemetry Collector running the
-  Trustvian processor against PostgreSQL, with a documented persistence
-  proof and an automated smoke test — which also required giving the
-  Collector processor its first ability to select a Store at all. The
-  `v0.8` release gate is **PASSED** (fifth slice): the milestone's exit
-  criteria were all met and its public storage API and configuration schema
-  were reviewed for support after release. **`v0.8.0` is shipped.**
-  `InMemory` is still the default and `FileStore` is unchanged.
-- **`v0.9` — Operational Readiness is shipped** (`v0.9.0`), verified by
-  [task 045](docs/tasks/045-v0.9-stabilization-release-gate.md)'s release
-  gate. It adds no behavioral capability:
-  it turns the `v0.8` runtime into a reproducible, verifiable, operable
-  distribution — CI quality gates across all three modules, cross-compiled
-  release binaries with checksums, a distroless multi-architecture Collector
-  image with SBOM, provenance, and keyless signing, `/livez` and `/readyz`
-  with bounded graceful shutdown, fixed-cardinality OpenTelemetry metrics,
-  and tested backup, restore, and upgrade procedures for learned state. See
-  [`docs/ROADMAP.md` §
-  v0.9](docs/ROADMAP.md#v09--operational-readiness).
-- **`v1.0`** is the point all of the above adds up to: a release gate,
-  not a new capability, and not a claim this document makes today —
-  see [§ OSS v1.0 — Production-Ready Definition](#oss-v10--production-ready-definition)
-  below.
-
-### OSS v1.0 — Production-Ready Definition
-
-> A user can install Trustvian, feed behavioral telemetry into it,
-> build baselines, detect anomalous behavior, calculate trust/risk,
-> apply policies, produce decisions, generate alerts, integrate
-> notifications, persist state, configure the system, observe it,
-> upgrade it, and operate it independently in production — without
-> requiring Trustvian Control.
-
-```text
-Observe → Model → Detect → Score → Decide → Alert → Integrate → Operate
-```
-
-This is the OSS `v1.0` product contract — not a claim that it is met
-today. As of this document's writing, `Observe` through `Alert` are
-real (`v0.1`–`v0.4.0`, shipped); `Integrate` is partially real (Go SDK,
-CLI, OTel adapter, Collector processor all ship today; MCP remains
-optional and does not gate this contract — see
-[§16](#16-ai-agent-roadmap)); `Operate` is substantially real — production
-persistence shipped in `v0.8.0`, and deployment packaging,
-self-observability, release engineering, and backup/restore/upgrade are the
-`v0.9` release candidate — with the `v1.0` release gate still to judge it
-as a whole. See
-[`docs/ROADMAP.md` §
-v1.0](docs/ROADMAP.md#v10--production-ready-oss) for the actual
-release-gate themes (correctness, performance, security, operations,
-documentation) this contract resolves into when the milestone is
-evaluated.
-
-### Beyond v1.0 — competitive positioning and strategic direction
-
-**Everything in this subsection is planning, not current
-implementation.** See [`docs/ROADMAP.md` § Beyond v0.7 — Strategic
-Capability Direction](docs/ROADMAP.md#beyond-v07--strategic-capability-direction)
-for the full reasoning and per-capability scope notes; this document
-carries only the product-positioning summary, not the architectural
-detail.
-
-**Positioning.** Trustvian is, and remains:
-
-```text
-Open-source behavioral runtime security
-+ trust evidence engine
-+ policy enforcement
-+ agent/service runtime visibility
-```
-
-not primarily a prompt firewall, an LLM proxy, a SIEM, an APM, an IAM,
-a workflow engine, or a generic observability platform — those systems
-integrate with Trustvian; they are not what Trustvian becomes.
-
-**Differentiators** (capabilities no generic runtime-security or
-observability product has, because they require Trustvian's own
-deterministic behavioral model): deterministic behavioral baselines,
-bounded sequence learning, behavioral delegation analysis,
-approval-policy separation (behavioral familiarity is never
-authorization), behavioral provenance confidence, a cross-workload
-behavioral model (the same pipeline scores humans, services, and AI
-agents), an explainable trust score, and provider-neutral runtime
-evidence.
-
-**Table stakes** (necessary for competitive product maturity, not
-differentiating on their own): agent/MCP tool visibility, a basic
-asset/agent inventory, a dashboard-level view of that evidence, alert
-delivery, and SIEM/enterprise integrations. Trustvian should add
-enough of these to be operationally useful without letting them
-dilute the differentiators above.
-
-**PLANNED, not implemented** — the specific candidates evaluated
-against this positioning: agent tool & MCP behavioral security,
-runtime identity & provenance, behavioral resource-abuse detection
-(a generic numeric baseline, not per-metric detectors), a security
-control plane and basic/full investigation timeline (split
-OSS-single-deployment vs. Enterprise-hosted, per [§14](#14-enterprise-edition)/[§15](#15-control-dashboard)'s
-existing boundary), agent framework adapters, and an optional external
-policy adapter (OPA). None of these has a task file yet.
-
-**FUTURE / OPTIONAL, explicitly deferred**: prompt/content security
-(prompt injection, DLP, content moderation) and LLM-based intent
-classification. Both would require an LLM or a content-specific
-model, which conflicts with Trustvian's own `LLM-independent core`
-principle — if ever built, each is a separate, optional adapter
-package producing normal `Event`/`Policy` input, never a Core
-dependency.
-
-### Historical framing (superseded)
-
-The phases below are this document's original, long-term framing,
-predating the milestone sequence above. Retained for history; where
-the two differ, the sequence above (and `docs/ROADMAP.md`) reflects
-the real, current plan — not this section.
-
-### Phase 0 — Foundation
-
-- Go module
-- Repository
-- License
-- CI/CD
-- Documentation
-- Core domain models
-- Unit tests
-- Benchmark framework
-
-### Phase 1 — Behavioral Engine
-
-- Event model
-- Feature extraction
-- Behavioral fingerprint
-- Baseline
-- Similarity calculation
-- Anomaly score
-- Trust score
-- Explainable decisions
-
-### Phase 2 — OpenTelemetry
-
-- OTLP ingestion
-- Trace processing
-- OTel attributes
-- OTel Collector processor
-- Example Collector deployment
-- Trace-to-security correlation
-
-### Phase 3 — Policy Engine
-
-- Policy model
-- Rule evaluation
-- ALLOW / BLOCK / CHALLENGE
-- Policy testing CLI
-- Policy versioning
-
-### Phase 4 — AI Agent Security
-
-- Agent identity
-- Tool-call tracking
-- Tool sequence analysis
-- Agent behavioral baseline
-- Agent trust score
-- Human approval workflows
-
-### Phase 5 — Open Source Platform
-
-- CLI improvements
-- Docker image
-- Helm chart
-- Kubernetes support
-- Examples
-- Documentation
-- Community contribution model
-
-### Phase 6 — Trustvian Control
-
-- Web dashboard
-- Central API
-- Service inventory
-- Behavioral profiles
-- Anomaly investigation
-- Historical analytics
-
-### Phase 7 — Enterprise
-
-- Multi-tenancy
-- RBAC
-- SSO
-- Audit
-- SIEM integrations
-- Kafka
-- HA
-- Horizontal scaling
-- Advanced policies
-- Advanced analytics
-- Enterprise support
-
-## 20. Business Model
-
-### Free
-
-Target:
-
-- Individual developers
-- Open-source projects
-- Small teams
-- Researchers
-- AI-agent developers
-
-Include:
-
-```text
-Trustvian Engine
-Go SDK
-OTel Processor
-CLI
-Local deployment
-Basic dashboard
-Basic policies
-Alerting & notification (webhook)
-```
-
-### Enterprise
-
-Target:
-
-- Banks
-- Large enterprises
-- SaaS companies
-- Cloud platforms
-- AI-agent platforms
-
-Paid capabilities:
-
-```text
-Trustvian Control
-Centralized governance
-Multi-tenancy
-SSO
-RBAC
-Audit
-Advanced policies
-Enterprise integrations
-HA
-Advanced analytics
-Support
-```
 
 ## 21. Differentiation
 
@@ -1850,110 +1352,6 @@ Observability
 Trustvian
   = Should this behavior be trusted?
 ```
-
-## 22. Brand Architecture
-
-```text
-Trustvian
-│
-├── Trustvian Engine
-│   └── Open-source behavioral security engine
-│
-├── Trustvian OTel
-│   └── OpenTelemetry integrations
-│
-├── Trustvian Agent
-│   └── Runtime / AI-agent integration
-│
-├── Trustvian Policy
-│   └── Behavioral security policy engine
-│
-├── Trustvian Control
-│   └── Enterprise management dashboard
-│
-└── Trustvian Cloud
-    └── Managed enterprise offering
-```
-
-## 23. Brand Messaging
-
-**Primary:**  
-> Trust the Behavior.
-
-**Secondary:**  
-> From Behavior to Trust.
-
-**Enterprise:**  
-> Behavioral Security for Modern Systems.
-
-**AI Agents:**  
-> Don't just authenticate your agents. Trust their behavior.
-
-**OpenTelemetry:**  
-> Turn telemetry into behavioral security signals.
-
-## 24. Claude Code Implementation Instructions
-
-Build Trustvian as a production-quality open-source Go project.
-
-Priorities:
-
-1. Clean architecture
-2. Small interfaces
-3. Testability
-4. Low runtime overhead
-5. Deterministic behavior
-6. Explainable security decisions
-7. OpenTelemetry compatibility
-8. Extensibility
-9. Backward compatibility
-10. Clear documentation
-
-Do not build a fake enterprise dashboard before the core engine works.
-
-Build vertically:
-
-```text
-Event
-  -> Features
-  -> Fingerprint
-  -> Baseline
-  -> Anomaly
-  -> Trust
-  -> Policy
-  -> Decision
-```
-
-Every major component must have:
-
-- Unit tests
-- Benchmarks where performance matters
-- Clear interfaces
-- Example usage
-- Documentation
-
-## 25. Initial MVP Acceptance Criteria
-
-The first usable release must support:
-
-```text
-Input:
-  OpenTelemetry trace/event
-
-Processing:
-  Feature extraction
-  Behavioral fingerprint
-  Baseline comparison
-  Anomaly score
-  Trust score
-
-Output:
-  Risk
-  Decision
-  Explanation
-```
-
-The MVP must work locally with no external SaaS dependency.
 
 ## 26. Long-Term Vision
 

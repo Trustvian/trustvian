@@ -172,7 +172,7 @@ table below.
 ### The single-maintainer consequence
 
 Trustvian has one human. A pull request that human authors has no eligible
-reviewer, because self-approval is impossible. Under a one-approval rule that
+reviewer, because self-approval is impossible and no other human can approve. Under a one-approval rule that
 pull request is unmergeable on the normal path — which is precisely why the
 scoped bypass below exists.
 
@@ -198,11 +198,20 @@ identity exists; see [Current and target state](#current-and-target-state).
 `Current` records only what GitHub reports. Nothing in that column is marked
 complete because a document describes it.
 
-Once a second reviewing identity exists — a maintainer, or the dedicated agent
-identity described in
-[Agent Governance](agents.md#credential-isolation) — the bypass entry
-should be removed and the two approval sub-settings switched on. At three or
-more maintainers, raise approvals to `2` for changes touching
+Once a **second eligible human reviewer** exists — another authorized
+maintainer or Organization Admin — the bypass entry should be removed and the
+two approval sub-settings switched on.
+
+A dedicated agent identity does not end this condition. It is not an eligible
+human reviewer, and a review submitted by one does not satisfy the required
+human approval: one human admin plus an agent is still a project with one
+human maintainer. What the agent identity does change is separate and also
+worth having — it makes agent-authored pull requests reviewable by the human,
+and removes the agent's technical ability to merge (see
+[Agent Governance](agents.md#credential-isolation)). Neither of those supplies
+the second human.
+
+At three or more maintainers, raise approvals to `2` for changes touching
 `internal/policy`, `internal/baseline`, `internal/trust`, or
 `.github/workflows/release.yml` — the decision path and the publishing path.
 That is also the point at which `CODEOWNERS` becomes worth adding; with one
@@ -318,7 +327,8 @@ PR -> CI -> >=1 human approval -> conversations resolved
 ```
 
 Using the bypass is an exception that should be visible and rare, and it
-should be removed once a second reviewing identity exists. AI agents must
+should be removed once a second eligible *human* reviewer exists — an agent
+identity is not one. AI agents must
 never use it, whatever credential they hold — see
 [Agent Governance](agents.md).
 

@@ -261,7 +261,7 @@ Reported, not hidden — see PERFORMANCE.md for the full accounting.
 - [docs/ROADMAP.md](../ROADMAP.md): task 026 marked done under `v0.6`;
   n-gram behavioral detection named as the next illustrative, unscoped
   slice.
-- [trustvian-project-spec.md](../../trustvian-project-spec.md) § 6:
+- [docs/archive/project-spec.md](../archive/project-spec.md) § 6:
   status callout extended to distinguish transition rarity from
   transition novelty.
 - [README.md](../../README.md): `v0.6` progress line updated.

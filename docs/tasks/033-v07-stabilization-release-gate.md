@@ -174,7 +174,7 @@ unchanged by this task, not merely assumed. Full `go test -bench=.
   config, not internal types.
 - [docs/ROADMAP.md](../ROADMAP.md): task 033's own outcome and the
   final `v0.7` release decision.
-- [CHANGELOG.md](../../CHANGELOG.md) / [trustvian-project-spec.md](../../trustvian-project-spec.md):
+- [CHANGELOG.md](../../CHANGELOG.md) / [docs/archive/project-spec.md](../archive/project-spec.md):
   this task's actual deliverable, accurately scoped.
 
 ## Acceptance Criteria

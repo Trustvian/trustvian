@@ -179,7 +179,7 @@ their own until actually populated by a caller. See
   second pipeline.
 - [docs/OPENTELEMETRY.md](../OPENTELEMETRY.md): potential future GenAI
   semantic-convention mappings, documented, not implemented.
-- [trustvian-project-spec.md](../../trustvian-project-spec.md): AI
+- [docs/archive/project-spec.md](../archive/project-spec.md): AI
   agents documented as behavioral actors analyzed by the same engine.
 - [docs/ROADMAP.md](../ROADMAP.md): `v0.7`'s small-slice sequence
   defined; this task marked done.

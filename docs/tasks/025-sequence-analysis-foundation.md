@@ -221,7 +221,7 @@ throughout, and the alternative (in-place mutation) would be unsafe
 - [docs/PERFORMANCE.md](../PERFORMANCE.md): new benchmark results.
 - [docs/ROADMAP.md](../ROADMAP.md): `v0.6` scope finalized into slices;
   this task marked done; `v0.6` marked in progress (not shipped).
-- [trustvian-project-spec.md](../../trustvian-project-spec.md) § 6: status
+- [docs/archive/project-spec.md](../archive/project-spec.md) § 6: status
   callout, matching the convention § 17/§ 18 already use.
 - [README.md](../README.md): `v0.6` mentioned as in-progress work.
 - [CHANGELOG.md](../../CHANGELOG.md): new `## Unreleased` section

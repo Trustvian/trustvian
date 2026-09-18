@@ -14,8 +14,8 @@ externally deliverable `Alert` — without changing `Decision` semantics
 or the existing detection pipeline. This is the "Foundation" stage
 named in [ROADMAP.md § Alert & Notification
 phase](../ROADMAP.md#alert--notification-phase) and specified in full
-in [`trustvian-project-spec.md` §
-18](../../trustvian-project-spec.md#18-alert--notification-system);
+in [`docs/archive/project-spec.md` §
+18](../archive/project-spec.md#18-alert--notification-system);
 this task file is the first concrete, implementable slice of that
 architecture, not a restatement of it.
 

@@ -226,7 +226,7 @@ benchmark's own updated doc comment in
   change) — verified explicitly.
 - [docs/ROADMAP.md](../ROADMAP.md): task 028 marked done under `v0.6`;
   Sequence Config Integration named as the next illustrative slice.
-- [trustvian-project-spec.md](../../trustvian-project-spec.md) § 6:
+- [docs/archive/project-spec.md](../archive/project-spec.md) § 6:
   status callout extended.
 - [README.md](../../README.md): `v0.6` progress line updated.
 - [CHANGELOG.md](../../CHANGELOG.md): new `## Unreleased` → `### Added`

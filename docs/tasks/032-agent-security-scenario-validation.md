@@ -196,7 +196,7 @@ production hot path exists. Expected overhead: **none**.
   accurately described.
 - [examples/README.md](../../examples/README.md): new example added
   to the index; "A note on `Decision`" corrected.
-- [trustvian-project-spec.md](../../trustvian-project-spec.md) § 16:
+- [docs/archive/project-spec.md](../archive/project-spec.md) § 16:
   a short note that `v0.7`'s capabilities are now validated in
   combination, plus the public-API gap.
 
