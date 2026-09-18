@@ -22,6 +22,7 @@ engineering conventions this codebase follows, see
 | [OpenTelemetry Adapter](OPENTELEMETRY.md) | How `internal/otel` maps a span to an `Event`, the attribute mapping table, what's not yet implemented |
 | [Observability](observability.md) | Operational metrics the Collector processor emits, their attributes and cardinality bound, what is deliberately not emitted, instrumentation cost, and the runtime's resource bounds |
 | [Supply Chain](supply-chain.md) | The official container image: contents, tags, architectures, vulnerability policy, signing, and how to verify an image |
+| [Branching Strategy](BRANCHING_STRATEGY.md) | Where work happens: `main`, short-lived branches, pull requests, immutable release-candidate and stable tags, hotfix and maintenance rules |
 | [Release Guide](release-guide.md) | How releases are produced, what they contain, verifying downloaded artifacts, and recovering from a partial release |
 | [Security Model](SECURITY.md) | Threats considered (spoofing, baseline poisoning, policy bypass, ...), implemented vs. future |
 | [Performance](PERFORMANCE.md) | Hot paths, measured benchmark results, allocation/concurrency notes |

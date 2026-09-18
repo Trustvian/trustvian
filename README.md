@@ -470,7 +470,9 @@ Trustvian is under active development.
 
 Issues and pull requests are welcome. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the quality gates, the three-module
-layout, and how to run the PostgreSQL tests. The conventions this codebase
+layout, and how to run the PostgreSQL tests, and
+[docs/BRANCHING_STRATEGY.md](docs/BRANCHING_STRATEGY.md) for how branches,
+pull requests, and releases fit together. The conventions this codebase
 follows are documented in [CLAUDE.md](CLAUDE.md) and
 [.claude/rules/](.claude/rules/).
 
