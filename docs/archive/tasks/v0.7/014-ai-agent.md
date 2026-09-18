@@ -1,7 +1,7 @@
 # 014 — AI Agent Event/Context Foundation
 
 **Milestone:** v0.7 (previously the unnumbered "AI Agent phase" — see
-[ROADMAP.md § v0.7](../../../../CHANGELOG.md#v070--ai-agent-behavioral-security))
+[CHANGELOG.md § v0.7](../../../../CHANGELOG.md#v070--ai-agent-behavioral-security))
 · **Depends on:** `v0.1` shipped (stable `Event` shape — extensions
 here must be backward-compatible additions); benefits from, but does
 not require, `v0.6`'s sequence-aware signals (proven by reuse, not

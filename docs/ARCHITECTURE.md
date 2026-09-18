@@ -532,8 +532,7 @@ The Foundation stage of this layer is implemented as of `v0.4` (package
 `alert` — see [ADR 0007](adr/0007-alert-package-is-public.md) and
 [task 018](archive/tasks/v0.4/018-alert-notification-foundation.md)); the Reliability
 and Additional-sinks-and-governance stages named in
-[ROADMAP.md § Alert & Notification
-phase](../CHANGELOG.md#v040--alert--notification-foundation) remain future work. The
+[CHANGELOG.md § v0.4.0](../CHANGELOG.md#v040--alert--notification-foundation) remain future work. The
 relationship is exactly the adapter shape this heading originally
 predicted: a layer that consumes this module's output without becoming
 part of the pipeline or a dependency the core links against.
@@ -557,8 +556,7 @@ the `alert` package itself — the core detection engine has zero
 awareness this layer exists. See
 [`docs/archive/project-spec.md` § 18](archive/project-spec.md#18-alert--notification-system)
 for the full architecture, [DOMAIN.md § Alert](DOMAIN.md#alert) for the
-domain model, and [ROADMAP.md § Alert & Notification
-phase](../CHANGELOG.md#v040--alert--notification-foundation) for what's shipped versus
+domain model, and [CHANGELOG.md § v0.4.0](../CHANGELOG.md#v040--alert--notification-foundation) for what's shipped versus
 still future.
 
 `alert` sits outside `internal/` — unlike `internal/otel`, which this

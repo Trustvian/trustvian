@@ -22,7 +22,7 @@ explicitly out of core scope — see
 Every threat below is backed by a specific, named test, not just a
 design argument. This table exists so that fact is verifiable at a
 glance rather than requiring a read of every section
-([`docs/tasks/012-security-tests.md`](archive/tasks/v0.1/012-security-tests.md)).
+([`docs/archive/tasks/v0.1/012-security-tests.md`](archive/tasks/v0.1/012-security-tests.md)).
 Threats whose tests already existed before that task are referenced
 here, not moved or rewritten.
 
@@ -1008,8 +1008,7 @@ model and [ADR 0007](adr/0007-alert-package-is-public.md) for why
 **What remains deliberately unimplemented:** delivery retry, a
 delivery-state/dead-letter mechanism, and deduplication are the
 separately-scoped Reliability stage's job (see
-[ROADMAP.md § Alert & Notification
-phase](../CHANGELOG.md#v040--alert--notification-foundation)), not this one's — a
+[CHANGELOG.md § v0.4.0](../CHANGELOG.md#v040--alert--notification-foundation)), not this one's — a
 failed or dropped delivery today simply returns an error to the caller,
 with no automatic recovery. Full SSRF protection (DNS-resolution-based
 destination validation, not just literal-IP loopback checks) is

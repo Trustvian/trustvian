@@ -4,7 +4,7 @@
 (the transition foundation) and [026](026-transition-rarity.md) (the
 orientation/minimum-support/naming pattern this task repeats one level
 up) · **Blocks:** Markov transition scoring (illustrative, unscoped —
-[docs/ROADMAP.md § v0.6](../../../../CHANGELOG.md#v060--behavioral-detection-depth))
+[CHANGELOG.md § v0.6](../../../../CHANGELOG.md#v060--behavioral-detection-depth))
 · **Independent of:** `v0.5` (`config`/`alert`) — nothing here touches
 Policy or Alert configuration.
 

@@ -10,7 +10,7 @@ most-cited limitation across this repository's documentation —
 all named it. [ADR 0004](0004-narrow-store-port-in-memory-only.md)
 already committed to *how* a persistent implementation must be added
 (implement `Store`'s existing two methods, no interface change) without
-building one. [`docs/tasks/003-baseline.md`](../archive/tasks/v0.1/003-baseline.md)
+building one. [`docs/archive/tasks/v0.1/003-baseline.md`](../archive/tasks/v0.1/003-baseline.md)
 scoped closing that gap, explicitly ruling out Redis/PostgreSQL/BoltDB
 unless a simple file-backed version proved inadequate.
 
@@ -110,7 +110,7 @@ outlive a restart.
   report an unsupported version, rather than misinterpret old data) —
   cheap to add now, the kind of thing that's expensive to retrofit
   later (the same reasoning `Fingerprint` composition versioning
-  followed — see [`docs/tasks/002-fingerprint.md`](../archive/tasks/v0.1/002-fingerprint.md)).
+  followed — see [`docs/archive/tasks/v0.1/002-fingerprint.md`](../archive/tasks/v0.1/002-fingerprint.md)).
 - If `Observe` throughput against `FileStore` becomes a real bottleneck
   for some deployment, the two alternatives ruled out above (background
   flushing, incremental writes) are exactly where to look next — this

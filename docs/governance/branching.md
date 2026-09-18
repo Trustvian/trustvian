@@ -57,7 +57,7 @@ gitGraph
 |---|---|
 | Purpose | The trunk. The only branch every change reaches, and the only branch release tags are cut from. |
 | Direct pushes | **No.** Every change arrives by pull request. |
-| Required CI | `ci.yml` on pull request and on push (see [Branch Protection](#branch-protection)) |
+| Required CI | `ci.yml` on pull request and on push (see [Protection and review](#protection-and-review)) |
 | Merge policy | Squash merge (see [Merge Strategy](#merge-strategy)) |
 | Release relationship | Every `vX.Y.Z-rc.N` and `vX.Y.Z` tag points at a commit on `main` |
 | Protection | PR required, required status checks, no force push, no deletion |

@@ -23,7 +23,7 @@ per CLAUDE.md's Implementation Strategy.
 beyond stdlib; `internal/otel` keeps its existing OTel SDK dependency, confined to
 that package).
 
-**Spec:** [docs/ROADMAP.md § v0.1](../../../CHANGELOG.md#v010--behavioral-core-hardening--first-public-release)
+**Spec:** [CHANGELOG.md § v0.1](../../../CHANGELOG.md#v010--behavioral-core-hardening--first-public-release)
 and the ten task files under [docs/tasks/](../../tasks/) (001, 002, 004, 005, 006,
 007, 010, 011, 012, 013). Each task file already carries its own full Objective,
 Scope, Non-Goals, Technical Requirements, Tests, Benchmarks, Documentation, and

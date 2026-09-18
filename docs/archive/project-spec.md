@@ -217,7 +217,7 @@ Identity/context attributes
 Order matters. Trustvian should support sequence-based anomaly detection.
 
 **Status: foundation implemented, as of the in-progress `v0.6`
-milestone** (see [`docs/ROADMAP.md` §
+milestone** (see [`CHANGELOG.md` §
 v0.6](../../CHANGELOG.md#v060--behavioral-detection-depth) for the current,
 accurate state — this is not yet a release, only implementation
 progress). `internal/anomaly` has two signals here, deliberately kept
@@ -400,7 +400,7 @@ Potential enterprise features:
 ## 16. AI-Agent Roadmap
 
 **`v0.7` — AI Agent Behavioral Security is shipped (`v0.7.0`):**
-[`docs/ROADMAP.md` §
+[`CHANGELOG.md` §
 v0.7](../../CHANGELOG.md#v070--ai-agent-behavioral-security)
 ([task 014](tasks/v0.7/014-ai-agent.md) onward) was the pre-`v1.0` OSS
 milestone for this. **AI agents are behavioral actors analyzed by the
@@ -547,8 +547,8 @@ Trustvian Core -> MCP                                  (wrong)
 ```
 
 MCP is an optional integration surface, not a core dependency and not
-a release blocker for OSS `v1.0` — see [§ Product Evolution Toward
-v1.0](#product-evolution-toward-v10) below.
+a release blocker for OSS `v1.0` — see the current
+[Roadmap](../ROADMAP.md#beyond-v10).
 
 ## 17. Policy Engine
 
@@ -564,14 +564,14 @@ deliberately **not** taken: Alert configuration ended up as its own
 separate document and type (`AlertConfig`/`CompileAlerts`), not a
 `policies:`/`alerts:` combined schema — see [ADR
 0009](../adr/0009-alert-config-is-a-separate-document.md) for why.
-See [Current Implementation Status](#current-implementation-status)
-above for the caveat this whole document carries.
+See [the note at the top of this document](#what-this-document-is-and-what-was-removed)
+for the caveat it all carries.
 
 `internal/policy.Policy.Evaluate` already exists and works today: an
 ordered `[]Rule`, first-match-wins, fail-closed to `BLOCK` on
 misconfiguration (see [`docs/policy-guide.md`](../policy-guide.md)).
 What's missing is a way to *configure* that engine without writing Go
-code inside this module — the problem [`docs/ROADMAP.md` §
+code inside this module — the problem [`CHANGELOG.md` §
 v0.5](../../CHANGELOG.md#v050--policy--configuration) exists to close.
 
 ### 17.1 The problem
@@ -747,8 +747,8 @@ stages this section describes (§ 18.11 delivery reliability, § 18.12
 deduplication/cooldown, provider-specific sinks beyond the generic
 webhook) are still architectural target, not implemented. See
 [`docs/ROADMAP.md`](../ROADMAP.md) for what's actually scheduled and
-in what order, and [Current Implementation Status](#current-implementation-status)
-above for the same caveat this whole document carries.
+in what order, and [the note at the top of this document](#what-this-document-is-and-what-was-removed)
+for the same caveat it all carries.
 
 ### 18.1 Why Alert is not Decision
 
@@ -974,7 +974,7 @@ component, as described below, is future work — most naturally
 alongside `v0.5`'s configuration format (an `alerts:` rule's
 `notify:` list is exactly this dispatcher's input) or the
 provider-sinks/governance stage named in
-[`docs/ROADMAP.md`](../../CHANGELOG.md#v040--alert--notification-foundation).
+[`CHANGELOG.md`](../../CHANGELOG.md#v040--alert--notification-foundation).
 
 The Notification Dispatcher's one job, once built:
 
@@ -1051,7 +1051,7 @@ Still documented here as **future** notification adapters, behind the
 same `Sink` abstraction as the webhook — not as Trustvian Core
 dependencies. The generic webhook (§18.7) shipped first, as planned;
 Slack and Teams (and PagerDuty, and anything else) remain unbuilt —
-see [`docs/ROADMAP.md` § Alert & Notification
+see [`CHANGELOG.md` § Alert & Notification
 phase](../../CHANGELOG.md#v040--alert--notification-foundation), which also corrects
 this document's own earlier framing: a provider-specific `Sink` is OSS
 scope if architecturally clean, same as the webhook, not automatically
