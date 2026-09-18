@@ -11,6 +11,21 @@ For what the code should look like, see [CLAUDE.md](CLAUDE.md) and
 codebase actually follows (package shape, error handling, test style,
 dependency confinement), not generic Go advice.
 
+## Development workflow
+
+Trustvian uses short-lived branches and pull requests into `main`. There is
+no second integration branch, and no pull request targets anything else:
+
+```text
+branch from main:  feat/<description>   (or fix/, docs/, ci/, security/, …)
+   ↓  implement, run the gates below
+open a pull request against main  →  CI  →  review  →  squash merge
+```
+
+Keep a branch to one reviewable change, and delete it once it merges. The
+full model — naming, release candidates, hotfixes, maintenance lines — is
+[docs/BRANCHING_STRATEGY.md](docs/BRANCHING_STRATEGY.md).
+
 ## Before opening a pull request
 
 ```bash
@@ -73,7 +88,7 @@ Not every test runs on every commit:
 
 | Tier | Runs | What it covers |
 |---|---|---|
-| **Pull request / push** | `main` and `develop` | Format, vet, build, tests, race, and `govulncheck` — all three modules. PostgreSQL integration with `-short`. Backup, restore, and upgrade from the previous release against PostgreSQL 17. Release-matrix dry run, container build (amd64), module consistency, workflow action references, Compose config validation. |
+| **Pull request / push** | `main` (and `develop` while it is being retired) | Format, vet, build, tests, race, and `govulncheck` — all three modules. PostgreSQL integration with `-short`. Backup, restore, and upgrade from the previous release against PostgreSQL 17. Release-matrix dry run, container build (amd64), module consistency, workflow action references, Compose config validation. |
 | **Nightly** | Scheduled, or on demand | The full PostgreSQL stress tier (high-contention writes, concurrent first-writes, bounded row counts), database-restart durability, the reference deployment's end-to-end smoke test, and its recovery drill. |
 
 The split is by cost, not by importance. Correctness gates belong on pull
@@ -142,7 +157,7 @@ shows how.
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
-| `.github/workflows/ci.yml` | push / PR on `main` and `develop` | Quality gates |
+| `.github/workflows/ci.yml` | push / PR on `main` (and `develop` while it is being retired) | Quality gates |
 | `.github/workflows/nightly.yml` | schedule, manual | Expensive tiers |
 | `.github/workflows/release.yml` | version tag only | Release artifacts, container image, signing |
 
@@ -177,8 +192,13 @@ fallback.
 
 ## Commits and releases
 
-Work lands on `develop` and reaches `main` by pull request; release tags
-are created on the resulting merge commit. Release history lives in
+Commit subjects are short and imperative — `Add PostgreSQL backup restore
+upgrade path`, `Fix release workflow refs and prereleases`. Conventional
+Commits prefixes are not used; see
+[docs/BRANCHING_STRATEGY.md](docs/BRANCHING_STRATEGY.md#commit-messages).
+
+Release tags are cut from `main` and are immutable, including failed release
+candidates. Release history lives in
 [CHANGELOG.md](CHANGELOG.md), and milestone status in
 [docs/ROADMAP.md](docs/ROADMAP.md) — please don't add project-status prose
 to the README, which is deliberately evergreen.

@@ -194,8 +194,9 @@ valid and `0.9` or `v0.9` are not.
 
 ### 5. Tag and push
 
-Work lands on `develop` and reaches `main` by pull request; every release
-tag so far sits on the resulting merge commit on `main`. Follow that:
+Release tags are cut from `main`, which every change reaches by pull
+request — see [Branching Strategy](BRANCHING_STRATEGY.md). Tag the commit on
+`main` that the candidate verified:
 
 ```bash
 git checkout main && git pull origin main
@@ -323,6 +324,5 @@ these artifacts; substitute a real released version.
 
 - Rename `## Unreleased` in `CHANGELOG.md` to the released version.
 - Update milestone status in [`docs/ROADMAP.md`](ROADMAP.md).
-- Merge `main` back into `develop`.
 - Leave [`README.md`](../README.md) alone — it is deliberately evergreen and
   carries no version status.

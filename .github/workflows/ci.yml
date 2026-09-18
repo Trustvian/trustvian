@@ -14,9 +14,10 @@ name: CI
 
 on:
   push:
-    # `develop` is where work actually lands; `main` receives it by pull
-    # request at release time. Watching only `main` — as the previous
-    # workflow did — meant CI first reported at the moment of release.
+    # `main` is the trunk every change reaches by pull request, so gating
+    # pull requests into it is what keeps it releasable. `develop` is kept
+    # here only so the retiring branch stays covered while it exists; it can
+    # be dropped once that branch is gone (docs/BRANCHING_STRATEGY.md).
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
