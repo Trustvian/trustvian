@@ -11,7 +11,8 @@ acceptance criteria. Milestones without a fully-scoped task sequence
 yet (`v0.9` below) are deliberately not pre-scoped in detail —
 this roadmap's own "small vertical slices" principle, applied to
 itself. `v0.8` is shipped: all five of its slices (034–038) are done, and
-each has its own task file. `v0.9` below is in progress. Every earlier
+each has its own task file. `v0.9` is shipped too: all seven of its slices
+(039–045) are done, and each has its own task file. Every earlier
 milestone through `v0.7` has each of its slices
 either scoped and done, or explicitly named as the next slice, not
 left as a vague placeholder: `v0.5` has all five of its tasks scoped
@@ -254,8 +255,11 @@ milestones exist to close:
 - Production-grade persistence and a reference deployment are now
   implemented — see `v0.8` below: a PostgreSQL `Store` selectable through
   public configuration, and a runnable Docker Compose reference
-  deployment. What remains is `v0.9`'s operational engineering: CI/CD
-  gates, release automation, and an official published container image.
+  deployment. Operational engineering is now implemented as well — see
+  `v0.9` below, shipped: automated quality gates, release artifacts with
+  checksums, a signed and attested container image, health and readiness
+  endpoints, operational metrics, and tested backup/restore/upgrade
+  procedures.
 - No MCP interface (an optional integration, not a `v1.0` blocker — see
   [Trustvian MCP](#trustvian-mcp) below), no Trustvian Control (an
   organizational-governance layer that consumes OSS, not a
@@ -1059,9 +1063,8 @@ milestone currently scopes is done):
   higher-order (3-gram) detection, a first-order Markov severity curve
   over the same evidence, and a stabilization pass confirming no
   release blocker remains — a complete build-out of this milestone's
-  "sequence-aware detection" objective. `v0.6.0` itself (the tag and
-  GitHub release) has not been created — that is a human action outside
-  this milestone's own task scope, not a further feature slice. A
+  "sequence-aware detection" objective, and `v0.6.0` has since been tagged
+  and released. A
   genuinely new detection capability beyond what tasks 025–028 already
   built would need its own concrete, evidence-driven justification and
   would belong to a later milestone (see `v0.7` below), not a
@@ -1945,9 +1948,11 @@ Per-task acceptance criteria are fixed in each slice's own task file.
 
 ## v0.9 — Operational Readiness
 
-**Status: RELEASE READY** — every slice verified by
-[045](tasks/045-v0.9-stabilization-release-gate.md)'s release gate; the
-`v0.9.0` tag has not been created. Tasks
+**Status: SHIPPED (`v0.9.0`).** Every slice was verified from executed
+evidence by [045](tasks/045-v0.9-stabilization-release-gate.md)'s release
+gate, and the milestone's exit criteria were met before the tag was cut —
+through three release candidates, each of which caught a real
+release-pipeline defect that no earlier gate could reach. Tasks
 [039](tasks/039-ci-quality-gate-automation.md),
 [040](tasks/040-release-artifacts-and-module-consistency.md), and
 [041](tasks/041-container-supply-chain-security.md),
@@ -2168,18 +2173,21 @@ after signing, and partial-release recovery is documented. It also added a
 private vulnerability-reporting policy and minimal issue templates, judged
 the reference deployment sufficient as the production example, and corrected
 documentation that had drifted from the code — including a getting-started
-example whose printed decision was wrong and 31 broken links. Recommended
-first step: tag `v0.9.0-rc.1`, which exercises the whole pipeline without
-moving floating tags.
+example whose printed decision was wrong and 31 broken links.
 
-That candidate was cut and **failed**: the release workflow, which had never
-run, referenced `sigstore/cosign-installer@v4` — a version that does not
-exist — and its container job died at setup. Binaries, checksums, and the
-draft release were correct; no image was published and no floating tag
-moved. The installer is now pinned to an existing release, every workflow
-action reference is checked in CI, and prerelease tags are marked as
-prereleases. `v0.9` remains release ready; the next candidate is
-`v0.9.0-rc.2`.
+**Three candidates were needed, and each earned its keep.** The release
+workflow had never run, so every candidate reached one step further into it
+than any gate could: `rc.1` died at job setup on
+`sigstore/cosign-installer@v4`, a version that has never existed; `rc.2`
+failed building the image, because the repository name was derived from the
+organization's display name and an OCI repository must be lowercase; `rc.3`
+completed the pipeline — build, scan, push, keyless signature, SBOM,
+provenance — and its published artifacts were verified before `v0.9.0` was
+promoted from the same commit. Each fix also became a gate: action
+references are resolved in CI, the image name is normalized by one script
+with its own tests, and prerelease tags are marked as prereleases so they
+never move a stable alias. The failed candidates remain as published
+evidence; tags are never moved or reused.
 
 ### Capability coverage
 

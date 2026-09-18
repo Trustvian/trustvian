@@ -1486,7 +1486,7 @@ commitment.
 
 [`docs/ROADMAP.md`](docs/ROADMAP.md) is the authoritative, current
 roadmap — organized by shippable milestone
-(`v0.1`→`v0.8.0`, shipped; `v0.9`, release gate passed and awaiting its tag;
+(`v0.1`→`v0.9.0`, shipped;
 `v1.0`, the production-readiness gate), reconciled against what's
 actually implemented today, with a detailed, independently-scoped task
 breakdown under [`docs/tasks/`](docs/tasks/). This section does not
@@ -1514,7 +1514,7 @@ v0.7  AI Agent Behavioral Security      SHIPPED (v0.7.0)
         ↓
 v0.8  Production Runtime & Storage      SHIPPED (v0.8.0)
         ↓
-v0.9  Operational Readiness             RELEASE READY (v0.9.0 not yet tagged)
+v0.9  Operational Readiness             SHIPPED (v0.9.0)
         ↓
 v1.0  Production-Ready OSS              TARGET — release gate, not a version bump
 ```
@@ -1584,9 +1584,9 @@ Why each step exists, not merely what it contains:
   criteria were all met and its public storage API and configuration schema
   were reviewed for support after release. **`v0.8.0` is shipped.**
   `InMemory` is still the default and `FileStore` is unchanged.
-- **`v0.9` — Operational Readiness has passed its release gate**
-  ([task 045](docs/tasks/045-v0.9-stabilization-release-gate.md)); the
-  `v0.9.0` tag has not been created yet. It adds no behavioral capability:
+- **`v0.9` — Operational Readiness is shipped** (`v0.9.0`), verified by
+  [task 045](docs/tasks/045-v0.9-stabilization-release-gate.md)'s release
+  gate. It adds no behavioral capability:
   it turns the `v0.8` runtime into a reproducible, verifiable, operable
   distribution — CI quality gates across all three modules, cross-compiled
   release binaries with checksums, a distroless multi-architecture Collector

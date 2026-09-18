@@ -8,9 +8,25 @@ actually depend on.
 
 ## Unreleased
 
-> `v0.9` — Operational Readiness. Entries accumulate here as each slice
-> lands; this heading is renamed to the milestone's version only once a
-> real tag exists — never before.
+_Nothing yet._
+
+## v0.9.0 — Operational Readiness
+
+Makes Trustvian *operable*, where `v0.8` made it deployable. It adds no
+behavioral capability: every quality gate now runs on a machine rather than
+by discipline, releases produce verifiable artifacts, the runtime reports
+its own health and shuts down cleanly, it emits bounded operational
+metrics, and the learned behavioral state it protects can be backed up,
+restored, and carried across an upgrade — each of those proven by a test
+rather than a procedure.
+
+Seven vertical slices (039–045), all additive. Existing deployments need no
+configuration change: the health endpoints are opt-in, the metrics require
+no wiring, and `InMemory` remains the default store.
+
+One change is visible to Go consumers: the module path is now lowercase
+(`github.com/trustvian/trustvian`) following the organization rename. See
+[Changed](#changed) below for what that means for an existing import.
 
 ### Added
 
