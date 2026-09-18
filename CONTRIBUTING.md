@@ -28,7 +28,9 @@ full model — naming, release candidates, hotfixes, maintenance lines — is
 
 `main` enforces this: direct pushes are rejected, the checks below are
 required, every review thread must be resolved, and merges are squash-only.
-The rules and the reasoning behind each are in
+Every pull request needs at least one human approval — from a maintainer or an
+Organization Admin — and the final merge is performed by an Organization
+Admin. The rules and the reasoning behind each are in
 [docs/REPOSITORY_GOVERNANCE.md](docs/REPOSITORY_GOVERNANCE.md).
 
 ## Before opening a pull request

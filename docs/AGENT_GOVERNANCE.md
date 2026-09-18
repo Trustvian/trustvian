@@ -113,7 +113,7 @@ repository alone:
 | Permission | Level | Why |
 |---|---|---|
 | Metadata | Read | Mandatory for any fine-grained token |
-| Contents | Read and write | Create and push short-lived branches |
+| Contents | Read and write | Create and push short-lived branches — **also authorizes merging**, see below |
 | Pull requests | Read and write | Open and update pull requests |
 | Actions | Read | Inspect workflow runs and check results |
 | Packages | Read | Verify published container images |
@@ -126,10 +126,9 @@ single scope covering code, settings, and — for a user who administers the
 repository — its rulesets. It cannot express "may push a branch, may not
 rewrite governance," which is precisely the line this policy needs.
 
-The same separation is what makes "only a human Organization Admin merges"
-real rather than aspirational: an agent credential without `Administration`
-and without a maintainer's merge rights cannot perform the merge, whatever it
-is asked to do.
+Credential separation removes administration from the agent. It does **not**,
+by itself, remove the ability to merge — see the analysis below, which
+corrects an earlier claim in this document.
 
 > **Known limitation.** When an agent runs with a human administrator's
 > unrestricted credential, GitHub cannot distinguish the agent's API calls
@@ -137,6 +136,55 @@ is asked to do.
 > agent's compliance, which is defense in depth, not a boundary. Do not
 > describe such a setup as secure; treat it as a temporary state to be fixed
 > by issuing the agent its own token.
+
+### Merge capability: what a token permission actually grants
+
+GitHub authorizes these operations as follows (REST, fine-grained tokens):
+
+| Operation | Endpoint | Permission required |
+|---|---|---|
+| Push a branch | git / `contents` | **Contents: write** |
+| Merge a pull request | `PUT /repos/{o}/{r}/pulls/{n}/merge` | **Contents: write** |
+| Create a pull request | `POST /repos/{o}/{r}/pulls` | **Pull requests: write** |
+| Submit an approving review | `POST /repos/{o}/{r}/pulls/{n}/reviews` | **Pull requests: write** |
+
+Two consequences follow, and neither is optional to acknowledge:
+
+- **Pushing a branch and merging a pull request are the same permission.**
+  There is no token permission that says "may push a branch, may not merge."
+  An agent credential able to push its own working branch into this
+  repository is, by construction, able to merge any pull request that
+  satisfies the branch rules.
+- **Creating a pull request and approving one are the same permission.**
+  An identity that can open a pull request can also submit an approving
+  review on someone else's.
+
+GitHub offers no way to separate these pairs by permission. The only native
+mechanism that restricts *who* may merge is the classic branch-protection
+push restriction, which requires a GitHub Team or Enterprise plan and
+enumerates identities rather than expressing a role.
+
+#### What this means for the agent identity
+
+Two workable models, with different guarantees:
+
+| Model | Agent write access to this repository | Can the agent merge? |
+|---|---|---|
+| **Fork-based** — agent pushes to its own fork and opens a cross-repository pull request | None (`Contents: read`) | **No** — technically prevented |
+| **Direct-branch** — agent pushes short-lived branches to this repository | `Contents: write` | **Yes** — prevented only by policy |
+
+The fork-based model is the one that makes "an agent cannot merge" a fact
+rather than a promise, and it costs nothing here: pull request CI already
+runs with `contents: read` and no secrets, so a fork's pull request receives
+the identical gate set.
+
+In either model, a residual capability remains: an agent identity holding
+`Pull requests: write` can submit an approving review. GitHub cannot
+distinguish a machine account's review from a human's. That risk is
+mitigated by attribution rather than permission — a review from the agent
+identity is visibly attributed to it, and this policy forbids counting one as
+the required human approval. Anyone reviewing the repository's history can
+check whether it was honoured.
 
 ## Protected Branches
 

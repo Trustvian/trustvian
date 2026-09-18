@@ -186,6 +186,8 @@ Two changes, in this order:
    [Agent Governance](AGENT_GOVERNANCE.md#credential-isolation)) makes
    agent-authored pull requests arrive from a different login, so the
    Organization Admin's approval becomes a genuine second-party review.
+   Prefer the fork-based variant: it is the only arrangement in which the
+   agent is technically unable to merge, rather than merely forbidden to.
 2. **Then set required approvals to `1`.** Every agent-authored change is
    gated behind human review from that point on.
 
@@ -226,12 +228,17 @@ whoever holds a credential with write access to the repository can merge a
 pull request that satisfies the rules. Restricting the set of humans and
 tokens holding that access *is* the enforcement mechanism.
 
-This is why the agent credential recommendation in
-[Agent Governance](AGENT_GOVERNANCE.md#credential-isolation) matters more than
-any document: an agent token without merge rights cannot merge, whatever it is
-instructed to do. Conversely, while an agent runs with the Organization
-Admin's own unrestricted credential, GitHub sees the admin's authority and the
-boundary is compliance rather than control.
+The credential model therefore decides what is enforced, and the detail that
+decides it is this: **pushing a branch and merging a pull request are the same
+token permission** (`Contents: write`). An agent that can push a working
+branch into this repository can also merge. Only an agent working from a fork,
+with no write access here at all, is technically unable to merge — the
+analysis and the trade-off are in
+[Agent Governance](AGENT_GOVERNANCE.md#merge-capability-what-a-token-permission-actually-grants).
+
+While an agent runs with the Organization Admin's own unrestricted credential,
+GitHub sees the admin's authority and the boundary is compliance rather than
+control.
 
 ### Merge queue
 

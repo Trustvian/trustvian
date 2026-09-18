@@ -159,6 +159,12 @@ Organization Admin.
 
 An Organization Admin may also act as the reviewer.
 
+AI agents must use least-privilege credentials, distinct from any human
+Organization Admin's credential.
+
+An AI agent cannot satisfy the required human review. A review submitted by an
+agent identity does not count, whatever GitHub's permission model allows.
+
 AI agents must never use, request, derive, or configure a bypass around this
 requirement.
 
