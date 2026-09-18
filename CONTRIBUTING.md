@@ -24,14 +24,14 @@ open a pull request against main  →  CI  →  review  →  squash merge
 
 Keep a branch to one reviewable change, and delete it once it merges. The
 full model — naming, release candidates, hotfixes, maintenance lines — is
-[docs/BRANCHING_STRATEGY.md](docs/BRANCHING_STRATEGY.md).
+[docs/governance/branching.md](docs/governance/branching.md).
 
 `main` enforces this: direct pushes are rejected, the checks below are
 required, every review thread must be resolved, and merges are squash-only.
 Every pull request needs at least one human approval — from a maintainer or an
 Organization Admin — and the final merge is performed by an Organization
 Admin. The rules and the reasoning behind each are in
-[docs/REPOSITORY_GOVERNANCE.md](docs/REPOSITORY_GOVERNANCE.md).
+[docs/governance/repository.md](docs/governance/repository.md).
 
 ## Before opening a pull request
 

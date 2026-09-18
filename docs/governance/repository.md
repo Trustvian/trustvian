@@ -1,7 +1,7 @@
 # Repository Governance
 
 How the branching model in
-[BRANCHING_STRATEGY.md](BRANCHING_STRATEGY.md) is enforced by GitHub, rather
+[branching.md](branching.md) is enforced by GitHub, rather
 than by everyone remembering it.
 
 The model is: short-lived branches, pull requests into `main`, squash merge,
@@ -68,7 +68,7 @@ AI Agent
 Rulesets enforce the *branch* half of this: nobody, of any role, can push to
 `main`, force-push it, or delete it. The *role* half — that an agent does not
 administer governance — is enforced by which credential the agent holds, and
-is documented in [Agent Governance](AGENT_GOVERNANCE.md#credential-isolation).
+is documented in [Agent Governance](agents.md#credential-isolation).
 
 ## The pull request flow
 
@@ -127,8 +127,11 @@ Checks are **strict**: a branch must be up to date with `main` before it can
 merge, so the checks that pass are the checks for the code that will actually
 land.
 
-Nightly jobs are excluded on purpose — see
-[Branch Protection](BRANCHING_STRATEGY.md#branch-protection).
+Nightly jobs (`PostgreSQL stress tier`, `Reference deployment smoke test`,
+`Reference deployment recovery drill`) are **not** required checks. They are
+scheduled tiers, and requiring them would block every pull request on work
+that is valuable as a trend rather than as a per-change gate. The release
+checklist consults them instead.
 
 ## Review authority
 
@@ -197,7 +200,7 @@ complete because a document describes it.
 
 Once a second reviewing identity exists — a maintainer, or the dedicated agent
 identity described in
-[Agent Governance](AGENT_GOVERNANCE.md#credential-isolation) — the bypass entry
+[Agent Governance](agents.md#credential-isolation) — the bypass entry
 should be removed and the two approval sub-settings switched on. At three or
 more maintainers, raise approvals to `2` for changes touching
 `internal/policy`, `internal/baseline`, `internal/trust`, or
@@ -230,7 +233,7 @@ token permission** (`Contents: write`). An agent that can push a working
 branch into this repository can also merge. Only an agent working from a fork,
 with no write access here at all, is technically unable to merge — the
 analysis and the trade-off are in
-[Agent Governance](AGENT_GOVERNANCE.md#merge-capability-what-a-token-permission-actually-grants).
+[Agent Governance](agents.md#merge-capability-what-a-token-permission-actually-grants).
 
 While an agent runs with the Organization Admin's own unrestricted credential,
 GitHub sees the admin's authority and the boundary is compliance rather than
@@ -317,7 +320,7 @@ PR -> CI -> >=1 human approval -> conversations resolved
 Using the bypass is an exception that should be visible and rare, and it
 should be removed once a second reviewing identity exists. AI agents must
 never use it, whatever credential they hold — see
-[Agent Governance](AGENT_GOVERNANCE.md).
+[Agent Governance](agents.md).
 
 ### Why the tag bypass is different
 
@@ -334,41 +337,16 @@ than a general protection bypass.
 ## Release tags
 
 Tags matching `v*` are protected against **creation**, deletion, update, and
-force-move. Only a human Organization Admin can do any of those.
+force-move. A human Organization Admin is the authorized bypass actor; every
+other identity is refused, including `GITHUB_TOKEN`.
 
-That makes existing release tags immutable in the strict sense: `v0.9.0`,
+That makes published tags immutable in the strict sense: `v0.9.0`,
 `v0.9.0-rc.1`, `rc.2`, and `rc.3` cannot be moved or deleted by any normal
-actor. A version number that was published — even to a failed pipeline — is
-spent.
+actor, and no workflow can mint a new one.
 
-Restricting creation also closes a path that was previously open: no workflow
-can mint a release tag. `release.yml` holds `contents: write` in its publish
-job, which would otherwise be enough to push one; it is not an Organization
-Admin, so the ruleset refuses it.
-
-This is compatible with the release pipeline because the pipeline never
-created tags in the first place:
-
-```text
-Human Organization Admin
-        |
-        v
-pushes an immutable v* tag        <- the only tag-creation path
-        |
-        v
-release.yml triggers on push: tags: ["v*"]
-        |
-        +-- re-run the full gate set against the tagged source
-        +-- build the release artifact matrix
-        +-- publish a GitHub Release (gh release create --verify-tag)
-        +-- build and push the container image to GHCR
-        +-- generate SBOM and provenance attestations
-        +-- sign keylessly with Cosign
-```
-
-`--verify-tag` means the release step fails rather than inventing a tag that
-does not exist, so the human's tag push stays the single source of release
-authority.
+What a tag *means* once it exists — candidate immutability, same-SHA
+promotion, what a human must do rather than automation — is
+[Release Governance](releases.md).
 
 ## GitHub Actions privilege
 
@@ -428,7 +406,9 @@ organization-level policy.
 
 ## Related
 
-- [Branching Strategy](BRANCHING_STRATEGY.md) — the model these rules enforce
-- [Agent Governance](AGENT_GOVERNANCE.md) — human vs. agent authority, and credential isolation
-- [Release Guide](release-guide.md) — producing and verifying a release
-- [CONTRIBUTING.md](../CONTRIBUTING.md) — the local gates
+- [Branching Strategy](branching.md) — the model these rules enforce
+- [Release Governance](releases.md) — release and tag authority
+- [Agent Governance](agents.md) — human vs. agent authority, and credential isolation
+- [Commit Convention](../COMMIT_CONVENTION.md) — commit and pull request titles
+- [Release Guide](../release-guide.md) — producing and verifying a release
+- [CONTRIBUTING.md](../../CONTRIBUTING.md) — the local gates

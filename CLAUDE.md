@@ -140,7 +140,7 @@ If a task appears to require violating one of these invariants, STOP and
 request explicit human intervention instead.
 
 This section is a reminder, not a security boundary — see
-`docs/AGENT_GOVERNANCE.md` for the credential isolation that is.
+`docs/governance/agents.md` for the credential isolation that is.
 
 ## Commit Messages
 

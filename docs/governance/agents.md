@@ -214,7 +214,7 @@ Changing the default branch away from `main` is a human-administrator
 governance operation. Agents must not perform it.
 
 The enforcing configuration is documented in
-[REPOSITORY_GOVERNANCE.md](REPOSITORY_GOVERNANCE.md).
+[repository.md](repository.md).
 
 ## Pull Request Requirements
 
@@ -343,7 +343,7 @@ Admin: pull-request-only on `main`, and unrestricted on `v*` tags so that a
 human can create a release. Neither is available through an agent credential,
 and an agent must never use one even while running under a credential that
 technically holds it. Their scope and the reason each exists are in
-[Repository Governance](REPOSITORY_GOVERNANCE.md#bypass).
+[Repository Governance](repository.md#bypass).
 
 The distinction still worth keeping: a bypass applies whenever its holder
 acts, while editing a ruleset is visible in the repository's rule history and
@@ -371,6 +371,8 @@ Technical capability is not authorization.
 
 ## Related
 
-- [Repository Governance](REPOSITORY_GOVERNANCE.md) — the enforced configuration
-- [Branching Strategy](BRANCHING_STRATEGY.md) — the development model
-- [CLAUDE.md](../CLAUDE.md) — the in-repository reminder for coding agents
+- [Repository Governance](repository.md) — the enforced configuration
+- [Release Governance](releases.md) — release and tag authority
+- [Branching Strategy](branching.md) — the development model
+- [CLAUDE.md](../../CLAUDE.md) — the in-repository reminder for coding agents
+- [AGENTS.md](../../AGENTS.md) — the vendor-neutral agent rules

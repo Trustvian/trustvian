@@ -209,7 +209,7 @@ Trustvian is pre-`v1.0`, and `0.x` is not permission to break things quietly.
 Public API, configuration, and storage-format changes are called out whatever
 the version number says — that discipline is what makes a stable `v1.0.0`
 reachable. See
-[Branching Strategy](BRANCHING_STRATEGY.md#pre-v10-discipline).
+[Branching Strategy](governance/branching.md#pre-v10-discipline).
 
 ## Pull Request Titles
 
@@ -315,5 +315,5 @@ chore: updates         `chore` used as an escape hatch, and vacuous
 ## Related
 
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — the local gates and module layout
-- [Branching Strategy](BRANCHING_STRATEGY.md) — branches, releases, and tags
-- [Repository Governance](REPOSITORY_GOVERNANCE.md) — review and merge authority
+- [Branching Strategy](governance/branching.md) — branches, releases, and tags
+- [Repository Governance](governance/repository.md) — review and merge authority
