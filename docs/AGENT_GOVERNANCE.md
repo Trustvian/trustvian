@@ -71,10 +71,12 @@ AI Agent
 - Disabling, deleting, or weakening the `main` ruleset or any branch
   protection.
 - Adding any agent, bot, automation identity, or its own credential as a
-  ruleset bypass actor.
+  ruleset bypass actor — or **using** an existing bypass entry, including the
+  Organization Admin bypass, when running under a credential that holds it.
 - Changing the repository default branch away from `main`.
-- Deleting, moving, or force-updating a release tag; reusing a failed release
-  candidate's version number.
+- Creating, deleting, moving, or force-updating a release tag; reusing a
+  failed release candidate's version number. Tag creation is restricted to a
+  human Organization Admin.
 - Deleting a GitHub Release, or repairing a failed release by mutating
   published history.
 - Approving or merging **any** pull request into `main` — its own or anyone
@@ -89,6 +91,11 @@ ask a human — not to find a way.
 ## Credential Isolation
 
 The security boundary is the credential, not this document.
+
+**Status: PENDING.** No dedicated agent identity exists yet. Until one does,
+agents run under a human administrator's credential, every restriction in this
+document is compliance rather than enforcement, and the known limitation below
+applies in full.
 
 An agent should authenticate as its own least-privilege identity, distinct
 from any human administrator's:
@@ -331,9 +338,16 @@ Recovery from a governance mistake is a deliberate human action: a signed-in
 administrator editing the ruleset in the GitHub UI, where the change is
 recorded in the repository's rule history.
 
-It is deliberately **not** a standing bypass entry, and deliberately not
-available through an agent credential. A bypass actor applies silently to
-every push; editing a ruleset is visible, reversible, and has to be chosen.
+A scoped bypass entry also exists on both rulesets, held by Organization
+Admin: pull-request-only on `main`, and unrestricted on `v*` tags so that a
+human can create a release. Neither is available through an agent credential,
+and an agent must never use one even while running under a credential that
+technically holds it. Their scope and the reason each exists are in
+[Repository Governance](REPOSITORY_GOVERNANCE.md#bypass).
+
+The distinction still worth keeping: a bypass applies whenever its holder
+acts, while editing a ruleset is visible in the repository's rule history and
+has to be chosen deliberately. Prefer the second for anything structural.
 
 ## Security Invariants
 

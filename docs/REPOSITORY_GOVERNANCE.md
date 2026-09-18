@@ -20,7 +20,7 @@ Two repository rulesets and three repository settings.
 | Ruleset | Applies to | Effect |
 |---|---|---|
 | `Protect main` | `refs/heads/main` | Pull request, checks, squash, linear history, no force push, no deletion |
-| `Protect release tags` | `refs/tags/v*` | No deletion, no update, no force-move |
+| `Protect release tags` | `refs/tags/v*` | No creation, deletion, update, or force-move — except by an Organization Admin |
 
 | Repository setting | Value |
 |---|---|
@@ -144,70 +144,66 @@ final merger. The policy requires one valid human approval plus an admin
 merge; it does not require two separate people. A maintainer who is not an
 Organization Admin may approve but must not perform the merge.
 
-Organization Admin status is an additional authorization to merge, never
-permission to bypass. An admin's merge must satisfy the same pull request,
-checks, approval, and conversation-resolution rules as anyone else's.
+Organization Admin status is an additional authorization to merge. It is not
+*intended* as permission to skip the gates — but as of the current
+configuration it technically is one, through a scoped bypass described under
+[Bypass](#bypass). The normal path runs through the gates; the bypass is an
+exception, not the route.
 
-### Enforced value today: `0`
+### Enforced value: `1`
 
-The policy above is `1`. The **enforced** setting is `0`, and the gap is
-deliberate and documented rather than hidden.
+One approving review is required, and it is enforced by the ruleset — not
+merely policy. GitHub does not permit a pull request's author to approve their
+own, so this is a genuine second-party check for any pull request whose author
+is not the reviewer.
 
-Trustvian has exactly one human: a single Organization Admin who is also the
-only collaborator, with no other maintainers and no teams. GitHub does not
-permit a pull request's author to approve their own pull request. Setting the
-requirement to `1` today would make every pull request permanently unmergeable
-— including any that fixes the setting — because no second human exists to
-supply the approval.
+`require_extra_approval_for_unattributed_changes` and
+`require_last_push_approval` are both **off**. The first would raise the
+effective requirement to two approvals for any commit whose author cannot be
+linked to a GitHub account — including the `Co-Authored-By:` trailers this
+repository's history carries. The second requires the most recent push to be
+approved by someone other than the pusher, which is correct once a second
+reviewer exists and unsatisfiable before then. Both are listed in the target
+table below.
 
-Raising it is therefore blocked on a reviewer existing, not on anyone's
-opinion. Until then the one-approval rule is **procedural, not enforced**, and
-this document does not claim otherwise.
+### The single-maintainer consequence
 
-`require_extra_approval_for_unattributed_changes` is disabled for the same
-reason. GitHub enables it by default; with a single maintainer it silently
-raises the effective requirement to one approval for any commit whose author
-cannot be linked to a GitHub account — including the `Co-Authored-By:`
-trailers this repository's history carries.
+Trustvian has one human. A pull request that human authors has no eligible
+reviewer, because self-approval is impossible. Under a one-approval rule that
+pull request is unmergeable on the normal path — which is precisely why the
+scoped bypass below exists.
 
-`require_last_push_approval` is likewise disabled. It is inert below one
-required approval, and when the requirement is raised it must be evaluated
-against the single-admin case rather than switched on reflexively: it demands
-that the most recent push be approved by someone *other than* the pusher,
-which is correct for agent-authored work and impossible for an admin's own
-branch.
+This is a stopgap, not the design. It disappears when a second reviewing
+identity exists; see [Current and target state](#current-and-target-state).
 
-### Making it enforceable
+## Current and target state
 
-Two changes, in this order:
+| Control | Current | Target |
+|---|---|---|
+| Pull request required | YES | YES |
+| Required CI checks | 8, strict | 8, strict |
+| Required human approvals | 1 | 1 |
+| Conversation resolution | YES | YES |
+| Force push / deletion of `main` | DENIED | DENIED |
+| Squash-only, linear history | YES | YES |
+| Organization Admin PR bypass | PRESENT (stopgap) | REMOVED |
+| Require last push approval | off | on |
+| Extra approval for unattributed changes | off | on |
+| Dedicated agent identity | **PENDING** | YES |
+| Agent merge capability | not yet isolated | NO |
 
-1. **Give the agent its own identity.** A machine account with a
-   least-privilege token (see
-   [Agent Governance](AGENT_GOVERNANCE.md#credential-isolation)) makes
-   agent-authored pull requests arrive from a different login, so the
-   Organization Admin's approval becomes a genuine second-party review.
-   Prefer the fork-based variant: it is the only arrangement in which the
-   agent is technically unable to merge, rather than merely forbidden to.
-2. **Then set required approvals to `1`.** Every agent-authored change is
-   gated behind human review from that point on.
+`Current` records only what GitHub reports. Nothing in that column is marked
+complete because a document describes it.
 
-After step 2, a pull request the Organization Admin wrote *by hand* still has
-no eligible reviewer and is intentionally unmergeable. That is the correct
-outcome of a one-approval policy with one human, and it is resolved by adding
-a second maintainer — not by adding a bypass.
-
-| Setting | Today | After step 1 | With a second maintainer |
-|---|---|---|---|
-| Required approving reviews | `0` | `1` | `1` |
-| Require last push approval | off | off | on |
-| Extra approval for unattributed changes | off | off | on |
-
-At three or more maintainers, raise approvals to `2` for changes touching
+Once a second reviewing identity exists — a maintainer, or the dedicated agent
+identity described in
+[Agent Governance](AGENT_GOVERNANCE.md#credential-isolation) — the bypass entry
+should be removed and the two approval sub-settings switched on. At three or
+more maintainers, raise approvals to `2` for changes touching
 `internal/policy`, `internal/baseline`, `internal/trust`, or
 `.github/workflows/release.yml` — the decision path and the publishing path.
-That is the point at which `CODEOWNERS` becomes worth adding; with one
-maintainer it would name the same person on every line and require an
-approval they cannot give.
+That is also the point at which `CODEOWNERS` becomes worth adding; with one
+maintainer it would name the same person on every line.
 
 ## Merge authority
 
@@ -277,31 +273,102 @@ CI itself is allowed to do.
 
 ## Bypass
 
-**No bypass actors are configured on either ruleset.** Administrators are
-subject to the same rules as everyone else.
+Both rulesets grant a bypass entry to **Organization Admin**, with different
+scopes:
 
-This is the deliberate choice. The checks exist because `v0.9.0` needed three
-release candidates to ship, and each failure was something no one predicted:
-an action version that never existed, then a container repository name that
-could not be lowercase. A gate that the person most likely to be in a hurry
-can step around would not have caught either.
+| Ruleset | Bypass actor | Mode | Effect |
+|---|---|---|---|
+| `Protect main` | Organization Admin | `pull_request` | May merge a pull request that does not satisfy the rules. **Cannot** push, force-push, or delete `main` directly — that is not a pull request |
+| `Protect release tags` | Organization Admin | `always` | May create, and if necessary correct, `v*` tags |
 
-The escape hatch is editing the ruleset itself — visible in the repository's
-rule history, deliberate, and reversible — rather than an exemption that
-applies invisibly to every push.
+Read `pull_request` mode precisely: it is not an exemption from the pull
+request *path*, it is an exemption available *within* it. Direct pushes to
+`main` remain impossible for everyone, administrators included. What an
+administrator can do is complete a merge that the approval or check rules
+would otherwise hold.
+
+### Why the `main` bypass exists
+
+It is a **single-maintainer escape hatch**, and nothing more:
+
+```text
+Organization Admin authors a pull request
+        |
+        v
+cannot self-approve  (GitHub forbids it)
+        |
+        v
+no second human reviewer exists
+        |
+        v
+PR-only bypass allows the merge to complete
+```
+
+Without it, a one-approval rule and a one-person project mean nothing merges
+at all — including the change that would fix the situation.
+
+It is **not** the normal merge path. The normal path is unchanged:
+
+```text
+PR -> CI -> >=1 human approval -> conversations resolved
+   -> Human Organization Admin final merge
+```
+
+Using the bypass is an exception that should be visible and rare, and it
+should be removed once a second reviewing identity exists. AI agents must
+never use it, whatever credential they hold — see
+[Agent Governance](AGENT_GOVERNANCE.md).
+
+### Why the tag bypass is different
+
+The tag bypass is `always` rather than `pull_request` for a structural reason:
+**a tag is not a pull request**, so `pull_request` mode would grant nothing at
+all on a tag ruleset.
+
+With `creation` now restricted, some actor has to be able to create a release
+tag, or releases stop entirely. That authority is deliberately given to a
+human Organization Admin and to nobody else — not to CI, not to
+`GITHUB_TOKEN`, not to an agent. It is controlled release authority rather
+than a general protection bypass.
 
 ## Release tags
 
-`refs/tags/v*` cannot be deleted, updated, or force-moved, by anyone.
+Tags matching `v*` are protected against **creation**, deletion, update, and
+force-move. Only a human Organization Admin can do any of those.
 
-Creation is *not* restricted. `release.yml` is triggered by a tag push
-(`on: push: tags: ["v*"]`); it does not create tags itself, so restricting
-creation would block releases while protecting nothing that immutability does
-not already cover.
+That makes existing release tags immutable in the strict sense: `v0.9.0`,
+`v0.9.0-rc.1`, `rc.2`, and `rc.3` cannot be moved or deleted by any normal
+actor. A version number that was published — even to a failed pipeline — is
+spent.
 
-This is why `v0.9.0-rc.1` and `v0.9.0-rc.2` are still in the history. Both
-failed. Both stay — a version number that was published, even to a failed
-pipeline, is spent.
+Restricting creation also closes a path that was previously open: no workflow
+can mint a release tag. `release.yml` holds `contents: write` in its publish
+job, which would otherwise be enough to push one; it is not an Organization
+Admin, so the ruleset refuses it.
+
+This is compatible with the release pipeline because the pipeline never
+created tags in the first place:
+
+```text
+Human Organization Admin
+        |
+        v
+pushes an immutable v* tag        <- the only tag-creation path
+        |
+        v
+release.yml triggers on push: tags: ["v*"]
+        |
+        +-- re-run the full gate set against the tagged source
+        +-- build the release artifact matrix
+        +-- publish a GitHub Release (gh release create --verify-tag)
+        +-- build and push the container image to GHCR
+        +-- generate SBOM and provenance attestations
+        +-- sign keylessly with Cosign
+```
+
+`--verify-tag` means the release step fails rather than inventing a tag that
+does not exist, so the human's tag push stays the single source of release
+authority.
 
 ## GitHub Actions privilege
 
@@ -353,10 +420,9 @@ organization-level policy.
 
 | Not configured | Why |
 |---|---|
-| `CODEOWNERS` | One maintainer; it would name the same person everywhere and, combined with required code-owner review, be unsatisfiable |
+| `CODEOWNERS` | One maintainer; it would name the same person everywhere and, combined with required code-owner review, be unsatisfiable. Deferred, not rejected |
 | Required signed commits | Worth adopting, but it must not land in the same change as everything else — a signing misconfiguration would block all work at once |
 | Organization-level rulesets | Requires organization administration scope; repository rulesets cover the repository that exists |
-| Restricting who may push tags | Covered by immutability; restricting creation would block the release workflow's trigger |
 | Auto-merge | It would remove the deliberate human merge action this model is built around |
 | Merge queue | GitHub's automation would become the effective final merger |
 
