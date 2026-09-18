@@ -140,6 +140,27 @@ request explicit human intervention instead.
 This section is a reminder, not a security boundary — see
 `docs/AGENT_GOVERNANCE.md` for the credential isolation that is.
 
+## Merge Authority
+
+Claude may prepare a pull request. Claude may never merge one into `main`.
+
+Every pull request into `main` needs at least one human approval, from an
+authorized maintainer or an Organization Admin. The final merge action is
+reserved for a human Trustvian Organization Admin, who may be the same person
+who reviewed it.
+
+Even when Claude is authenticated using an administrator credential,
+technical capability does not constitute authorization.
+
+When a pull request becomes merge-ready, STOP and report:
+
+```text
+WAITING FOR HUMAN ORGANIZATION ADMIN MERGE
+```
+
+Do not merge it, do not enable auto-merge on it, and do not configure a
+bypass around the requirement.
+
 ## Implementation Strategy
 
 Do not implement large features in one step.
