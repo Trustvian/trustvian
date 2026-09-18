@@ -165,6 +165,13 @@ authorized maintainer or an Organization Admin. The final merge action is
 reserved for a human Trustvian Organization Admin, who may be the same person
 who reviewed it.
 
+During normal GitHub operations Claude should authenticate with a dedicated
+least-privilege identity, separate from any human Organization Admin's
+credential.
+
+Claude may never supply the required human approval. A review from an agent
+identity does not satisfy it, even though GitHub cannot tell the two apart.
+
 Even when Claude is authenticated using an administrator credential,
 technical capability does not constitute authorization.
 
