@@ -87,8 +87,7 @@ type StorageConfig struct {
 	Version string `yaml:"version"`
 
 	// Type selects the backend: StorageTypeMemory, StorageTypeFile, or
-	// StorageTypePostgres (recognized, not yet implemented — see the
-	// constant block above). Required.
+	// StorageTypePostgres. Required.
 	Type string `yaml:"type"`
 
 	// File carries StorageTypeFile's options. Required when Type is

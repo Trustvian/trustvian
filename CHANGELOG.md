@@ -40,6 +40,45 @@ actually depend on.
 
 ### Added
 
+- **Every `Engine` option is now usable from outside the module.** Two
+  were exported but uncallable by third-party code, because their
+  parameter types live under `internal/` and no public path produced
+  one:
+
+  - `WithTrustConfig` gains `config.TrustConfig` and
+    `config.CompileTrust`, following the pattern `CompilePolicy`,
+    `CompileStorage`, and `CompileAnomaly` already established. Risk
+    thresholds are pointers, so an unset one keeps its default rather
+    than silently becoming zero — a zero threshold would classify every
+    result as Critical.
+  - `WithContextRisk` now takes `func(trustvian.StableFeatures) float64`.
+    `StableFeatures` is a new public type carrying the six stable
+    dimensions of an event and nothing per-occurrence. See
+    [ADR 0021](docs/adr/0021-public-stable-features-boundary.md).
+
+  `examples/configured-engine` configures all five options from a
+  separate Go module, which is what proves the path works.
+
+  **Source-breaking for in-module callers of `WithContextRisk`**, whose
+  signature changed. Done deliberately before the `v1` freeze, when it
+  costs nothing, rather than after it, when it would cost a major
+  version. No in-repository caller used the option.
+
+### Changed
+
+- Documented explicitly that **custom `Store` implementations are not a
+  v1 extension point**. `store.Store` references internal types and
+  stays internal; persistence is selected through
+  `config.StorageConfig` from the shipped backends. Also documented that
+  a compiled store is owned by the caller — an `Engine` never closes one
+  it was handed, and there is no `Engine.Close`.
+
+- `Engine`'s documentation claimed full configuration required code
+  inside the module. That stopped being true when `CompilePolicy`,
+  `CompileAnomaly`, and `CompileStorage` shipped; it is now accurate.
+  A `config.StorageConfig` field also still described PostgreSQL as
+  recognized but unimplemented, two years after it shipped.
+
 - **A compatibility contract covering every observable surface**, not
   just the Go API: [docs/compatibility.md](docs/compatibility.md). The
   `v0.1.0` promise in this file covers `event.Event`, `Result`, and

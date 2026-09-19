@@ -12,7 +12,7 @@ a separate Go module. Note this means the shipped [OTel Collector
 processor](#the-otel-collector-processor) does *not* use it — see that
 section for why it necessarily carries its own parallel mapping code
 instead. See [Go SDK Guide § the public/internal boundary
-today](sdk-guide.md#the-publicinternal-boundary-today).
+today](sdk-guide.md#configuring-from-outside-the-module).
 
 ## What it does
 

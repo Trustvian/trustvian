@@ -254,6 +254,36 @@ func CompileAnomaly(cfg AnomalyConfig) (anomaly.Config, error) {
 // the snippet above is correct for every backend and is what
 // cmd/trustvian does. A long-lived process that never closes the pool
 // leaks connections on shutdown; see docs/storage-guide.md § Lifecycle.
+// CompileTrust validates cfg and translates it into the internal
+// trust configuration value trustvian.WithTrustConfig accepts.
+//
+// A nil threshold keeps the built-in default, so
+// CompileTrust(TrustConfig{Version: TrustSchemaVersionV1}) returns
+// exactly the defaults and changes no behavior. Validation is the same
+// discipline the other Compile functions apply: a configuration that
+// cannot produce a coherent risk ladder fails here, with the offending
+// field named, rather than silently classifying every Result into one
+// bucket at runtime.
+func CompileTrust(cfg TrustConfig) (trust.Config, error) {
+	if err := cfg.Validate(); err != nil {
+		return trust.Config{}, err
+	}
+
+	out := trust.DefaultConfig()
+
+	if cfg.MediumThreshold != nil {
+		out.MediumThreshold = *cfg.MediumThreshold
+	}
+	if cfg.HighThreshold != nil {
+		out.HighThreshold = *cfg.HighThreshold
+	}
+	if cfg.CriticalThreshold != nil {
+		out.CriticalThreshold = *cfg.CriticalThreshold
+	}
+
+	return out, nil
+}
+
 func CompileStorage(cfg StorageConfig) (store.Store, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err

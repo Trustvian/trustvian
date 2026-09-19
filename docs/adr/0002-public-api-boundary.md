@@ -64,7 +64,7 @@ type lives under `internal/`.
 - External customization of policy/thresholds/storage is not possible
   today from a separate module — documented explicitly in
   [README.md](../../README.md) and
-  [Go SDK Guide § the public/internal boundary today](../sdk-guide.md#the-publicinternal-boundary-today)
+  [Go SDK Guide § the public/internal boundary today](../sdk-guide.md#configuring-from-outside-the-module)
   rather than left as a silent gap.
 - When an external consumer's need is real (not hypothetical), the
   fix is additive: move the needed type(s) to a public package. No

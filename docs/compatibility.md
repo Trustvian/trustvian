@@ -41,6 +41,7 @@ here and in its own documentation.
 | `Option` functions | STABLE | Existing options keep working | Additional options | Major |
 | `alert` package exports | STABLE | `Alert`, `Severity`, `Rule`, `Condition`, `Evaluate`, `Sink`, `WebhookSink` | Additive fields and options | Major |
 | `config` exported types and `Compile*` functions | STABLE | Existing documents keep compiling | New optional fields, new document types | Major |
+| `StableFeatures` (root package) | STABLE | Field shapes; handed to a `WithContextRisk` callback | New fields | Major |
 | Exported sentinel errors | STABLE | An error identity checked with `errors.Is` keeps matching the condition it names | New sentinels | Major |
 | Exported enum-like constants | STABLE WITH DEPRECATION | Existing values keep their meaning | New values — **consumers must tolerate unknown values** | Major to remove a value |
 | Configuration schema (`policy`, `alerts`, `anomaly`, `storage`) | STABLE | A valid `v1` document keeps loading across `v1.x` | New optional fields; a new schema version alongside `v1` | Major, or a new schema version |
@@ -95,14 +96,50 @@ the [behavioral](#behavioral-compatibility) rules below.
 The public surface is the root package, `event`, `alert`, and `config`.
 Everything else is `internal/` and carries no promise.
 
-Two properties consumers may rely on, both already true:
+Three properties consumers may rely on, all already true:
 
+- **Every `Engine` option is configurable from outside the module.**
+  Four take a value produced by the `config` package —
+  `CompilePolicy`, `CompileStorage`, `CompileAnomaly`, `CompileTrust` —
+  and `WithContextRisk` takes a callback over the public
+  `StableFeatures` type.
 - A value obtained from an exported function may be passed to another
-  exported function without naming its type. This is what makes
-  `config.CompilePolicy` → `trustvian.WithPolicy` work from outside the
-  module, and it keeps working.
+  exported function without naming its type. That is what makes
+  `config.CompilePolicy` → `trustvian.WithPolicy` work, and it keeps
+  working.
 - Reading exported fields off a `Result` requires no import beyond the
   root package.
+
+Some exported signatures name types defined under `internal/`. That is
+an intentional facade, not an oversight: the `config` package produces
+every such value, so a caller never has to name one. It does mean a
+change to one of those types' *shapes* is breaking for external callers
+even though the type is internal, and it is treated that way.
+
+### Persistence is not an extension point
+
+Supplying a custom `Store` implementation is **not supported in v1**.
+`store.Store`'s methods reference four internal types, so an external
+module cannot implement it — deliberately, since making it public would
+freeze `Baseline`, the stateful core of the engine, for the life of the
+major version. Persistence is *selected* through `config.StorageConfig`
+from the backends Trustvian ships: memory, file, and PostgreSQL.
+
+### Resource ownership
+
+A store compiled from configuration is owned by the caller. An `Engine`
+never closes a store it was given, because it did not open it. Where a
+compiled store holds resources, the caller closes it:
+
+```go
+if c, ok := store.(io.Closer); ok {
+	defer c.Close()
+}
+```
+
+There is deliberately no `Engine.Close`: an engine closing a resource it
+does not own invites double-closes. If that changes, it changes in a
+major version.
 
 Consumers must **not** rely on: exhaustively switching over enum-like
 constants without a default branch, or implementing any interface whose
@@ -147,8 +184,8 @@ Note the gap that follows from this: the CLI has **no machine-readable
 output mode today** — `analyze` prints a formatted summary, not JSON. So
 automation that needs structured results has to use the Go SDK rather
 than the CLI. Adding a structured output mode would be additive and
-allowed in a minor; it is listed as a
-[Task 048 input](#task-048-public-api-review-inputs).
+allowed in a minor; it is listed under
+[public API review outcome](#public-api-review-outcome).
 
 ## Environment variables
 
@@ -331,26 +368,26 @@ deliberately narrow. Such a change must carry:
 This is an exception for fixing exploitable defects, not a route around
 the contract. "It is cleaner this way" is not a security rationale.
 
-## Task 048 public API review inputs
+## Public API review outcome
 
-This contract defines the rules. It deliberately does not change any
-surface. The following were found while writing it and should be decided
-**before** the public surface is frozen, because each becomes expensive
-to change once `v1.0` ships. Evidence, not opinion:
+The public surface was reviewed against this contract before the `v1`
+freeze. Four items were decided:
 
-| # | Surface | Evidence | Question for the freeze |
-|---|---|---|---|
-| 1 | `Option` functions name `internal/` types — `WithPolicy(policy.Policy)`, `WithStore(store.Store)`, `WithAnomalyConfig(anomaly.Config)`, `WithTrustConfig(trust.Config)`, `WithContextRisk(func(features.StableFeatures) float64)` | `go doc .` | Under this contract a change to `policy.Policy`'s shape is breaking for external callers even though the type is `internal/`. Accept that, or move the extension points? |
-| 2 | External consumers cannot implement `store.Store` | The interface is `internal/`; `config.CompileStorage` is the only way to obtain one | Is "no custom storage backend without forking" the intended `v1` position? |
-| 3 | Store lifecycle is a type assertion, not a contract | `postgres.Store` implements `io.Closer`; the documented pattern is `if c, ok := s.(io.Closer); ok` (`config/compile.go`) | Should closing be part of the promised surface rather than a convention? |
-| 4 | No machine-readable CLI output | `cmd/trustvian/analyze.go` prints a formatted summary | Ship a structured output mode before freezing CLI expectations, or state that the SDK is the automation path? |
-| 5 | `scripts` appears in `go list ./...` | The directory holds only `_test.go` files, so nothing is importable | Cosmetic; confirm it needs no action |
+| Finding | Decision |
+|---|---|
+| `WithTrustConfig` had no public path — exported but uncallable from outside the module | Fixed: `config.TrustConfig` + `config.CompileTrust` |
+| `WithContextRisk`'s callback named an internal type, so it could not be written externally | Fixed: the callback takes the public `StableFeatures` |
+| Custom `Store` implementations | Not a v1 extension point; documented above |
+| Store lifecycle via `io.Closer` | Caller-owned; documented above, no `Engine.Close` |
 
-None of these is resolved here. Task 046's own follow-up — that an actor
-exceeding 512 fingerprint identities silently stops learning new ones,
-with nothing surfacing it — is a behavioral question rather than an API
-one, and is recorded in
-[ADR 0019](adr/0019-bounded-fingerprint-admission.md).
+Two remain open by choice, neither blocking:
+
+- **No machine-readable CLI output.** `analyze` prints a formatted
+  summary; automation uses the SDK. Adding a structured mode later is
+  additive and allowed in a minor.
+- **An actor at the fingerprint admission bound** stops learning new
+  identities with nothing surfacing it. A behavioral question, recorded
+  in [ADR 0019](adr/0019-bounded-fingerprint-admission.md).
 
 ## Related
 

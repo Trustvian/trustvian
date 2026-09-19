@@ -39,9 +39,37 @@ func WithTrustConfig(cfg trust.Config) Option {
 }
 
 // WithContextRisk replaces the function used to derive a deterministic
-// ContextRisk penalty (see trust.Compute) from an event's stable
-// features. The default always returns 0 (no context penalty). fn must
-// be pure and safe for concurrent use — Engine calls it on every Analyze.
-func WithContextRisk(fn func(features.StableFeatures) float64) Option {
-	return func(e *Engine) { e.contextRisk = fn }
+// context-risk penalty from an event's stable features — a statement
+// that some kinds of operation are inherently sensitive regardless of
+// how familiar they have become. The returned value is clamped to
+// [0, 1] and reduces the trust score multiplicatively; the default
+// always returns 0, applying no penalty.
+//
+// This is the one behavioral input Trustvian does not learn: a context
+// risk is configuration, not history, which is why repeating a
+// sensitive operation never erodes it.
+//
+// fn must be pure and safe for concurrent use — Engine calls it on
+// every Analyze, from whatever goroutine called Analyze.
+func WithContextRisk(fn func(StableFeatures) float64) Option {
+	return func(e *Engine) {
+		e.contextRisk = func(sf features.StableFeatures) float64 {
+			return fn(publicStableFeatures(sf))
+		}
+	}
+}
+
+// publicStableFeatures converts the internal feature representation
+// into the public one handed to a WithContextRisk callback. Feature
+// derivation itself stays in internal/features — this is a projection
+// at the public boundary, not a second implementation of it.
+func publicStableFeatures(sf features.StableFeatures) StableFeatures {
+	return StableFeatures{
+		ActorType:         sf.ActorType,
+		OperationCategory: sf.OperationCategory,
+		OperationName:     sf.OperationName,
+		TargetName:        sf.TargetName,
+		TargetCategory:    sf.TargetCategory,
+		Environment:       sf.Environment,
+	}
 }

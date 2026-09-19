@@ -20,17 +20,38 @@ import (
 // by multiple goroutines once constructed, since nothing mutates an
 // Engine's fields after NewEngine returns.
 //
-// Today, fully customizing an Engine (WithStore, WithPolicy,
-// WithAnomalyConfig, WithTrustConfig, WithContextRisk) requires code
-// living inside this module: their parameter types come from internal
-// packages, which Go does not allow a separate module to import. A
-// third-party caller can still construct Events, call Analyze and
-// Observe, and read every field of Result — the full read path works
-// with no restriction. Only supplying custom configuration from outside
-// this module does not, yet. Promoting Policy/Config to a public package
-// is a reasonable next step once an external consumer actually needs it;
-// doing so pre-emptively, with no such consumer yet, would be exactly
-// the speculative abstraction CLAUDE.md says to avoid.
+// An Engine is fully configurable from outside this module. Four of the
+// five options take a value produced by the config package, which is
+// public:
+//
+//	policy, err := config.CompilePolicy(policyCfg)   // WithPolicy
+//	store, err := config.CompileStorage(storageCfg)  // WithStore
+//	anomalyCfg, err := config.CompileAnomaly(cfg)    // WithAnomalyConfig
+//	trustCfg, err := config.CompileTrust(cfg)        // WithTrustConfig
+//
+// The fifth, WithContextRisk, takes a callback over StableFeatures,
+// which is a public type in this package. No internal package needs to
+// be imported to configure any of them.
+//
+// The option parameter types themselves are defined under internal/, so
+// a caller receives those values and passes them on without naming
+// them. That is deliberate: it keeps the engine's internal types free
+// to evolve while giving callers a complete configuration path. The
+// same arrangement lets a caller read every field of Result without
+// importing anything beyond this package.
+//
+// Persistence is selected through config.StorageConfig from the
+// backends Trustvian ships. Supplying a custom Store implementation is
+// not a supported extension point — see docs/compatibility.md.
+//
+// A store compiled from configuration is owned by the caller, not by
+// the Engine: an Engine never closes a store it was given. When the
+// compiled store holds resources (a PostgreSQL pool, an open file),
+// close it yourself:
+//
+//	if c, ok := store.(io.Closer); ok {
+//		defer c.Close()
+//	}
 type Engine struct {
 	store         store.Store
 	policy        policy.Policy
