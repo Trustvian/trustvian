@@ -236,7 +236,7 @@ downgrade to non-durable storage.
 
 `trust.Config` is the one config type this pattern has not yet reached
 — see [Go SDK Guide § the public/internal boundary
-today](sdk-guide.md#the-publicinternal-boundary-today) and the
+today](sdk-guide.md#configuring-from-outside-the-module) and the
 [Roadmap](ROADMAP.md) for the current state.
 
 **Why `internal/otel` is the only package that imports OpenTelemetry.**

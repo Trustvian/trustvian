@@ -7,6 +7,7 @@ import (
 
 	"github.com/trustvian/trustvian/alert"
 	"github.com/trustvian/trustvian/internal/policy"
+	"github.com/trustvian/trustvian/internal/trust"
 )
 
 // Sentinel errors, wrapped with fmt.Errorf and checked with errors.Is
@@ -43,6 +44,15 @@ var (
 	// threshold is — see anomaly.Config.LatencyZThreshold/
 	// FrequencyZThreshold's own "Must be > 0" doc comments.
 	ErrInvalidZThreshold = errors.New("config: z-threshold must be a finite number greater than 0")
+
+	ErrUnsupportedTrustVersion = errors.New("config: unsupported trust config version")
+	// ErrNonAscendingThresholds guards the one way a TrustConfig can be
+	// individually valid and collectively meaningless: thresholds that
+	// do not ascend leave a risk level unreachable, so a Result could
+	// never be classified into it. Each value is separately checked
+	// against ErrInvalidThreshold first; this is the relationship
+	// between them.
+	ErrNonAscendingThresholds = errors.New("config: trust thresholds must ascend: medium < high < critical")
 )
 
 // Bounds on config-authored input. Configuration is operator-authored
@@ -415,6 +425,48 @@ var validStorageTypes = map[string]bool{
 // caller can check a config without building a Store (which, for a file
 // or database backend, has real side effects — opening files, dialing a
 // database — that a pure validity check should not trigger).
+// Validate reports whether cfg is a usable trust configuration.
+//
+// Each threshold that is set must be a finite number in [0, 1], and the
+// three must ascend. A threshold left nil is not checked, because it is
+// not used: CompileTrust substitutes the built-in default for it, and
+// the defaults ascend by construction.
+func (cfg TrustConfig) Validate() error {
+	if cfg.Version != TrustSchemaVersionV1 {
+		return fmt.Errorf("%w: %q (supported: %q)", ErrUnsupportedTrustVersion, cfg.Version, TrustSchemaVersionV1)
+	}
+
+	if cfg.MediumThreshold != nil && !validThreshold(*cfg.MediumThreshold) {
+		return fmt.Errorf("medium_threshold: %w: %v", ErrInvalidThreshold, *cfg.MediumThreshold)
+	}
+	if cfg.HighThreshold != nil && !validThreshold(*cfg.HighThreshold) {
+		return fmt.Errorf("high_threshold: %w: %v", ErrInvalidThreshold, *cfg.HighThreshold)
+	}
+	if cfg.CriticalThreshold != nil && !validThreshold(*cfg.CriticalThreshold) {
+		return fmt.Errorf("critical_threshold: %w: %v", ErrInvalidThreshold, *cfg.CriticalThreshold)
+	}
+
+	// The ordering check runs against the values that will actually be
+	// used, defaults included — otherwise setting only one threshold
+	// could silently invert the ladder against the two it did not set.
+	effective := trust.DefaultConfig()
+	if cfg.MediumThreshold != nil {
+		effective.MediumThreshold = *cfg.MediumThreshold
+	}
+	if cfg.HighThreshold != nil {
+		effective.HighThreshold = *cfg.HighThreshold
+	}
+	if cfg.CriticalThreshold != nil {
+		effective.CriticalThreshold = *cfg.CriticalThreshold
+	}
+	if !(effective.MediumThreshold < effective.HighThreshold && effective.HighThreshold < effective.CriticalThreshold) {
+		return fmt.Errorf("%w: got medium=%v high=%v critical=%v",
+			ErrNonAscendingThresholds, effective.MediumThreshold, effective.HighThreshold, effective.CriticalThreshold)
+	}
+
+	return nil
+}
+
 func (cfg StorageConfig) Validate() error {
 	if cfg.Version != StorageSchemaVersionV1 {
 		return fmt.Errorf("%w: %q (supported: %q)", ErrUnsupportedStorageVersion, cfg.Version, StorageSchemaVersionV1)

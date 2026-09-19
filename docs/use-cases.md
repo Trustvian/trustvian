@@ -224,7 +224,7 @@ destination stays flagged **even once fully familiar** — see
 and the end-to-end proof in
 [`engine_test.go`'s `TestAnalyzeSensitiveTargetFloorEndToEnd`](../engine_test.go).
 That's a Go-SDK-only capability today (see
-[the public/internal boundary](sdk-guide.md#the-publicinternal-boundary-today)),
+[the public/internal boundary](sdk-guide.md#configuring-from-outside-the-module)),
 not yet reachable from the CLI.
 
 ## Valid identity, abnormal behavior

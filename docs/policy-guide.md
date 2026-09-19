@@ -13,7 +13,7 @@ touching the evaluator.
 > use the `config` package instead — see [§ Configuring a Policy from
 > outside this module](#configuring-a-policy-from-outside-this-module)
 > below — rather than needing this internal literal syntax at all. See
-> also [Go SDK Guide § the public/internal boundary today](sdk-guide.md#the-publicinternal-boundary-today).
+> also [Go SDK Guide § the public/internal boundary today](sdk-guide.md#configuring-from-outside-the-module).
 
 ## The types
 

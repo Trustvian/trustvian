@@ -44,6 +44,7 @@ as long as its own decision holds.
 | [0018](0018-production-store-boundary-and-postgresql-direction.md) | Production Store boundary and PostgreSQL direction | Accepted |
 | [0019](0019-bounded-fingerprint-admission.md) | Bounded fingerprint admission: refuse, never evict | Accepted |
 | [0020](0020-v1-compatibility-contract.md) | A repository-wide compatibility contract, not an API-only one | Accepted |
+| [0021](0021-public-stable-features-boundary.md) | A public stable-features view for the context-risk callback | Accepted |
 
 No ADR is currently Superseded or Deprecated. Several later ADRs build on
 earlier ones — 0006 and 0018 on 0004's narrow port, 0007/0008/0017 on 0002's

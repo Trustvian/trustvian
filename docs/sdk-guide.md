@@ -247,35 +247,101 @@ differentiation like the CLI examples in [Use Cases](use-cases.md).
 
 ```go
 trustvian.NewEngine(
-	trustvian.WithStore(customStore),
-	trustvian.WithPolicy(customPolicy),
-	trustvian.WithAnomalyConfig(customAnomalyConfig),
-	trustvian.WithTrustConfig(customTrustConfig),
-	trustvian.WithContextRisk(func(f features.StableFeatures) float64 { ... }),
+	trustvian.WithStore(store),              // config.CompileStorage
+	trustvian.WithPolicy(policy),            // config.CompilePolicy
+	trustvian.WithAnomalyConfig(anomalyCfg), // config.CompileAnomaly
+	trustvian.WithTrustConfig(trustCfg),     // config.CompileTrust
+	trustvian.WithContextRisk(contextRisk),  // a func(trustvian.StableFeatures) float64
 )
 ```
 
-### The public/internal boundary, today
+### Configuring from outside the module
 
-`WithPolicy`, `WithAnomalyConfig`, `WithTrustConfig`, and
-`WithContextRisk` take types (`policy.Policy`, `anomaly.Config`,
-`trust.Config`, `features.StableFeatures`) that live under `internal/`
-— an external module cannot spell any of these type names directly.
-That is not the same as "cannot construct these values at all," for
-two of the four: `config.CompilePolicy` (`v0.5`) and
-`config.CompileAnomaly` (`v0.7` task 033, [ADR
-0017](adr/0017-public-anomaly-configuration-boundary.md)) each produce
-a value of the corresponding internal type from a public
-`config.PolicyConfig`/`config.AnomalyConfig` input, which a caller then
-passes straight into `WithPolicy`/`WithAnomalyConfig` via ordinary Go
-type inference — see [Architecture § package
-boundaries](ARCHITECTURE.md#package-boundaries) for why this works.
-**`WithTrustConfig` and `WithContextRisk` remain genuinely
-in-module-only today** — no `config` equivalent exists yet for
-`trust.Config`/`features.StableFeatures`; promoting a public path for
-either is a reasonable next step once an external consumer actually
-needs it, following the identical pattern Policy and Anomaly
-configuration already established.
+Every option is configurable from a third-party module. Four take a
+value produced by the public `config` package; the fifth takes a
+callback over `trustvian.StableFeatures`, a public type.
+
+```go
+policy, err := config.CompilePolicy(config.PolicyConfig{
+	Version:         config.SchemaVersionV1,
+	DefaultDecision: "observe_only",
+	DefaultReason:   "no rule matched",
+})
+
+store, err := config.CompileStorage(config.StorageConfig{
+	Version: config.StorageSchemaVersionV1,
+	Type:    config.StorageTypeFile,
+	File:    &config.FileStorageConfig{Path: "baseline.json"},
+})
+
+anomalyCfg, err := config.CompileAnomaly(config.AnomalyConfig{
+	Version: config.AnomalySchemaVersionV1,
+})
+
+high := 0.4 // escalate to High risk earlier than the default 0.5
+trustCfg, err := config.CompileTrust(config.TrustConfig{
+	Version:       config.TrustSchemaVersionV1,
+	HighThreshold: &high,
+})
+```
+
+A context-risk callback states that some kinds of operation are
+inherently sensitive however familiar they become — the one behavioral
+input Trustvian does not learn:
+
+```go
+func contextRisk(sf trustvian.StableFeatures) float64 {
+	if sf.TargetName == "secrets-manager" {
+		return 0.6
+	}
+	return 0
+}
+```
+
+`StableFeatures` carries the dimensions that identify *what kind of
+behavior* an event is — actor type, operation category and name, target
+name and category, environment — and nothing per-occurrence. How
+unusual one occurrence is already has a mechanism, and it is the
+anomaly stage.
+
+Notice what none of this does: it never names the types the options
+accept. Each compiled value is received and passed straight on. Those
+types live under `internal/` so the engine stays free to evolve them,
+while the `config` package gives callers a complete configuration path.
+The same arrangement lets you read every field of `Result` without
+importing anything beyond the root package.
+
+[`examples/configured-engine`](../examples/configured-engine/) is this
+whole path as a runnable program, and — because `examples/` is a
+separate module — it is also the proof that it works from outside.
+
+### Persistence is selected, not implemented
+
+Supplying a custom `Store` implementation is **not** a supported
+extension point. `store.Store`'s methods reference internal types, so
+an external module cannot implement it, and that is deliberate: it
+keeps `Baseline` free to evolve. Choose a shipped backend through
+`config.StorageConfig` — memory, file, or PostgreSQL.
+
+### You own what you compile
+
+A store compiled from configuration belongs to the caller. An `Engine`
+never closes a store it was handed, because it did not open one. When
+the backend holds resources — a PostgreSQL pool, an open file — close
+it yourself:
+
+```go
+store, err := config.CompileStorage(cfg)
+if err != nil {
+	return err
+}
+if c, ok := store.(io.Closer); ok {
+	defer c.Close()
+}
+```
+
+There is no `Engine.Close`: an engine closing a resource it does not
+own is how double-closes happen.
 
 In practice, today, this is how the CLI itself configures a policy and
 anomaly scoring (from
