@@ -1,0 +1,361 @@
+# Compatibility Contract
+
+What Trustvian promises not to break, what it may change, and what a
+change costs in version numbers.
+
+This is the canonical answer to one question a maintainer asks on every
+pull request: **is this change breaking?** Everything below describes the
+contract from `v1.0.0` onward. Before `v1.0`, see
+[Branching Strategy § pre-v1.0 discipline](governance/branching.md#pre-v10-discipline).
+
+## How to use this
+
+1. Find the surface you are changing in the [matrix](#compatibility-matrix).
+2. Read its classification.
+3. Apply the [SemVer rules](#semver-rules) for the kind of change.
+4. If the change is breaking or deprecating, say so in the pull request
+   and in `CHANGELOG.md`.
+
+## Classifications
+
+| Class | Meaning |
+|---|---|
+| **STABLE** | Covered by backward-compatibility guarantees. An intentional break requires a major version |
+| **STABLE WITH DEPRECATION** | May evolve, but removal or a behavioral break requires a documented deprecation first |
+| **OPERATIONALLY STABLE** | Not a source API, but operators build on it. Breaking it requires migration guidance and the appropriate version bump |
+| **OBSERVATIONAL** | Useful, deliberately not guaranteed stable byte-for-byte or word-for-word |
+| **INTERNAL** | No compatibility promise |
+| **EXPERIMENTAL** | Explicitly outside the stability promise, and labelled as such where it appears |
+
+Nothing is labelled EXPERIMENTAL to avoid responsibility. Today the
+repository ships no experimental surface — if that changes, it is named
+here and in its own documentation.
+
+## Compatibility matrix
+
+| Surface | Class | v1 guarantee | Allowed in a minor | Breaking change requires |
+|---|---|---|---|---|
+| `event.Event` and its field shapes | STABLE | Fields are not removed, renamed, or redefined | New optional fields whose zero value means "unset" | Major |
+| `Result` and its field shapes | STABLE | Field presence and meaning | New fields | Major |
+| `Engine`, `NewEngine`, `Analyze`, `Observe` signatures | STABLE | Signatures hold | New `Option` functions | Major |
+| `Option` functions | STABLE | Existing options keep working | Additional options | Major |
+| `alert` package exports | STABLE | `Alert`, `Severity`, `Rule`, `Condition`, `Evaluate`, `Sink`, `WebhookSink` | Additive fields and options | Major |
+| `config` exported types and `Compile*` functions | STABLE | Existing documents keep compiling | New optional fields, new document types | Major |
+| Exported sentinel errors | STABLE | An error identity checked with `errors.Is` keeps matching the condition it names | New sentinels | Major |
+| Exported enum-like constants | STABLE WITH DEPRECATION | Existing values keep their meaning | New values — **consumers must tolerate unknown values** | Major to remove a value |
+| Configuration schema (`policy`, `alerts`, `anomaly`, `storage`) | STABLE | A valid `v1` document keeps loading across `v1.x` | New optional fields; a new schema version alongside `v1` | Major, or a new schema version |
+| Configuration defaults | STABLE WITH DEPRECATION | A default is not changed silently | Documented default changes in a minor, called out in CHANGELOG | See [behavioral compatibility](#behavioral-compatibility) |
+| CLI commands and flags | OPERATIONALLY STABLE | `analyze`, `baseline`, `version`, `--config`, `--anomaly-config`, `--storage-config` keep working | New commands and flags | Major to remove or repurpose |
+| CLI exit codes | OPERATIONALLY STABLE | `0` success, `1` analysis or runtime failure, `2` usage error | Narrowing a class only by adding a new code | Major |
+| CLI human-readable output | OBSERVATIONAL | Not a machine interface — no wording, spacing, or ordering promise | Any change | None |
+| Environment variables read by shipped binaries | OPERATIONALLY STABLE | See [environment variables](#environment-variables) | New variables | Major to remove or rename |
+| Collector processor type name and config fields | OPERATIONALLY STABLE | `policy`, `storage`, `health` keys and their meaning | New optional keys | Major |
+| Policy rule semantics | STABLE | First-match-wins ordering; fail-closed to `BLOCK` on invalid policy | New condition fields; new decisions | Major |
+| PostgreSQL schema | OPERATIONALLY STABLE | Forward-only, version-gated; see [persisted state](#persisted-state) | Additive columns or tables with a schema-version bump | Major for a destructive change |
+| File-store snapshot format | OPERATIONALLY STABLE | Version-tagged; a `v1.x` binary reads what `v1.x` wrote | Additive fields | Major |
+| Persisted `Baseline` JSON | OPERATIONALLY STABLE | Field names are not removed or repurposed within `v1` | Additive fields | Major |
+| Metric names and types | OPERATIONALLY STABLE WITH DEPRECATION | Existing metrics keep their name, type, and meaning | New metrics | Deprecation, then a minor to remove |
+| Metric label keys | OPERATIONALLY STABLE | Label keys keep their meaning; cardinality stays bounded | New labels — **consumers must tolerate unknown label values** | Major to remove or rename a key |
+| Health and readiness endpoints | OPERATIONALLY STABLE | `/livez` and `/readyz` paths, and their HTTP status semantics | New endpoints, new response fields | Major |
+| Health response body | OBSERVATIONAL | Status code is the contract; the body is diagnostic | Any change | None |
+| Webhook payload envelope | STABLE | `version` field, currently `"1"`; `alert` object field names | Additive fields inside `alert` | New envelope version |
+| Container entrypoint and ports | OPERATIONALLY STABLE | `trustvian-collector` entrypoint; `4317`, `4318`, `13133`; runs as `nonroot` | New ports | Major |
+| Image name and immutable tags | OPERATIONALLY STABLE | `ghcr.io/trustvian/trustvian-collector:vX.Y.Z` is immutable | — | Major |
+| Floating image tags (`latest`, `X.Y`) | OBSERVATIONAL | Convenience aliases; they move by design | Move on every stable release | None |
+| Release artifact names and checksums | OPERATIONALLY STABLE | `trustvian_<version>_<os>_<arch>.{tar.gz,zip}` plus `checksums.txt` | New platforms, new artifact kinds | Major |
+| Archive internal layout | OBSERVATIONAL | No promise beyond the binary being present | Any change | None |
+| Everything under `internal/` | INTERNAL | None | Any change | None |
+
+## SemVer rules
+
+### PATCH — `v1.x.Y`
+
+May contain bug fixes, security fixes, performance work, and internal
+refactoring. **Must not intentionally break any STABLE or OPERATIONALLY
+STABLE surface**, and must not change a documented default.
+
+### MINOR — `v1.Y.0`
+
+May add: backward-compatible API surface, optional configuration fields,
+new CLI commands and flags, new metrics, new enum values, new endpoints.
+May change a documented default, with the change named in `CHANGELOG.md`.
+May remove a surface **only** if it completed the
+[deprecation](#deprecation) path.
+
+### MAJOR — `vY.0.0`
+
+Required for any intentional break of a STABLE or OPERATIONALLY STABLE
+surface: removing or renaming a field, flag, variable, metric key, or
+endpoint; changing an exit code's meaning; a destructive storage change;
+or a semantic change that alters decisions for unchanged input outside
+the [behavioral](#behavioral-compatibility) rules below.
+
+## Go API
+
+The public surface is the root package, `event`, `alert`, and `config`.
+Everything else is `internal/` and carries no promise.
+
+Two properties consumers may rely on, both already true:
+
+- A value obtained from an exported function may be passed to another
+  exported function without naming its type. This is what makes
+  `config.CompilePolicy` → `trustvian.WithPolicy` work from outside the
+  module, and it keeps working.
+- Reading exported fields off a `Result` requires no import beyond the
+  root package.
+
+Consumers must **not** rely on: exhaustively switching over enum-like
+constants without a default branch, or implementing any interface whose
+definition lives under `internal/`.
+
+## Configuration
+
+Each configuration document is independently versioned —
+`SchemaVersionV1` for policy, `AlertSchemaVersionV1`, `AnomalySchemaVersionV1`,
+`StorageSchemaVersionV1` — and each is required, not inferred.
+
+| Change | Allowed in |
+|---|---|
+| Add an optional field | Minor |
+| Add a required field | Major, or a new schema version |
+| Remove or rename a field | Major, after deprecation |
+| Add an allowed enum value | Minor |
+| Remove an allowed enum value | Major, after deprecation |
+| Relax validation | Minor |
+| Tighten validation so a previously valid document is rejected | Major |
+| Change a documented default | Minor, named in CHANGELOG |
+
+**The guarantee:** a configuration document valid under `v1.0` loads
+under every later `v1.x` with unchanged meaning.
+
+**The limit, stated because it is easy to assume otherwise:** the loader
+calls `KnownFields(true)`, so unknown fields are rejected rather than
+ignored. A configuration using a field added in `v1.5` will **not** load
+on `v1.2`. Compatibility runs forward, not backward — plan rollbacks
+accordingly.
+
+## CLI
+
+Commands, flags, and exit codes are automation-facing and treated as
+such. Exit codes today: `0` success, `1` the run failed, `2` the
+invocation was wrong.
+
+Human-readable output is not. It carries no stability promise, and
+parsing it is not a supported integration.
+
+Note the gap that follows from this: the CLI has **no machine-readable
+output mode today** — `analyze` prints a formatted summary, not JSON. So
+automation that needs structured results has to use the Go SDK rather
+than the CLI. Adding a structured output mode would be additive and
+allowed in a minor; it is listed as a
+[Task 048 input](#task-048-public-api-review-inputs).
+
+## Environment variables
+
+Only variables read by a shipped binary or by the reference deployment
+are operational surface:
+
+| Variable | Class | Role |
+|---|---|---|
+| `TRUSTVIAN_POSTGRES_DSN`, `TRUSTVIAN_POSTGRES_USER`, `TRUSTVIAN_POSTGRES_PASSWORD`, `TRUSTVIAN_POSTGRES_DB` | OPERATIONALLY STABLE | Reference-deployment storage credentials |
+| `TRUSTVIAN_HEALTH_PORT`, `TRUSTVIAN_OTLP_GRPC_PORT`, `TRUSTVIAN_POSTGRES_HOST_PORT` | OPERATIONALLY STABLE | Reference-deployment port mapping |
+| `TRUSTVIAN_RUNTIME_POSTGRES_DB` | OPERATIONALLY STABLE | Database the runtime uses after a restore cutover |
+| `TRUSTVIAN_IMAGE_REGISTRY` | OPERATIONALLY STABLE | Registry override for image resolution |
+| `TRUSTVIAN_DEMO_*` | OBSERVATIONAL | Demo producer only; not a production interface |
+| `TRUSTVIAN_TEST_*`, `TRUSTVIAN_WORKFLOW_DIR`, `TRUSTVIAN_ACTION_REF_RESOLVER` | INTERNAL | Test and CI plumbing; may change at any time |
+
+## Collector processor
+
+The processor type name and its configuration keys — `policy`,
+`storage`, `health` — are an operational contract: a Collector
+configuration that works on `v1.0` works on every later `v1.x`.
+
+Trustvian guarantees its own keys only. Behavior inherited from the
+OpenTelemetry Collector, including how the Collector itself parses and
+validates configuration, is not Trustvian's to promise.
+
+## Policy format
+
+Schema and semantics are separate promises, and both hold within `v1`:
+
+- **Schema** — rule and condition field names, decision values, and the
+  required `DefaultAction`/`DefaultReason`.
+- **Semantics** — first-match-wins evaluation order, and fail-closed to
+  `BLOCK` when a policy is empty or invalid. This is a security
+  property, not an implementation detail: it does not change in a minor
+  or a patch.
+
+New decision values may be added in a minor, so a consumer that switches
+on `Decision` needs a default branch.
+
+## Persisted state
+
+| Question | Answer |
+|---|---|
+| Can state written by `v1.x` be read by a later `v1.y`? | **Yes.** Within a major version, later binaries read earlier state |
+| Can a later `v1.y` read a `v1.x` backup? | **Yes**, by the same rule |
+| Is downgrade supported? | **No.** Migrations are forward-only, and an older binary meeting a newer schema version fails closed rather than guessing |
+| Are migrations forward-only? | **Yes** |
+
+Storage carries its own version independently of the release number:
+PostgreSQL `SchemaVersion = 1`, file snapshot `version: 1`. **Any change
+to the stored `Baseline` shape bumps the storage schema version whatever
+the release number does.**
+
+A schema-version mismatch is deliberately fatal. It is not
+auto-upgraded, because silently rewriting a layout written by another
+version is how state gets corrupted. `ErrSchemaVersionMismatch` and
+`ErrAmbiguousSchemaState` exist to make the operator decide.
+
+One consequence of bounded fingerprint admission
+([ADR 0019](adr/0019-bounded-fingerprint-admission.md)) belongs here: a
+baseline written before the bound may hold more identities than the
+current cap. It is read whole, never truncated, and this stays true for
+the life of `v1`.
+
+## Database schema
+
+- **Additive** — a new nullable column or a new table may land in a
+  minor, with the schema version bumped and migration applied
+  transactionally.
+- **Destructive** — dropping or repurposing a column or table is a major
+  change, and needs migration guidance in the release notes.
+- **Rollback** — not supported. Restore from a backup taken before the
+  upgrade; see [Operations](operations.md).
+- **Sequencing** — upgrade the schema before, or as part of, starting
+  the new binary. Running a new binary against an old schema fails
+  closed at startup rather than degrading.
+
+## Metrics
+
+Metric names, types, and label keys are dashboard contracts. Today:
+`trustvian.analyses`, `trustvian.decisions`, `trustvian.observations`,
+`trustvian.analysis.duration`, `trustvian.observe.duration`, with the
+label keys `trustvian.decision` and `trustvian.outcome`.
+
+- Adding a metric or a label key: minor.
+- Adding a label *value*: minor. Consumers must tolerate values they do
+  not recognise — unknown decisions are deliberately folded into a
+  bounded set rather than passed through.
+- Removing or renaming a metric: deprecate first, remove in a later
+  minor.
+- Removing or renaming a label key: major.
+
+Label cardinality stays bounded by construction. No metric will gain an
+actor, session, or fingerprint identifier as a label — that is a
+security property, not a performance preference.
+
+## Health and readiness
+
+`/livez` and `/readyz`, and their status semantics, are an orchestration
+contract: `200` when live or ready, `503` when not ready or draining.
+Response bodies are diagnostic and carry no stability promise.
+
+## Webhook payload
+
+Payloads are versioned. The envelope carries `version`, currently `"1"`,
+alongside the `alert` object.
+
+Within envelope version `1`: existing field names and meanings do not
+change, and new fields may be added — so a receiver must ignore fields
+it does not recognise. A change that would break an existing receiver
+ships as a new envelope version, not as a mutation of version `1`.
+
+## Container and release artifacts
+
+The entrypoint is `trustvian-collector`; the image runs as `nonroot` and
+exposes `4317`, `4318`, `13133`.
+
+`ghcr.io/trustvian/trustvian-collector:vX.Y.Z` is immutable. `latest`
+and `X.Y` are convenience aliases that move on every stable release, and
+carry no promise beyond pointing at a signed image — production
+deployments should pin the immutable tag.
+
+Release artifacts are named `trustvian_<version>_<os>_<arch>` with a
+`.tar.gz` or `.zip` extension, published alongside `checksums.txt`, an
+SBOM, provenance attestations, and a Cosign signature. The naming
+pattern and the presence of those files are stable; the internal layout
+of an archive is not.
+
+## Behavioral compatibility
+
+Type compatibility is not the whole contract. A change that keeps every
+signature intact but alters what Trustvian *decides* is still a change
+users feel.
+
+| Kind of change | Treated as | Version |
+|---|---|---|
+| A signal computed incorrectly relative to its documented formula | Bug fix | Patch |
+| A documented formula itself changing | Breaking semantic change | Major |
+| A new signal shipped disabled by default (zero weight) | Additive | Minor |
+| A new signal enabled by default | Breaking semantic change | Major |
+| A documented default threshold or weight changing | Compatible tuning, if called out in CHANGELOG | Minor |
+| Learning eligibility changing which decisions train the baseline | Breaking semantic change | Major |
+| Fail-closed behavior becoming less strict | Never permitted without a major, and only with explicit security review | Major |
+
+What is **not** promised: that a given event produces a numerically
+identical score forever. Baselines are learned state, and scores move as
+they learn — that is the product working. What is promised is that the
+*rules* producing those scores do not change silently.
+
+When in doubt, ask whether an operator's existing policy would start
+making different decisions on unchanged traffic. If yes, treat it as
+breaking regardless of what the type signatures say.
+
+## Deprecation
+
+Version-based, not time-based, because an OSS project cannot promise a
+calendar:
+
+1. Mark the surface deprecated in its own documentation and in
+   `CHANGELOG.md`, naming the replacement.
+2. Where the language allows it, make the deprecation visible in the
+   surface itself — a Go doc comment beginning `Deprecated:`, a CLI
+   warning on stderr, a documented note on a metric.
+3. Keep it working for **at least one subsequent minor release**.
+4. Remove it only at a boundary the matrix permits.
+
+A surface that never shipped in a stable release needs none of this.
+
+## Security exception
+
+A severe vulnerability may require a change that cannot wait for a
+deprecation cycle or a major release. That is permitted, and it is
+deliberately narrow. Such a change must carry:
+
+- an explicit security rationale in the release notes,
+- a `CHANGELOG.md` entry identifying what changed and why,
+- migration guidance wherever one is possible,
+- and a `security:` commit, so it is visible in history.
+
+This is an exception for fixing exploitable defects, not a route around
+the contract. "It is cleaner this way" is not a security rationale.
+
+## Task 048 public API review inputs
+
+This contract defines the rules. It deliberately does not change any
+surface. The following were found while writing it and should be decided
+**before** the public surface is frozen, because each becomes expensive
+to change once `v1.0` ships. Evidence, not opinion:
+
+| # | Surface | Evidence | Question for the freeze |
+|---|---|---|---|
+| 1 | `Option` functions name `internal/` types — `WithPolicy(policy.Policy)`, `WithStore(store.Store)`, `WithAnomalyConfig(anomaly.Config)`, `WithTrustConfig(trust.Config)`, `WithContextRisk(func(features.StableFeatures) float64)` | `go doc .` | Under this contract a change to `policy.Policy`'s shape is breaking for external callers even though the type is `internal/`. Accept that, or move the extension points? |
+| 2 | External consumers cannot implement `store.Store` | The interface is `internal/`; `config.CompileStorage` is the only way to obtain one | Is "no custom storage backend without forking" the intended `v1` position? |
+| 3 | Store lifecycle is a type assertion, not a contract | `postgres.Store` implements `io.Closer`; the documented pattern is `if c, ok := s.(io.Closer); ok` (`config/compile.go`) | Should closing be part of the promised surface rather than a convention? |
+| 4 | No machine-readable CLI output | `cmd/trustvian/analyze.go` prints a formatted summary | Ship a structured output mode before freezing CLI expectations, or state that the SDK is the automation path? |
+| 5 | `scripts` appears in `go list ./...` | The directory holds only `_test.go` files, so nothing is importable | Cosmetic; confirm it needs no action |
+
+None of these is resolved here. Task 046's own follow-up — that an actor
+exceeding 512 fingerprint identities silently stops learning new ones,
+with nothing surfacing it — is a behavioral question rather than an API
+one, and is recorded in
+[ADR 0019](adr/0019-bounded-fingerprint-admission.md).
+
+## Related
+
+- [Branching Strategy](governance/branching.md) — SemVer and release flow
+- [Release Governance](governance/releases.md) — who may release
+- [Operations](operations.md) — upgrade, backup, and the compatibility matrix for state
+- [CHANGELOG.md](../CHANGELOG.md) — where breaking changes and deprecations appear
+- [Decision Records](adr/README.md) — why the architecture is shaped this way

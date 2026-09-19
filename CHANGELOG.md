@@ -38,6 +38,28 @@ actually depend on.
 
   No public API, configuration, CLI, Collector, or storage schema change.
 
+### Added
+
+- **A compatibility contract covering every observable surface**, not
+  just the Go API: [docs/compatibility.md](docs/compatibility.md). The
+  `v0.1.0` promise in this file covers `event.Event`, `Result`, and
+  `Engine`; configuration schemas, CLI flags and exit codes, environment
+  variables, Collector configuration, storage formats, metric names and
+  labels, health endpoints, the webhook envelope, container interface,
+  and release artifacts were all outside it. Each is now classified,
+  with the version bump a breaking change costs.
+
+  It also states how behavioral change is treated, which type signatures
+  cannot express: enabling a signal by default or altering which
+  decisions train the baseline is breaking, whereas correcting a signal
+  against its documented formula is a fix. Deprecation is
+  version-based — one subsequent minor, minimum — and the security
+  exception is deliberately narrow. See
+  [ADR 0020](docs/adr/0020-v1-compatibility-contract.md).
+
+  Documentation only: no API, configuration, storage, or behavior
+  change.
+
 ### Fixed
 
 - Documentation stated a per-actor memory bound the implementation did

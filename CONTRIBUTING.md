@@ -199,6 +199,13 @@ fallback.
 
 ## Commits and releases
 
+Before changing anything an operator or a consumer can see — the Go API,
+a configuration field, a CLI flag, a metric, the storage format —
+check [docs/compatibility.md](docs/compatibility.md) for what that
+surface promises. Say in the pull request which of the three it is:
+backward-compatible, a deprecation, or a breaking change. Breaking
+changes and deprecations belong in `CHANGELOG.md`.
+
 Trustvian uses Conventional Commits for commit subjects and pull request
 titles:
 
