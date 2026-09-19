@@ -141,7 +141,10 @@ gate is that every threat there still has a passing test, extended to cover:
   supported version transition, extending the
   [compatibility matrix](operations.md#compatibility-matrix)
 - a written breaking-change policy stating what a major, minor, and patch
-  release may change after `v1.0`
+  release may change after `v1.0` — **published** as
+  [Compatibility Contract](compatibility.md); the remaining gate work is
+  confirming each surface it classifies still matches the code at
+  release time
 
 ### Performance and resource safety
 

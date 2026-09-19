@@ -70,6 +70,7 @@ Two documents share a name and answer different questions:
 |---|---|
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | The local gates, the three modules, the test tiers |
 | [Commit Convention](COMMIT_CONVENTION.md) | Commit subjects and pull request titles — CI validates the title |
+| [Compatibility Contract](compatibility.md) | What `v1` promises not to break, and what a breaking change costs in version numbers |
 | [Branching Strategy](governance/branching.md) | Branch from `main`, one change per pull request, squash merge |
 | [Task Specifications](tasks/README.md) | Active specifications, and where completed ones live |
 | [Decision Records](adr/README.md) | Read before proposing an architectural change |
@@ -80,6 +81,7 @@ Four documents, four different questions. The distinction matters:
 
 | Question | Document |
 |---|---|
+| Is this change breaking? | [Compatibility Contract](compatibility.md) |
 | Where is the project going? | [Roadmap](ROADMAP.md) |
 | What shipped, and when? | [CHANGELOG.md](../CHANGELOG.md) |
 | What is being built right now? | [Active tasks](tasks/README.md) |

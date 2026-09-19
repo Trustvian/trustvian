@@ -169,6 +169,7 @@ is a new candidate, not a promotion.
 
 ## Related
 
+- [Compatibility Contract](../compatibility.md) — what a release may and may not change
 - [Release Guide](../release-guide.md) — the release procedure and verification
 - [Repository Governance](repository.md) — rulesets, review, and merge authority
 - [Branching Strategy](branching.md) — where release commits come from
